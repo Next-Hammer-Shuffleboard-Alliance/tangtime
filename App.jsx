@@ -13,8 +13,8 @@ async function q(table, params = "") {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } catch (e) {
-    USE_MOCK = true;
-    return getMock(table, params);
+    console.warn(`Supabase query failed for ${table}:`, e.message);
+    return [];
   }
 }
 
@@ -722,11 +722,20 @@ function SeasonSelector({ seasons, selected, onSelect }) {
 function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
   const [leaders, setLeaders] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [allStandings, setAllStandings] = useState([]);
   const [topTeams, setTopTeams] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const progress = getSeasonProgress(activeSeason);
   const isPast = progress.status === "completed";
+
+  // Compute actual current week from data (max games played + 1)
+  const dataWeek = useMemo(() => {
+    if (!allStandings.length) return progress.week;
+    const maxGames = Math.max(...allStandings.map(s => (s.wins || 0) + (s.losses || 0)));
+    return maxGames > 0 ? maxGames + 1 : progress.week;
+  }, [allStandings, progress.week]);
+  const progressLabel = dataWeek ? `Week ${dataWeek} of 8` : progress.label;
 
   useEffect(() => {
     if (!activeSeason || !divisions?.length) return;
@@ -735,8 +744,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     Promise.all([
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=division_name,calculated_rank&limit=200`),
       q("recent_matches", `division_id=in.(${ids.join(",")})&status=eq.completed&order=scheduled_date.desc&limit=20`),
-      q("teams", "order=championships.desc,elo_rating.desc&limit=10"),
-    ]).then(([st, rc, tm]) => {
+    ]).then(([st, rc]) => {
+      setAllStandings(st || []);
       if (st) {
         const byDiv = {};
         st.forEach(s => {
@@ -747,22 +756,22 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         setLeaders(Object.values(byDiv));
       }
       setRecent(rc || []);
-      setTopTeams(tm || []);
+      setTopTeams([]);
       setLoading(false);
     });
   }, [activeSeason, divisions]);
 
   const teamCount = useMemo(() => {
     const ids = new Set();
-    Object.values(MOCK_STANDINGS).forEach(arr => arr.forEach(s => ids.add(s.team_id)));
-    return ids.size;
-  }, []);
+    allStandings.forEach(s => ids.add(s.team_id));
+    return ids.size || "—";
+  }, [allStandings]);
 
   const completedCount = useMemo(() => {
-    let c = 0;
-    Object.values(MOCK_MATCHES).forEach(a => a.forEach(m => { if (m.status === "completed") c++; }));
-    return c;
-  }, []);
+    let total = 0;
+    allStandings.forEach(s => total += (s.wins || 0));
+    return total || "—";
+  }, [allStandings]);
 
   // Get season champion and division winners for past seasons
   const seasonChamp = useMemo(() => {
@@ -796,7 +805,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
             color={progress.status === "completed" ? C.muted : progress.status === "upcoming" ? C.blue : C.green}
             style={{ flexShrink: 0 }}
           >
-            {progress.status === "completed" ? "✓" : progress.status === "upcoming" ? "◷" : "●"} {progress.label}
+            {progress.status === "completed" ? "✓" : progress.status === "upcoming" ? "◷" : "●"} {progressLabel}
           </Badge>
         </div>
         <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 18px" }}>Royal Palms Brooklyn</p>
@@ -865,7 +874,11 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
       {!isPast && leaders.length > 0 && (
         <div>
           <SectionTitle right={activeSeason?.name}>Division Leaders</SectionTitle>
-          {leaders.sort((a, b) => (a.division_name || "").localeCompare(b.division_name || "")).map((l, i) => (
+          {leaders.sort((a, b) => {
+            const dn = (n) => { const p = (n || "").split(" "); return [dayOrder[p[0]?.toLowerCase()] ?? 9, levelOrder[p[1]?.toLowerCase()] ?? 9]; };
+            const [ad, al] = dn(a.division_name); const [bd, bl] = dn(b.division_name);
+            return ad !== bd ? ad - bd : al - bl;
+          }).map((l, i) => (
             <Card key={i} onClick={() => goPage("teams", { teamId: l.team_id })}
               style={{ padding: "14px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -888,9 +901,46 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
       {recent.length > 0 && (
         <div>
           <SectionTitle right="Latest">Recent Results</SectionTitle>
-          {recent.slice(0, 6).map((m, i) => (
-            <MatchRow key={m.id || i} m={m} goPage={goPage} />
-          ))}
+          {recent.slice(0, 6).map((m, i) => {
+            const aWon = m.winner_id === m.team_a_id;
+            const bWon = m.winner_id === m.team_b_id;
+            const isOT = m.went_to_ot;
+            return (
+              <Card key={m.id || i} style={{ padding: "12px 18px", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <TeamLink name={m.team_a_name} teamId={m.team_a_id} goPage={goPage}
+                      style={{
+                        fontFamily: F.b, fontSize: 14,
+                        fontWeight: aWon ? 700 : 400,
+                        color: aWon ? C.text : C.muted,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
+                      }} />
+                  </div>
+                  <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    {aWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
+                     bWon ? <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge> : null}
+                    <span style={{ color: C.dim, fontSize: 11 }}>vs</span>
+                    {bWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
+                     aWon ? <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge> : null}
+                    {isOT && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 5px" }}>OT</Badge>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
+                    <TeamLink name={m.team_b_name} teamId={m.team_b_id} goPage={goPage}
+                      style={{
+                        fontFamily: F.b, fontSize: 14,
+                        fontWeight: bWon ? 700 : 400,
+                        color: bWon ? C.text : C.muted,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
+                      }} />
+                  </div>
+                </div>
+                <div style={{ textAlign: "center", marginTop: 6 }}>
+                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{fmtDate(m.scheduled_date)}</span>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -1072,14 +1122,15 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
   const [selectedDay, setSelectedDay] = useState("monday");
 
   const progress = getSeasonProgress(activeSeason);
-  const currentWeek = progress.week || null;
 
-  // Default to current week
-  const [weekFilter, setWeekFilter] = useState(currentWeek);
+  // Default to null, will compute from data
+  const [weekFilter, setWeekFilter] = useState(null);
+  const [dataCurrentWeek, setDataCurrentWeek] = useState(null);
+  const currentWeek = dataCurrentWeek || progress.week || null;
 
   useEffect(() => {
-    setWeekFilter(currentWeek);
-  }, [currentWeek]);
+    if (dataCurrentWeek && weekFilter === null) setWeekFilter(dataCurrentWeek);
+  }, [dataCurrentWeek]);
 
   // Get unique days from divisions
   const days = useMemo(() => {
@@ -1113,6 +1164,11 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
         _week: m._week || getWeekNum(m.scheduled_date, activeSeason.start_date),
       }));
       setAllMatches(withWeeks);
+      // Compute current week: max completed week + 1
+      const completedWeeks = withWeeks.filter(m => m.status === "completed").map(m => m._week);
+      const maxCompleted = completedWeeks.length ? Math.max(...completedWeeks) : 0;
+      const nextWeek = Math.min(maxCompleted + 1, 8);
+      setDataCurrentWeek(nextWeek > 0 ? nextWeek : progress.week);
       setLoading(false);
     });
   }, [divId, activeSeason]);
@@ -1193,7 +1249,7 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
 function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teams, setTeams] = useState([]);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("elo");
+  const [sortBy, setSortBy] = useState("wins");
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(initialTeamId || null);
   const [teamDetail, setTeamDetail] = useState(null);
@@ -1202,8 +1258,29 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [profileTab, setProfileTab] = useState("results");
 
   useEffect(() => {
-    q("teams", "order=elo_rating.desc&limit=500").then(d => { setTeams(d || []); setLoading(false); });
-  }, []);
+    if (!activeSeason) return;
+    q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=calculated_rank`).then(d => {
+      // Build team list from standings data
+      const byTeam = {};
+      (d || []).forEach(s => {
+        if (!byTeam[s.team_id]) {
+          byTeam[s.team_id] = {
+            id: s.team_id, name: s.team_name,
+            all_time_wins: 0, all_time_losses: 0,
+            elo_rating: 0, championships: 0,
+            playoff_appearances: 0, seasons_played: 1,
+            divisions: [],
+          };
+        }
+        const t = byTeam[s.team_id];
+        t.all_time_wins += (s.wins || 0);
+        t.all_time_losses += (s.losses || 0);
+        t.divisions.push(s.division_name);
+      });
+      setTeams(Object.values(byTeam));
+      setLoading(false);
+    });
+  }, [activeSeason]);
 
   useEffect(() => { if (initialTeamId) setSelectedId(initialTeamId); }, [initialTeamId]);
 
@@ -1212,10 +1289,24 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     setDetailLoading(true);
     setProfileTab("results");
     Promise.all([
-      q("teams", `id=eq.${selectedId}`),
+      q("division_standings", `team_id=eq.${selectedId}&order=season_name.desc`),
       q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=50`),
-    ]).then(([td, md]) => {
-      setTeamDetail(td?.[0] || null);
+    ]).then(([sd, md]) => {
+      // Build team detail from standings history
+      if (sd?.length) {
+        const totalW = sd.reduce((a, s) => a + (s.wins || 0), 0);
+        const totalL = sd.reduce((a, s) => a + (s.losses || 0), 0);
+        setTeamDetail({
+          id: selectedId, name: sd[0].team_name,
+          all_time_wins: totalW, all_time_losses: totalL,
+          elo_rating: null, championships: 0,
+          seasons_played: new Set(sd.map(s => s.season_name)).size,
+          playoff_appearances: 0,
+          _standings: sd,
+        });
+      } else {
+        setTeamDetail(null);
+      }
       setTeamMatches(md || []);
       setDetailLoading(false);
     });
@@ -1223,8 +1314,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
   const sorted = useMemo(() => {
     let t = [...teams];
-    if (sortBy === "elo") t.sort((a, b) => b.elo_rating - a.elo_rating);
-    else if (sortBy === "wins") t.sort((a, b) => (b.all_time_wins || 0) - (a.all_time_wins || 0));
+    if (sortBy === "wins") t.sort((a, b) => (b.all_time_wins || 0) - (a.all_time_wins || 0));
     else if (sortBy === "winpct") {
       t.sort((a, b) => {
         const pa = (a.all_time_wins || 0) / Math.max((a.all_time_wins || 0) + (a.all_time_losses || 0), 1);
@@ -1232,8 +1322,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         return pb - pa;
       });
     }
-    else if (sortBy === "playoffs") t.sort((a, b) => (b.playoff_appearances || 0) - (a.playoff_appearances || 0));
-    else if (sortBy === "champs") t.sort((a, b) => (b.championships || 0) - (a.championships || 0));
+    else if (sortBy === "name") t.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     return t.filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
   }, [teams, sortBy, search]);
 
@@ -1262,7 +1351,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
             <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>{t.name}</h3>
             {isChamp && <span title={`${t.championships} championship${t.championships > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆</span>}
           </div>
-          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>ELO {t.elo_rating}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{t.elo_rating ? `ELO ${t.elo_rating}` : `${t.seasons_played || 1} season${(t.seasons_played || 1) > 1 ? "s" : ""}`}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             {[
               ["Wins", t.all_time_wins || 0, C.green],
@@ -1354,7 +1443,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["elo", "ELO"], ["wins", "Wins"], ["winpct", "Win %"], ["playoffs", "Playoff Apps"], ["champs", "Titles"]].map(([k, l]) => (
+        {[["wins", "Wins"], ["winpct", "Win %"], ["name", "A-Z"]].map(([k, l]) => (
           <button key={k} onClick={() => setSortBy(k)} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
@@ -1368,7 +1457,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {sorted.slice(0, 50).map(t => {
             const wp = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(0);
-            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "playoffs" ? `${t.playoff_appearances || 0} appearances` : sortBy === "champs" ? `${t.championships || 0} titles` : `${t.all_time_wins || 0} wins`;
+            const subtext = sortBy === "winpct" ? `${wp}% win rate` : sortBy === "name" ? (t.divisions?.join(", ") || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
             return (
               <Card key={t.id} onClick={() => setSelectedId(t.id)} style={{ padding: "14px 18px", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1380,7 +1469,6 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginLeft: 12 }}>
-                    {t.championships > 0 && <Badge color={C.amber}>🏆 {t.championships}</Badge>}
                     <span style={{ fontFamily: F.m, fontSize: 13, color: C.muted, minWidth: 48, textAlign: "right" }}>{t.all_time_wins || 0}-{t.all_time_losses || 0}</span>
                   </div>
                 </div>
