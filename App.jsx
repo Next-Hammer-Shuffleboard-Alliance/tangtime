@@ -738,7 +738,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     Promise.all([
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=division_name,calculated_rank&limit=200`),
       q("recent_matches", `division_id=in.(${ids.join(",")})&status=eq.completed&order=scheduled_date.desc&limit=20`),
-    ]).then(([st, rc]) => {
+      q("teams", "order=championships.desc,elo_rating.desc&limit=10"),
+    ]).then(([st, rc, tm]) => {
       setAllStandings(st || []);
       if (st) {
         const byDiv = {};
@@ -750,7 +751,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         setLeaders(Object.values(byDiv));
       }
       setRecent(rc || []);
-      setTopTeams([]);
+      setTopTeams(tm || []);
       setLoading(false);
     });
   }, [activeSeason, divisions]);
@@ -1294,24 +1295,30 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     setDetailLoading(true);
     setProfileTab("results");
     Promise.all([
+      q("teams", `id=eq.${selectedId}`),
       q("division_standings", `team_id=eq.${selectedId}&order=season_name.desc`),
-      q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=50`),
-    ]).then(([sd, md]) => {
-      // Build team detail from standings history
-      if (sd?.length) {
-        const totalW = sd.reduce((a, s) => a + (s.wins || 0), 0);
-        const totalL = sd.reduce((a, s) => a + (s.losses || 0), 0);
-        setTeamDetail({
-          id: selectedId, name: sd[0].team_name,
-          all_time_wins: totalW, all_time_losses: totalL,
-          elo_rating: null, championships: 0,
-          seasons_played: new Set(sd.map(s => s.season_name)).size,
-          playoff_appearances: 0,
-          _standings: sd,
-        });
-      } else {
-        setTeamDetail(null);
-      }
+      q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=500`),
+    ]).then(([td, sd, md]) => {
+      const teamsRow = td?.[0];
+      const hasTeamsData = teamsRow && (teamsRow.all_time_wins || 0) > 0;
+
+      // Compute wins/losses from actual match results (most accurate)
+      const completed = (md || []).filter(m => m.status === "completed" && m.winner_id);
+      const matchWins = completed.filter(m => m.winner_id === selectedId).length;
+      const matchLosses = completed.filter(m => m.winner_id && m.winner_id !== selectedId && (m.team_a_id === selectedId || m.team_b_id === selectedId)).length;
+      const seasonNames = new Set((sd || []).map(s => s.season_name));
+
+      setTeamDetail({
+        id: selectedId,
+        name: teamsRow?.name || sd?.[0]?.team_name || "Unknown",
+        all_time_wins: hasTeamsData ? teamsRow.all_time_wins : matchWins,
+        all_time_losses: hasTeamsData ? teamsRow.all_time_losses : matchLosses,
+        elo_rating: teamsRow?.elo_rating || null,
+        championships: teamsRow?.championships || 0,
+        seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
+        playoff_appearances: teamsRow?.playoff_appearances || 0,
+        _standings: sd || [],
+      });
       setTeamMatches(md || []);
       setDetailLoading(false);
     });
@@ -1450,10 +1457,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["wins", "Wins"], ["winpct", "Win %"], ["name", "A-Z"]].concat(
-          teams.some(t => t.elo_rating > 0) ? [["elo", "ELO"]] : [],
-          teams.some(t => (t.championships || 0) > 0) ? [["champs", "Titles"]] : [],
-        ).map(([k, l]) => (
+        {[["wins", "Wins"], ["winpct", "Win %"], ["name", "A-Z"], ["elo", "ELO"], ["champs", "Titles"]].map(([k, l]) => (
           <button key={k} onClick={() => setSortBy(k)} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
