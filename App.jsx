@@ -614,6 +614,7 @@ function MatchRow({ m, goPage }) {
   const aWon = m.winner_id === m.team_a_id;
   const bWon = m.winner_id === m.team_b_id;
   const done = m.status === "completed" && m.winner_id;
+  const isOT = m.went_to_ot;
   return (
     <Card style={{ padding: 0, overflow: "hidden", marginBottom: 8 }}>
       <div style={{ padding: "14px 18px" }}>
@@ -627,23 +628,15 @@ function MatchRow({ m, goPage }) {
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
               }} />
           </div>
-          <div style={{ padding: "0 12px", textAlign: "center", flexShrink: 0 }}>
-            {done ? (
-              <div style={{ fontFamily: F.m, fontSize: 18, fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}>
-                {(() => {
-                  const aw = m.team_a_match_wins, bw = m.team_b_match_wins;
-                  const isOT = (aw === 2 && bw === 1) || (aw === 1 && bw === 2);
-                  const dispA = isOT ? 1 : aw;
-                  const dispB = isOT ? 1 : bw;
-                  return (<>
-                    <span style={{ color: aWon ? C.amber : C.muted }}>{dispA}</span>
-                    <span style={{ color: C.dim, fontSize: 12 }}>–</span>
-                    <span style={{ color: bWon ? C.amber : C.muted }}>{dispB}</span>
-                    {isOT && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 5px", marginLeft: 2 }}>OT</Badge>}
-                  </>);
-                })()}
-              </div>
-            ) : (
+          <div style={{ padding: "0 10px", textAlign: "center", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
+            {done ? (<>
+              {aWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
+               <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge>}
+              <span style={{ color: C.dim, fontSize: 11 }}>vs</span>
+              {bWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
+               <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge>}
+              {isOT && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 5px" }}>OT</Badge>}
+            </>) : (
               <span style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700 }}>VS</span>
             )}
           </div>
@@ -731,11 +724,12 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
 
   // Compute actual current week from data (max games played + 1)
   const dataWeek = useMemo(() => {
+    if (isPast) return null; // Past seasons don't need week
     if (!allStandings.length) return progress.week;
     const maxGames = Math.max(...allStandings.map(s => (s.wins || 0) + (s.losses || 0)));
-    return maxGames > 0 ? maxGames + 1 : progress.week;
-  }, [allStandings, progress.week]);
-  const progressLabel = dataWeek ? `Week ${dataWeek} of 8` : progress.label;
+    return maxGames > 0 ? Math.min(maxGames + 1, 8) : progress.week;
+  }, [allStandings, progress.week, isPast]);
+  const progressLabel = isPast ? "Completed" : (dataWeek ? `Week ${dataWeek} of 8` : progress.label);
 
   useEffect(() => {
     if (!activeSeason || !divisions?.length) return;
@@ -768,9 +762,10 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
   }, [allStandings]);
 
   const completedCount = useMemo(() => {
+    if (!allStandings.length) return "—";
     let total = 0;
     allStandings.forEach(s => total += (s.wins || 0));
-    return total || "—";
+    return total; // Each completed match produces exactly 1 win
   }, [allStandings]);
 
   // Get season champion and division winners for past seasons
@@ -1259,25 +1254,35 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
   useEffect(() => {
     if (!activeSeason) return;
-    q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=calculated_rank`).then(d => {
-      // Build team list from standings data
-      const byTeam = {};
-      (d || []).forEach(s => {
-        if (!byTeam[s.team_id]) {
-          byTeam[s.team_id] = {
-            id: s.team_id, name: s.team_name,
-            all_time_wins: 0, all_time_losses: 0,
-            elo_rating: 0, championships: 0,
-            playoff_appearances: 0, seasons_played: 1,
-            divisions: [],
-          };
-        }
-        const t = byTeam[s.team_id];
-        t.all_time_wins += (s.wins || 0);
-        t.all_time_losses += (s.losses || 0);
-        t.divisions.push(s.division_name);
-      });
-      setTeams(Object.values(byTeam));
+    // Try loading from teams table first, fallback to standings
+    Promise.all([
+      q("teams", "order=elo_rating.desc&limit=500"),
+      q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=calculated_rank`),
+    ]).then(([teamsData, standingsData]) => {
+      const hasTeamsData = teamsData?.length && teamsData.some(t => (t.all_time_wins || 0) > 0);
+      if (hasTeamsData) {
+        // Use teams table (has aggregate stats)
+        setTeams(teamsData);
+      } else {
+        // Build from standings for current season
+        const byTeam = {};
+        (standingsData || []).forEach(s => {
+          if (!byTeam[s.team_id]) {
+            byTeam[s.team_id] = {
+              id: s.team_id, name: s.team_name,
+              all_time_wins: 0, all_time_losses: 0,
+              elo_rating: 0, championships: 0,
+              playoff_appearances: 0, seasons_played: 1,
+              divisions: [],
+            };
+          }
+          const t = byTeam[s.team_id];
+          t.all_time_wins += (s.wins || 0);
+          t.all_time_losses += (s.losses || 0);
+          t.divisions.push(s.division_name);
+        });
+        setTeams(Object.values(byTeam));
+      }
       setLoading(false);
     });
   }, [activeSeason]);
@@ -1323,6 +1328,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       });
     }
     else if (sortBy === "name") t.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    else if (sortBy === "elo") t.sort((a, b) => (b.elo_rating || 0) - (a.elo_rating || 0));
+    else if (sortBy === "champs") t.sort((a, b) => ((b.championships || 0) - (a.championships || 0)) || ((b.all_time_wins || 0) - (a.all_time_wins || 0)));
     return t.filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
   }, [teams, sortBy, search]);
 
@@ -1443,7 +1450,10 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["wins", "Wins"], ["winpct", "Win %"], ["name", "A-Z"]].map(([k, l]) => (
+        {[["wins", "Wins"], ["winpct", "Win %"], ["name", "A-Z"]].concat(
+          teams.some(t => t.elo_rating > 0) ? [["elo", "ELO"]] : [],
+          teams.some(t => (t.championships || 0) > 0) ? [["champs", "Titles"]] : [],
+        ).map(([k, l]) => (
           <button key={k} onClick={() => setSortBy(k)} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
@@ -1457,7 +1467,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {sorted.slice(0, 50).map(t => {
             const wp = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(0);
-            const subtext = sortBy === "winpct" ? `${wp}% win rate` : sortBy === "name" ? (t.divisions?.join(", ") || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
+            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "champs" ? `${t.championships || 0} titles` : sortBy === "name" ? (t.divisions?.join(", ") || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
             return (
               <Card key={t.id} onClick={() => setSelectedId(t.id)} style={{ padding: "14px 18px", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1469,6 +1479,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginLeft: 12 }}>
+                    {(t.championships || 0) > 0 && <Badge color={C.amber}>🏆 {t.championships}</Badge>}
                     <span style={{ fontFamily: F.m, fontSize: 13, color: C.muted, minWidth: 48, textAlign: "right" }}>{t.all_time_wins || 0}-{t.all_time_losses || 0}</span>
                   </div>
                 </div>
