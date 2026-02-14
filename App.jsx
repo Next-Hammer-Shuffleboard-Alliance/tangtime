@@ -738,7 +738,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     Promise.all([
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=division_name,calculated_rank&limit=200`),
       q("recent_matches", `division_id=in.(${ids.join(",")})&status=eq.completed&order=scheduled_date.desc&limit=20`),
-      q("teams", "order=championships.desc,elo_rating.desc&limit=10"),
+      q("teams", "order=championship_count.desc,recrec_elo.desc&limit=10"),
     ]).then(([st, rc, tm]) => {
       setAllStandings(st || []);
       if (st) {
@@ -941,10 +941,10 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
       )}
 
       {/* Top Teams - only on current season */}
-      {!isPast && topTeams.some(t => t.championships > 0) && (
+      {!isPast && topTeams.some(t => (t.championship_count || t.championships) > 0) && (
         <div>
           <SectionTitle right="All-time">Top Teams</SectionTitle>
-          {topTeams.filter(t => t.championships > 0).slice(0, 8).map((t, i) => (
+          {topTeams.filter(t => (t.championship_count || t.championships) > 0).slice(0, 8).map((t, i) => (
             <Card key={t.id} onClick={() => goPage("teams", { teamId: t.id })}
               style={{ padding: "12px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -952,7 +952,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
                 <TeamAvatar name={t.name} size={28} />
                 <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text }}>{t.name}</span>
               </div>
-              <Badge color={C.amber}>🏆 {t.championships}</Badge>
+              <Badge color={C.amber}>🏆 {t.championship_count || t.championships}</Badge>
             </Card>
           ))}
         </div>
@@ -1080,8 +1080,8 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, color: C.red }}>{t.losses}</span>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.muted }}>{t.gb}</span>
               <span style={{ textAlign: "center" }}>
-                {t._streak ? (
-                  <Badge color={t._streak.startsWith("W") ? C.green : C.red} style={{ fontSize: 10, padding: "2px 7px" }}>{t._streak}</Badge>
+                {(t._streak || t.streak) ? (
+                  <Badge color={(t._streak || t.streak).startsWith("W") ? C.green : C.red} style={{ fontSize: 10, padding: "2px 7px" }}>{t._streak || t.streak}</Badge>
                 ) : <span style={{ color: C.dim }}>—</span>}
               </span>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.dim }}>
@@ -1125,7 +1125,8 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
   const currentWeek = dataCurrentWeek || progress.week || null;
 
   useEffect(() => {
-    if (dataCurrentWeek && weekFilter === null) setWeekFilter(dataCurrentWeek);
+    // Only auto-set week filter for active seasons; past seasons show "All"
+    if (dataCurrentWeek && weekFilter === null && activeSeason?.is_active) setWeekFilter(dataCurrentWeek);
   }, [dataCurrentWeek]);
 
   // Get unique days from divisions
@@ -1149,6 +1150,9 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
       setSelectedDay(divisions[0].day_of_week);
       setDivId(divisions[0].id);
     }
+    // Reset week filter when season changes
+    setWeekFilter(null);
+    setDataCurrentWeek(null);
   }, [divisions]);
 
   useEffect(() => {
@@ -1257,7 +1261,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     if (!activeSeason) return;
     // Try loading from teams table first, fallback to all standings
     Promise.all([
-      q("teams", "order=elo_rating.desc&limit=500"),
+      q("teams", "order=recrec_elo.desc&limit=500"),
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=calculated_rank`),
     ]).then(([teamsData, standingsData]) => {
       const hasTeamsData = teamsData?.length && teamsData.some(t => (t.all_time_wins || 0) > 0);
@@ -1271,7 +1275,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
             byTeam[s.team_id] = {
               id: s.team_id, name: s.team_name,
               all_time_wins: 0, all_time_losses: 0,
-              elo_rating: 0, championships: 0,
+              elo_rating: 0, championship_count: 0,
               playoff_appearances: 0, seasons_played: 1,
               division_name: s.division_name,
             };
@@ -1311,8 +1315,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         name: teamsRow?.name || sd?.[0]?.team_name || "Unknown",
         all_time_wins: hasTeamsData ? teamsRow.all_time_wins : matchWins,
         all_time_losses: hasTeamsData ? teamsRow.all_time_losses : matchLosses,
-        elo_rating: teamsRow?.elo_rating || null,
-        championships: teamsRow?.championships || 0,
+        elo_rating: teamsRow?.recrec_elo || null,
+        championships: teamsRow?.championship_count || 0,
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
         playoff_appearances: teamsRow?.playoff_appearances || 0,
         _standings: sd || [],
@@ -1333,8 +1337,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       });
     }
     else if (sortBy === "name") t.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    else if (sortBy === "elo") t.sort((a, b) => (b.elo_rating || 0) - (a.elo_rating || 0));
-    else if (sortBy === "champs") t.sort((a, b) => ((b.championships || 0) - (a.championships || 0)) || ((b.all_time_wins || 0) - (a.all_time_wins || 0)));
+    else if (sortBy === "elo") t.sort((a, b) => (b.elo_rating || b.recrec_elo || 0) - (a.elo_rating || a.recrec_elo || 0));
+    else if (sortBy === "champs") t.sort((a, b) => ((b.championship_count || b.championships || 0) - (a.championship_count || a.championships || 0)) || ((b.all_time_wins || 0) - (a.all_time_wins || 0)));
     return t.filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
   }, [teams, sortBy, search]);
 
@@ -1346,7 +1350,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     const winPct = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(1);
     const completed = teamMatches.filter(m => m.status === "completed");
     const upcoming = teamMatches.filter(m => m.status !== "completed");
-    const isChamp = (t.championships || 0) > 0;
+    const isChamp = (t.championships || t.championship_count || 0) > 0;
 
     return (
       <div>
@@ -1361,9 +1365,9 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           </div>
           <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
             <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>{t.name}</h3>
-            {isChamp && <span title={`${t.championships} championship${t.championships > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆</span>}
+            {isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆</span>}
           </div>
-          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{t.elo_rating ? `ELO ${t.elo_rating} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{(t.elo_rating || t.recrec_elo) ? `ELO ${t.elo_rating || t.recrec_elo} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             {[
               ["Wins", t.all_time_wins || 0, C.green],
@@ -1469,7 +1473,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {sorted.slice(0, 50).map(t => {
             const wp = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(0);
-            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "champs" ? `${t.championships || 0} titles` : sortBy === "name" ? (t.division_name || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
+            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating || t.recrec_elo || '—'}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "champs" ? `${t.championship_count || t.championships || 0} titles` : sortBy === "name" ? (t.division_name || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
             return (
               <Card key={t.id} onClick={() => setSelectedId(t.id)} style={{ padding: "14px 18px", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1481,7 +1485,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginLeft: 12 }}>
-                    {(t.championships || 0) > 0 && <Badge color={C.amber}>🏆 {t.championships}</Badge>}
+                    {(t.championship_count || t.championships || 0) > 0 && <Badge color={C.amber}>🏆 {t.championship_count || t.championships}</Badge>}
                     <span style={{ fontFamily: F.m, fontSize: 13, color: C.muted, minWidth: 48, textAlign: "right" }}>{t.all_time_wins || 0}-{t.all_time_losses || 0}</span>
                   </div>
                 </div>
