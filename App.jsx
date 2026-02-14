@@ -1245,7 +1245,7 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
 function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teams, setTeams] = useState([]);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("wins");
+  const [sortBy, setSortBy] = useState("name");
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(initialTeamId || null);
   const [teamDetail, setTeamDetail] = useState(null);
@@ -1255,17 +1255,16 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
   useEffect(() => {
     if (!activeSeason) return;
-    // Try loading from teams table first, fallback to standings
+    // Try loading from teams table first, fallback to all standings
     Promise.all([
       q("teams", "order=elo_rating.desc&limit=500"),
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=calculated_rank`),
     ]).then(([teamsData, standingsData]) => {
       const hasTeamsData = teamsData?.length && teamsData.some(t => (t.all_time_wins || 0) > 0);
       if (hasTeamsData) {
-        // Use teams table (has aggregate stats)
         setTeams(teamsData);
       } else {
-        // Build from standings for current season
+        // Build team list: use current season standings for the list, but show season record
         const byTeam = {};
         (standingsData || []).forEach(s => {
           if (!byTeam[s.team_id]) {
@@ -1274,13 +1273,12 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               all_time_wins: 0, all_time_losses: 0,
               elo_rating: 0, championships: 0,
               playoff_appearances: 0, seasons_played: 1,
-              divisions: [],
+              division_name: s.division_name,
             };
           }
           const t = byTeam[s.team_id];
           t.all_time_wins += (s.wins || 0);
           t.all_time_losses += (s.losses || 0);
-          t.divisions.push(s.division_name);
         });
         setTeams(Object.values(byTeam));
       }
@@ -1365,7 +1363,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
             <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>{t.name}</h3>
             {isChamp && <span title={`${t.championships} championship${t.championships > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆</span>}
           </div>
-          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{t.elo_rating ? `ELO ${t.elo_rating}` : `${t.seasons_played || 1} season${(t.seasons_played || 1) > 1 ? "s" : ""}`}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{t.elo_rating ? `ELO ${t.elo_rating} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             {[
               ["Wins", t.all_time_wins || 0, C.green],
@@ -1457,7 +1455,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["wins", "Wins"], ["winpct", "Win %"], ["name", "A-Z"], ["elo", "ELO"], ["champs", "Titles"]].map(([k, l]) => (
+        {[["name", "A-Z"], ["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"]].map(([k, l]) => (
           <button key={k} onClick={() => setSortBy(k)} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
@@ -1471,7 +1469,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {sorted.slice(0, 50).map(t => {
             const wp = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(0);
-            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "champs" ? `${t.championships || 0} titles` : sortBy === "name" ? (t.divisions?.join(", ") || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
+            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "champs" ? `${t.championships || 0} titles` : sortBy === "name" ? (t.division_name || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
             return (
               <Card key={t.id} onClick={() => setSelectedId(t.id)} style={{ padding: "14px 18px", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
