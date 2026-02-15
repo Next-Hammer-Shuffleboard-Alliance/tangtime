@@ -468,7 +468,7 @@ function Badge({ children, color = C.amber, style }) {
     <span style={{
       display: "inline-flex", alignItems: "center", padding: "3px 9px",
       borderRadius: 20, fontSize: 11, fontWeight: 600, fontFamily: F.m,
-      background: color + "18", color, letterSpacing: 0.3, ...style,
+      background: color + "18", color, letterSpacing: 0.3, whiteSpace: "nowrap", ...style,
     }}>
       {children}
     </span>
@@ -1602,12 +1602,12 @@ function HallOfFamePage({ seasons, goPage }) {
                     borderBottom: i < Math.min(sortedLB.length, 15) - 1 ? `1px solid ${C.border}` : "none",
                     background: "transparent",
                   }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ fontFamily: F.m, fontSize: 14, fontWeight: 800, width: 24, color: C.muted }}>{i + 1}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+                      <span style={{ fontFamily: F.m, fontSize: 14, fontWeight: 800, width: 24, flexShrink: 0, color: C.muted }}>{i + 1}</span>
                       <TeamAvatar name={t.name} size={28} />
-                      <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text }}>{t.name}</span>
+                      <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                     </div>
-                    <Badge color={C.amber}>
+                    <Badge color={C.amber} style={{ flexShrink: 0, marginLeft: 8 }}>
                       {tab === "banquet" ? "🎖️" : tab === "division" ? "🥇" : "🏆"} {t.count}
                     </Badge>
                   </div>
