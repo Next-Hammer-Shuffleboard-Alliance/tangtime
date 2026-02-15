@@ -813,7 +813,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
           </Badge>
         </div>
         <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 18px" }}>Royal Palms Brooklyn</p>
-        <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: 16, justifyContent: "center", alignItems: "baseline" }}>
           <div style={{ textAlign: "center", flex: 1 }}>
             <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 700, color: C.text }}>{teamCount || "96"}</div>
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1.2 }}>Teams</div>
