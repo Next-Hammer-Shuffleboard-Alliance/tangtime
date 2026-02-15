@@ -1552,12 +1552,17 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 // ─── HALL OF FAME ───
 function HallOfFamePage({ seasons, goPage }) {
   const [champs, setChamps] = useState([]);
+  const [playoffData, setPlayoffData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("league");
 
   useEffect(() => {
-    q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name,start_date),divisions(name,day_of_week,level)&order=season_id.desc").then(d => {
-      setChamps(d || []);
+    Promise.all([
+      q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name,start_date),divisions(name,day_of_week,level)&order=season_id.desc"),
+      q("playoff_appearances", "select=*,teams:team_id(name),seasons:season_id(name,start_date)&order=season_id.desc"),
+    ]).then(([cd, pd]) => {
+      setChamps(cd || []);
+      setPlayoffData(pd || []);
       setLoading(false);
     });
   }, []);
@@ -1573,6 +1578,26 @@ function HallOfFamePage({ seasons, goPage }) {
     return db.localeCompare(da);
   });
 
+  // Playoff leaderboard
+  const playoffLB = {};
+  playoffData.forEach(p => {
+    const n = p.teams?.name || "Unknown";
+    if (!playoffLB[n]) playoffLB[n] = { name: n, count: 0, teamId: p.team_id, deepRuns: 0 };
+    playoffLB[n].count++;
+    if (["semifinal", "final", "champion"].includes(p.round_reached)) playoffLB[n].deepRuns++;
+  });
+  const sortedPlayoffLB = Object.values(playoffLB).sort((a, b) => b.count - a.count || b.deepRuns - a.deepRuns);
+
+  // Playoffs by season
+  const playoffsBySeason = {};
+  playoffData.forEach(p => {
+    const sn = p.seasons?.name || "?";
+    const sd = p.seasons?.start_date || "";
+    if (!playoffsBySeason[sn]) playoffsBySeason[sn] = { name: sn, start_date: sd, teams: [] };
+    playoffsBySeason[sn].teams.push(p);
+  });
+  const playoffSeasons = Object.values(playoffsBySeason).sort((a, b) => b.start_date.localeCompare(a.start_date));
+
   const leaderboard = {};
   filtered.forEach(c => {
     const n = c.teams?.name || "Unknown";
@@ -1581,7 +1606,13 @@ function HallOfFamePage({ seasons, goPage }) {
   });
   const sortedLB = Object.values(leaderboard).sort((a, b) => b.count - a.count);
 
-  const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : "Division Champions";
+  const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
+
+  const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Final 4", round_2: "Round 2", round_1: "Round 1" };
+
+  const dataNote = tab === "banquet" ? "Final 4 data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
+    : tab === "playoffs" ? "Playoff data available for Winter 2023 – Spring 2024. Earlier seasons coming soon."
+    : tab === "division" ? "Division champion data coming soon." : null;
 
   return (
     <div>
@@ -1591,9 +1622,9 @@ function HallOfFamePage({ seasons, goPage }) {
       </p>
       <MockBanner />
 
-      {/* Tabs: League, Banquet, Division */}
+      {/* Tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-        {[["league", "🏆 League"], ["banquet", "🎖️ Banquet"], ["division", "🥇 Division"]].map(([k, l]) => (
+        {[["league", "🏆 League"], ["banquet", "🎖️ Banquet"], ["playoffs", "🏅 Playoffs"], ["division", "🥇 Division"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
             background: tab === k ? C.amber : "transparent",
@@ -1603,7 +1634,71 @@ function HallOfFamePage({ seasons, goPage }) {
         ))}
       </div>
 
-      {loading ? <Loader /> : !filtered.length ? (
+      {dataNote && (
+        <Card style={{ padding: "10px 16px", marginBottom: 16, background: C.surfAlt, borderLeft: `3px solid ${C.amber}` }}>
+          <p style={{ fontFamily: F.b, fontSize: 12, color: C.muted, margin: 0 }}>⚠️ {dataNote}</p>
+        </Card>
+      )}
+
+      {loading ? <Loader /> : tab === "playoffs" ? (
+        /* ─── PLAYOFFS TAB ─── */
+        !playoffData.length ? (
+          <Card style={{ textAlign: "center", padding: 32 }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🏅</div>
+            <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>Playoff data coming soon</p>
+          </Card>
+        ) : (
+          <>
+            <SectionTitle right="All-time">Playoff Appearances</SectionTitle>
+            <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+              {sortedPlayoffLB.slice(0, 20).map((t, i) => (
+                <div key={t.name} onClick={() => goPage("teams", { teamId: t.teamId })} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "13px 18px", cursor: "pointer",
+                  borderBottom: i < Math.min(sortedPlayoffLB.length, 20) - 1 ? `1px solid ${C.border}` : "none",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
+                    <span style={{ fontFamily: F.m, fontSize: 14, fontWeight: 800, width: 24, flexShrink: 0, color: C.muted }}>{i + 1}</span>
+                    <TeamAvatar name={t.name} size={28} />
+                    <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                  </div>
+                  <Badge color={C.amber} style={{ flexShrink: 0, marginLeft: 8 }}>🏅 {t.count}</Badge>
+                </div>
+              ))}
+            </Card>
+
+            <SectionTitle>By Season</SectionTitle>
+            {playoffSeasons.map(ps => (
+              <div key={ps.name} style={{ marginBottom: 16 }}>
+                <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8, paddingLeft: 2 }}>
+                  {ps.name} <span style={{ color: C.dim, fontWeight: 500 }}>· {ps.teams.length} teams</span>
+                </div>
+                <Card style={{ padding: 0, overflow: "hidden" }}>
+                  {ps.teams.sort((a, b) => {
+                    const order = { champion: 0, final: 1, semifinal: 2, round_2: 3, round_1: 4 };
+                    return (order[a.round_reached] ?? 5) - (order[b.round_reached] ?? 5);
+                  }).map((p, i) => (
+                    <div key={p.id || i} onClick={() => goPage("teams", { teamId: p.team_id })} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "10px 16px", cursor: "pointer",
+                      borderBottom: i < ps.teams.length - 1 ? `1px solid ${C.border}` : "none",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+                        <TeamAvatar name={p.teams?.name || "?"} size={24} />
+                        <span style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.teams?.name}</span>
+                      </div>
+                      <Badge color={p.round_reached === "champion" ? C.amber : p.round_reached === "final" ? C.text : p.round_reached === "semifinal" ? C.green : C.dim}
+                        style={{ flexShrink: 0, marginLeft: 8, fontSize: 10 }}>
+                        {roundLabel[p.round_reached] || p.round_reached}
+                      </Badge>
+                    </div>
+                  ))}
+                </Card>
+              </div>
+            ))}
+          </>
+        )
+      ) : !filtered.length ? (
         <Card style={{ textAlign: "center", padding: 32 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>{tab === "league" ? "🏆" : tab === "banquet" ? "🎖️" : "🥇"}</div>
           <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>
@@ -1657,6 +1752,7 @@ function HallOfFamePage({ seasons, goPage }) {
             </Card>
           ))}
         </>
+      )}
       )}
       <Footer />
     </div>
