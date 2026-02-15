@@ -1723,7 +1723,6 @@ function HallOfFamePage({ seasons, goPage }) {
           ))}
         </>
       )}
-      )}
       <Footer />
     </div>
   );
