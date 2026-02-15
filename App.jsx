@@ -1534,26 +1534,22 @@ function HallOfFamePage({ seasons, goPage }) {
   const [tab, setTab] = useState("league");
 
   useEffect(() => {
-    q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name),divisions(name,day_of_week,level)&order=season_id.desc").then(d => {
+    q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name,start_date),divisions(name,day_of_week,level)&order=season_id.desc").then(d => {
       setChamps(d || []);
       setLoading(false);
     });
   }, []);
-
-  const seasonOrder = { "Winter": 0, "Spring": 1, "Summer": 2, "Fall": 3 };
-  const seasonSortKey = (name) => {
-    if (!name) return 0;
-    const match = name.match(/(Winter|Spring|Summer|Fall)\s*(\d{4})/i);
-    if (!match) return 0;
-    return -(parseInt(match[2]) * 10 + (seasonOrder[match[1]] || 0));
-  };
 
   const filtered = champs.filter(c => {
     if (tab === "league") return c.type === "league";
     if (tab === "banquet") return c.type === "banquet";
     if (tab === "division") return c.type === "division";
     return true;
-  }).sort((a, b) => seasonSortKey(a.seasons?.name) - seasonSortKey(b.seasons?.name));
+  }).sort((a, b) => {
+    const da = a.seasons?.start_date || "";
+    const db = b.seasons?.start_date || "";
+    return db.localeCompare(da);
+  });
 
   const leaderboard = {};
   filtered.forEach(c => {
@@ -1669,7 +1665,7 @@ export default function TangTime() {
   useEffect(() => {
     Promise.all([
       q("seasons", "order=start_date.desc"),
-      q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name),divisions(name,day_of_week,level)&order=season_id.desc"),
+      q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name,start_date),divisions(name,day_of_week,level)&order=season_id.desc"),
     ]).then(([sd, cd]) => {
       if (sd?.length) {
         setSeasons(sd);
