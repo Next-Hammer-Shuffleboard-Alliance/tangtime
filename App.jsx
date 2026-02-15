@@ -610,51 +610,59 @@ function WeekPills({ totalWeeks = 8, selected, onSelect, currentWeek }) {
 }
 
 // ─── Match Row ───
-function MatchRow({ m, goPage }) {
+function MatchRow({ m, goPage, teamRecords, h2h }) {
   const aWon = m.winner_id === m.team_a_id;
   const bWon = m.winner_id === m.team_b_id;
   const done = m.status === "completed" && m.winner_id;
   const isOT = m.went_to_ot;
+  const recA = teamRecords?.[m.team_a_id];
+  const recB = teamRecords?.[m.team_b_id];
+  const h2hKey = [m.team_a_id, m.team_b_id].sort().join("-");
+  const h2hData = h2h?.[h2hKey];
   return (
     <Card style={{ padding: 0, overflow: "hidden", marginBottom: 8 }}>
-      <div style={{ padding: "14px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ padding: "12px 14px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 0 }}>
+          <div style={{ minWidth: 0 }}>
             <TeamLink name={m.team_a_name} teamId={m.team_a_id} goPage={goPage}
               style={{
-                fontFamily: F.b, fontSize: 14,
+                fontFamily: F.b, fontSize: 13,
                 fontWeight: done && aWon ? 700 : 400,
                 color: done ? (aWon ? C.text : C.muted) : C.text,
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
               }} />
+            {recA && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>({recA.w}-{recA.l})</span>}
           </div>
-          <div style={{ padding: "0 10px", textAlign: "center", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ padding: "0 8px", textAlign: "center", display: "flex", alignItems: "center", gap: 3, justifyContent: "center", minWidth: 56 }}>
             {done ? (<>
-              {aWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
-               <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge>}
-              <span style={{ color: C.dim, fontSize: 11 }}>vs</span>
-              {bWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
-               <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge>}
-              {isOT && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 5px" }}>OT</Badge>}
+              {aWon ? <Badge color={C.green} style={{ fontSize: 8, padding: "2px 5px" }}>W</Badge> :
+               <Badge color={C.red} style={{ fontSize: 8, padding: "2px 5px" }}>L</Badge>}
+              <span style={{ color: C.dim, fontSize: 10 }}>vs</span>
+              {bWon ? <Badge color={C.green} style={{ fontSize: 8, padding: "2px 5px" }}>W</Badge> :
+               <Badge color={C.red} style={{ fontSize: 8, padding: "2px 5px" }}>L</Badge>}
+              {isOT && <Badge color={C.amber} style={{ fontSize: 8, padding: "2px 4px" }}>OT</Badge>}
             </>) : (
               <span style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700 }}>VS</span>
             )}
           </div>
-          <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
+          <div style={{ minWidth: 0, textAlign: "right" }}>
             <TeamLink name={m.team_b_name} teamId={m.team_b_id} goPage={goPage}
               style={{
-                fontFamily: F.b, fontSize: 14,
+                fontFamily: F.b, fontSize: 13,
                 fontWeight: done && bWon ? 700 : 400,
                 color: done ? (bWon ? C.text : C.muted) : C.text,
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
+                textAlign: "right",
               }} />
+            {recB && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>({recB.w}-{recB.l})</span>}
           </div>
         </div>
       </div>
-      <div style={{ display: "flex", justifyContent: "center", gap: 14, padding: "8px 18px", background: C.surfAlt, borderTop: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 14, padding: "7px 14px", background: C.surfAlt, borderTop: `1px solid ${C.border}` }}>
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{fmtDate(m.scheduled_date)}</span>
         {m.scheduled_time && <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{fmtTime(m.scheduled_time)}</span>}
-        {m.court && <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>Court {m.court}</span>}
+        {m.court && <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>Court {String(m.court).replace(/^Court\s*/i, "").replace(/^0+/, "") || m.court}</span>}
+        {!done && h2hData && h2hData.total > 0 && <span style={{ fontFamily: F.m, fontSize: 11, color: C.amber }}>H2H: {h2hData.aWins}-{h2hData.bWins}</span>}
       </div>
     </Card>
   );
@@ -1199,6 +1207,20 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
 
   const filtered = weekFilter ? allMatches.filter(m => m._week === weekFilter) : allMatches;
 
+  // Compute current season records from all matches in this division
+  const teamRecords = useMemo(() => {
+    const rec = {};
+    allMatches.forEach(m => {
+      if (m.status !== "completed" || !m.winner_id) return;
+      [m.team_a_id, m.team_b_id].forEach(tid => {
+        if (!rec[tid]) rec[tid] = { w: 0, l: 0 };
+        if (m.winner_id === tid) rec[tid].w++;
+        else rec[tid].l++;
+      });
+    });
+    return rec;
+  }, [allMatches]);
+
   const byWeek = {};
   filtered.forEach(m => {
     const w = m._week || "?";
@@ -1259,7 +1281,7 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
               {byWeek[wk][0] && <span style={{ color: C.dim, fontWeight: 500 }}>· {fmtDate(byWeek[wk][0].scheduled_date)}</span>}
             </div>
             {byWeek[wk].map((m, i) => (
-              <MatchRow key={m.id || i} m={m} goPage={goPage} />
+              <MatchRow key={m.id || i} m={m} goPage={goPage} teamRecords={teamRecords} />
             ))}
           </div>
         ))
