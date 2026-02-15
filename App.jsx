@@ -813,16 +813,16 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
           </Badge>
         </div>
         <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 18px" }}>Royal Palms Brooklyn</p>
-        <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-          <div style={{ textAlign: "center" }}>
+        <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+          <div style={{ textAlign: "center", flex: 1 }}>
             <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 700, color: C.text }}>{teamCount || "96"}</div>
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1.2 }}>Teams</div>
           </div>
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", flex: 1 }}>
             <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 700, color: C.text }}>{divisions?.length || 0}</div>
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1.2 }}>Divisions</div>
           </div>
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", flex: 1 }}>
             <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 700, color: C.amber }}>{completedCount}</div>
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1.2 }}>Matches</div>
           </div>
