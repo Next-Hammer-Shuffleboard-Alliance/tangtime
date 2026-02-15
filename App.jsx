@@ -946,13 +946,13 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
           <SectionTitle right="All-time">Top Teams</SectionTitle>
           {topTeams.filter(t => (t.championship_count || t.championships) > 0).slice(0, 8).map((t, i) => (
             <Card key={t.id} onClick={() => goPage("teams", { teamId: t.id })}
-              style={{ padding: "12px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim, width: 18 }}>{i + 1}</span>
+              style={{ padding: "12px 14px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+                <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim, width: 18, flexShrink: 0 }}>{i + 1}</span>
                 <TeamAvatar name={t.name} size={28} />
-                <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text }}>{t.name}</span>
+                <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
               </div>
-              <Badge color={C.amber}>🏆 {t.championship_count || t.championships}</Badge>
+              <Badge color={C.amber} style={{ flexShrink: 0, marginLeft: 8 }}>🏆 {t.championship_count || t.championships}</Badge>
             </Card>
           ))}
         </div>
@@ -991,8 +991,32 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
   useEffect(() => {
     if (!divId) return;
     setLoading(true);
-    q("division_standings", `division_id=eq.${divId}&order=calculated_rank`).then(d => {
-      setStandings(d || []);
+    Promise.all([
+      q("division_standings", `division_id=eq.${divId}&order=calculated_rank`),
+      q("matches", `division_id=eq.${divId}&status=eq.completed&winner_id=not.is.null&order=scheduled_date.desc,scheduled_time.desc`),
+    ]).then(([d, matches]) => {
+      // Compute streaks from matches if not in standings view
+      const streakMap = {};
+      if (matches?.length) {
+        const teamIds = [...new Set((d || []).map(s => s.team_id))];
+        teamIds.forEach(tid => {
+          const teamMatches = matches.filter(m => m.team_a_id === tid || m.team_b_id === tid);
+          let streak = 0, type = "";
+          for (const m of teamMatches) {
+            const won = m.winner_id === tid;
+            const thisType = won ? "W" : "L";
+            if (!type) { type = thisType; streak = 1; }
+            else if (thisType === type) streak++;
+            else break;
+          }
+          if (type) streakMap[tid] = `${type}${streak}`;
+        });
+      }
+      const enriched = (d || []).map(s => ({
+        ...s,
+        streak: s.streak || s.current_streak || streakMap[s.team_id] || null,
+      }));
+      setStandings(enriched);
       setLoading(false);
     });
   }, [divId]);
@@ -1249,7 +1273,7 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
 function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teams, setTeams] = useState([]);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("name");
+  const [sortBy, setSortBy] = useState("wins");
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(initialTeamId || null);
   const [teamDetail, setTeamDetail] = useState(null);
@@ -1365,7 +1389,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           </div>
           <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
             <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>{t.name}</h3>
-            {isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆</span>}
+            {isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆{(t.championships || t.championship_count) > 1 ? ` x${t.championships || t.championship_count}` : ""}</span>}
           </div>
           <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{(t.elo_rating || t.recrec_elo) ? `ELO ${t.elo_rating || t.recrec_elo} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
@@ -1459,7 +1483,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["name", "A-Z"], ["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"]].map(([k, l]) => (
+        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", "A-Z"]].map(([k, l]) => (
           <button key={k} onClick={() => setSortBy(k)} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
@@ -1516,12 +1540,20 @@ function HallOfFamePage({ seasons, goPage }) {
     });
   }, []);
 
+  const seasonOrder = { "Winter": 0, "Spring": 1, "Summer": 2, "Fall": 3 };
+  const seasonSortKey = (name) => {
+    if (!name) return 0;
+    const match = name.match(/(Winter|Spring|Summer|Fall)\s*(\d{4})/i);
+    if (!match) return 0;
+    return -(parseInt(match[2]) * 10 + (seasonOrder[match[1]] || 0));
+  };
+
   const filtered = champs.filter(c => {
-    if (tab === "league") return !c.type || c.type === "league";
+    if (tab === "league") return c.type === "league";
     if (tab === "banquet") return c.type === "banquet";
     if (tab === "division") return c.type === "division";
     return true;
-  });
+  }).sort((a, b) => seasonSortKey(a.seasons?.name) - seasonSortKey(b.seasons?.name));
 
   const leaderboard = {};
   filtered.forEach(c => {
