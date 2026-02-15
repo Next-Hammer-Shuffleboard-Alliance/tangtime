@@ -1510,7 +1510,7 @@ function HallOfFamePage({ seasons, goPage }) {
   const [tab, setTab] = useState("league");
 
   useEffect(() => {
-    q("championships", "select=*,teams(name),seasons(name),divisions(name,day_of_week,level)&order=season_id.desc").then(d => {
+    q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name),divisions(name,day_of_week,level)&order=season_id.desc").then(d => {
       setChamps(d || []);
       setLoading(false);
     });
@@ -1637,7 +1637,7 @@ export default function TangTime() {
   useEffect(() => {
     Promise.all([
       q("seasons", "order=start_date.desc"),
-      q("championships", "select=*,teams(name),seasons(name),divisions(name,day_of_week,level)&order=season_id.desc"),
+      q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name),divisions(name,day_of_week,level)&order=season_id.desc"),
     ]).then(([sd, cd]) => {
       if (sd?.length) {
         setSeasons(sd);
