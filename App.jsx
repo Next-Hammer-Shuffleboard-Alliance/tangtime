@@ -1666,36 +1666,6 @@ function HallOfFamePage({ seasons, goPage }) {
                 </div>
               ))}
             </Card>
-
-            <SectionTitle>By Season</SectionTitle>
-            {playoffSeasons.map(ps => (
-              <div key={ps.name} style={{ marginBottom: 16 }}>
-                <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8, paddingLeft: 2 }}>
-                  {ps.name} <span style={{ color: C.dim, fontWeight: 500 }}>· {ps.teams.length} teams</span>
-                </div>
-                <Card style={{ padding: 0, overflow: "hidden" }}>
-                  {ps.teams.sort((a, b) => {
-                    const order = { champion: 0, final: 1, semifinal: 2, round_2: 3, round_1: 4 };
-                    return (order[a.round_reached] ?? 5) - (order[b.round_reached] ?? 5);
-                  }).map((p, i) => (
-                    <div key={p.id || i} onClick={() => goPage("teams", { teamId: p.team_id })} style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "10px 16px", cursor: "pointer",
-                      borderBottom: i < ps.teams.length - 1 ? `1px solid ${C.border}` : "none",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
-                        <TeamAvatar name={p.teams?.name || "?"} size={24} />
-                        <span style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.teams?.name}</span>
-                      </div>
-                      <Badge color={p.round_reached === "champion" ? C.amber : p.round_reached === "final" ? C.text : p.round_reached === "semifinal" ? C.green : C.dim}
-                        style={{ flexShrink: 0, marginLeft: 8, fontSize: 10 }}>
-                        {roundLabel[p.round_reached] || p.round_reached}
-                      </Badge>
-                    </div>
-                  ))}
-                </Card>
-              </div>
-            ))}
           </>
         )
       ) : !filtered.length ? (
