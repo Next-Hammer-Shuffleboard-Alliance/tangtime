@@ -73,7 +73,12 @@ function hashStr(s) {
 function computeRanks(standings) {
   if (!standings.length) return [];
   const sorted = [...standings].sort((a, b) => {
-    return b.wins !== a.wins ? b.wins - a.wins : a.losses - b.losses;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (a.losses !== b.losses) return a.losses - b.losses;
+    // Tiebreaker: playoff team ranks higher
+    if (a.playoffRound && !b.playoffRound) return -1;
+    if (!a.playoffRound && b.playoffRound) return 1;
+    return 0;
   });
   let rank = 1;
   return sorted.map((t, i) => {
@@ -1084,7 +1089,9 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
         })}
       </div>
 
-      {loading ? <Loader /> : !rows.length ? <Empty msg="No standings data" /> : (
+      {loading ? <Loader /> : !rows.length ? <Empty msg="No standings data" /> : (() => {
+        const hasPlayoffData = rows.some(t => t.playoffRound);
+        return (
         <div style={{ position: "relative" }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <Card style={{ padding: 0, overflow: "hidden", minWidth: 380 }}>
@@ -1100,23 +1107,28 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
               }}>{h}</span>
             ))}
           </div>
-          {rows.map((t, i) => (
+          {rows.map((t, i) => {
+            const isPlayoff = hasPlayoffData ? !!t.playoffRound : t.displayRank <= 5;
+            const lastPlayoff = hasPlayoffData
+              ? rows.reduce((last, r, j) => r.playoffRound ? j : last, -1)
+              : rows.reduce((last, r, j) => r.displayRank <= 5 ? j : last, -1);
+            return (
             <div key={t.team_id || i} onClick={() => goPage("teams", { teamId: t.team_id })} style={{
               display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
               alignItems: "center", padding: "12px 12px", cursor: "pointer",
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
-              background: t.displayRank <= 5 ? C.amberGlow : "transparent", position: "relative",
+              background: isPlayoff ? C.amberGlow : "transparent", position: "relative",
             }}>
-              {t.displayRank === 5 && i < rows.length - 1 && (
+              {i === lastPlayoff && i < rows.length - 1 && (
                 <div style={{ position: "absolute", bottom: 0, left: 14, right: 14, height: 1, background: `repeating-linear-gradient(90deg, ${C.amber}50, ${C.amber}50 4px, transparent 4px, transparent 8px)` }} />
               )}
-              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: t.displayRank <= 5 ? C.amber : C.dim }}>{t.rankLabel}</span>
+              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: isPlayoff ? C.amber : C.dim }}>{t.rankLabel}</span>
               <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.team_name}</span>
                 {t.playoffRound && (
-                  <span style={{ fontSize: 8, flexShrink: 0, padding: "1px 4px", borderRadius: 3, fontFamily: F.m, fontWeight: 700, letterSpacing: 0.5,
-                    background: t.playoffRound === "champion" ? C.amber + "30" : C.border,
-                    color: t.playoffRound === "champion" ? C.amber : C.muted,
+                  <span style={{ fontSize: 9, flexShrink: 0, padding: "2px 5px", borderRadius: 4, fontFamily: F.m, fontWeight: 700, letterSpacing: 0.5,
+                    background: C.amber + "25",
+                    color: C.amber,
                   }}>{t.playoffRound === "champion" ? "🏆" : t.playoffRound === "final" ? "🥈" : "☆"}</span>
                 )}</div>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, fontWeight: 700, color: C.green }}>{t.wins}</span>
@@ -1131,17 +1143,17 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                 {(t.ot_wins || 0) + (t.ot_losses || 0) > 0 ? `${t.ot_wins}-${t.ot_losses}` : "—"}
               </span>
             </div>
-          ))}
+          )})}
         </Card>
         </div>
         <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 32, background: `linear-gradient(90deg, transparent, ${C.bg}cc)`, pointerEvents: "none", borderRadius: "0 14px 14px 0" }} />
         </div>
-      )}
+      )})()}
 
       <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 12, height: 12, borderRadius: 3, background: C.amberGlow, border: `1px solid ${C.amber}30` }} />
-          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff (Top 5)</span>
+          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ width: 12, height: 2, background: `repeating-linear-gradient(90deg, ${C.amber}60, ${C.amber}60 3px, transparent 3px, transparent 6px)` }} />
