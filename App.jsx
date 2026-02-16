@@ -1108,28 +1108,24 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             ))}
           </div>
           {rows.map((t, i) => {
-            const isPlayoff = hasPlayoffData ? !!t.playoffRound : t.displayRank <= 5;
-            const lastPlayoff = hasPlayoffData
-              ? rows.reduce((last, r, j) => r.playoffRound ? j : last, -1)
-              : rows.reduce((last, r, j) => r.displayRank <= 5 ? j : last, -1);
+            const useTop5 = !hasPlayoffData;
+            const isTop5 = t.displayRank <= 5;
+            const lastTop5Idx = useTop5 ? rows.reduce((last, r, j) => r.displayRank <= 5 ? j : last, -1) : -1;
             return (
             <div key={t.team_id || i} onClick={() => goPage("teams", { teamId: t.team_id })} style={{
               display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
               alignItems: "center", padding: "12px 12px", cursor: "pointer",
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
-              background: isPlayoff ? C.amberGlow : "transparent", position: "relative",
+              background: useTop5 && isTop5 ? C.amberGlow : "transparent", position: "relative",
             }}>
-              {i === lastPlayoff && i < rows.length - 1 && (
+              {useTop5 && i === lastTop5Idx && i < rows.length - 1 && (
                 <div style={{ position: "absolute", bottom: 0, left: 14, right: 14, height: 1, background: `repeating-linear-gradient(90deg, ${C.amber}50, ${C.amber}50 4px, transparent 4px, transparent 8px)` }} />
               )}
-              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: isPlayoff ? C.amber : C.dim }}>{t.rankLabel}</span>
+              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: useTop5 && isTop5 ? C.amber : C.dim }}>{t.rankLabel}</span>
               <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.team_name}</span>
                 {t.playoffRound && (
-                  <span style={{ fontSize: 9, flexShrink: 0, padding: "2px 5px", borderRadius: 4, fontFamily: F.m, fontWeight: 700, letterSpacing: 0.5,
-                    background: C.amber + "25",
-                    color: C.amber,
-                  }}>{t.playoffRound === "champion" ? "🏆" : t.playoffRound === "final" ? "🥈" : "☆"}</span>
+                  <span style={{ fontSize: 10, flexShrink: 0, color: C.amber }}>☆</span>
                 )}</div>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, fontWeight: 700, color: C.green }}>{t.wins}</span>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, color: C.red }}>{t.losses}</span>
