@@ -1442,7 +1442,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         </Card>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["results", "Results"], ["roster", "Roster"], ["schedule", "Schedule"], ["history", "History"]].map(([k, l]) => (
+          {[["results", "Results"], ["schedule", "Schedule"], ["history", "History"], ["roster", "Roster"]].map(([k, l]) => (
             <button key={k} onClick={() => setProfileTab(k)} style={{
               flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
               background: profileTab === k ? C.amber : "transparent",
