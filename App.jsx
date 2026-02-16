@@ -1147,14 +1147,21 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       )})()}
 
       <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 12, height: 12, borderRadius: 3, background: C.amberGlow, border: `1px solid ${C.amber}30` }} />
-          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 12, height: 2, background: `repeating-linear-gradient(90deg, ${C.amber}60, ${C.amber}60 3px, transparent 3px, transparent 6px)` }} />
-          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Cutline</span>
-        </div>
+        {rows.some(t => t.playoffRound) ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: C.amber }}>☆</span>
+            <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Qualified for Playoffs</span>
+          </div>
+        ) : (<>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: C.amberGlow, border: `1px solid ${C.amber}30` }} />
+            <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 12, height: 2, background: `repeating-linear-gradient(90deg, ${C.amber}60, ${C.amber}60 3px, transparent 3px, transparent 6px)` }} />
+            <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Cutline</span>
+          </div>
+        </>)}
       </div>
       <Footer />
     </div>
