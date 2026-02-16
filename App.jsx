@@ -1002,7 +1002,10 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
     Promise.all([
       q("division_standings", `division_id=eq.${divId}&order=calculated_rank`),
       q("matches", `division_id=eq.${divId}&status=eq.completed&winner_id=not.is.null&order=scheduled_date.desc,scheduled_time.desc`),
-    ]).then(([d, matches]) => {
+      activeSeason?.id ? q("playoff_appearances", `season_id=eq.${activeSeason.id}`) : Promise.resolve([]),
+    ]).then(([d, matches, playoffData]) => {
+      const playoffMap = {};
+      (playoffData || []).forEach(p => { playoffMap[p.team_id] = p.round_reached; });
       // Compute streaks from matches if not in standings view
       const streakMap = {};
       if (matches?.length) {
@@ -1023,6 +1026,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       const enriched = (d || []).map(s => ({
         ...s,
         streak: s.streak || s.current_streak || streakMap[s.team_id] || null,
+        playoffRound: playoffMap[s.team_id] || null,
       }));
       setStandings(enriched);
       setLoading(false);
@@ -1107,7 +1111,14 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                 <div style={{ position: "absolute", bottom: 0, left: 14, right: 14, height: 1, background: `repeating-linear-gradient(90deg, ${C.amber}50, ${C.amber}50 4px, transparent 4px, transparent 8px)` }} />
               )}
               <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: t.displayRank <= 5 ? C.amber : C.dim }}>{t.rankLabel}</span>
-              <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>{t.team_name}</div>
+              <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.team_name}</span>
+                {t.playoffRound && (
+                  <span style={{ fontSize: 8, flexShrink: 0, padding: "1px 4px", borderRadius: 3, fontFamily: F.m, fontWeight: 700, letterSpacing: 0.5,
+                    background: t.playoffRound === "champion" ? C.amber + "30" : C.border,
+                    color: t.playoffRound === "champion" ? C.amber : C.muted,
+                  }}>{t.playoffRound === "champion" ? "🏆" : t.playoffRound === "final" ? "🥈" : "☆"}</span>
+                )}</div>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, fontWeight: 700, color: C.green }}>{t.wins}</span>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, color: C.red }}>{t.losses}</span>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.muted }}>{t.gb}</span>
@@ -1431,7 +1442,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         </Card>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["results", "Results"], ["schedule", "Schedule"], ["history", "History"]].map(([k, l]) => (
+          {[["results", "Results"], ["roster", "Roster"], ["schedule", "Schedule"], ["history", "History"]].map(([k, l]) => (
             <button key={k} onClick={() => setProfileTab(k)} style={{
               flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
               background: profileTab === k ? C.amber : "transparent",
@@ -1444,6 +1455,16 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         {profileTab === "results" && (
           !completed.length ? <Empty msg="No match history" /> :
           completed.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)
+        )}
+
+        {profileTab === "roster" && (
+          <Card style={{ padding: "24px 16px", textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
+            <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>Roster</div>
+            <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>
+              Roster info coming soon.<br />Captains will be able to add their team members here.
+            </p>
+          </Card>
         )}
 
         {profileTab === "schedule" && (
