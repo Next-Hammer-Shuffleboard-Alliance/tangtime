@@ -1886,7 +1886,7 @@ function HallOfFamePage({ seasons, goPage }) {
   });
   const sortedLB = Object.values(leaderboard).sort((a, b) => b.count - a.count);
 
-  const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
+  const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
 
   const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Banquet", round_2: "Round 2", round_1: "Round 1" };
 
