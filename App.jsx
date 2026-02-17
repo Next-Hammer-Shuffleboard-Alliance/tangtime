@@ -1493,7 +1493,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               </div>
             ))}
           </div>
-          <div style={{ fontFamily: F.b, fontSize: 10, color: C.dim, textAlign: "center", marginTop: 10 }}>*Playoff data is incomplete for some seasons</div>
+          <div style={{ fontFamily: F.b, fontSize: 10, color: C.dim, textAlign: "center", marginTop: 10 }}>*Playoff data is currently incomplete</div>
         </Card>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
