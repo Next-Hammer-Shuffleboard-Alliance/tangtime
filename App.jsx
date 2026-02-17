@@ -1451,7 +1451,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       else if (month <= 8) s = `Summer ${year}`;
       else s = `Fall ${year}`;
       return s === seasonName;
-    });
+    }).sort((a, b) => (b.scheduled_date || "").localeCompare(a.scheduled_date || ""));
     const currentUpcoming = upcoming.filter(m => {
       const year = m.scheduled_date?.slice(0, 4) || "?";
       const month = +(m.scheduled_date?.slice(5, 7) || 0);
@@ -1461,7 +1461,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       else if (month <= 8) s = `Summer ${year}`;
       else s = `Fall ${year}`;
       return s === seasonName;
-    });
+    }).sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
     const isChamp = (t.championships || t.championship_count || 0) > 0;
 
     return (
