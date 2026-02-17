@@ -1440,6 +1440,28 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     const winPct = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(1);
     const completed = teamMatches.filter(m => m.status === "completed");
     const upcoming = teamMatches.filter(m => m.status !== "completed");
+    // Current season matches only for Matches tab
+    const seasonName = activeSeason?.name || "";
+    const currentCompleted = completed.filter(m => {
+      const year = m.scheduled_date?.slice(0, 4) || "?";
+      const month = +(m.scheduled_date?.slice(5, 7) || 0);
+      let s;
+      if (month <= 3) s = `Winter ${year}`;
+      else if (month <= 5) s = `Spring ${year}`;
+      else if (month <= 8) s = `Summer ${year}`;
+      else s = `Fall ${year}`;
+      return s === seasonName;
+    });
+    const currentUpcoming = upcoming.filter(m => {
+      const year = m.scheduled_date?.slice(0, 4) || "?";
+      const month = +(m.scheduled_date?.slice(5, 7) || 0);
+      let s;
+      if (month <= 3) s = `Winter ${year}`;
+      else if (month <= 5) s = `Spring ${year}`;
+      else if (month <= 8) s = `Summer ${year}`;
+      else s = `Fall ${year}`;
+      return s === seasonName;
+    });
     const isChamp = (t.championships || t.championship_count || 0) > 0;
 
     return (
@@ -1463,7 +1485,6 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               ["Wins", t.all_time_wins || 0, C.green],
               ["Losses", t.all_time_losses || 0, C.red],
               ["Win %", `${winPct}%`, C.text],
-              ["Seasons", t.seasons_played || "—", C.text],
               ["Playoffs", t.playoff_appearances || 0, C.amber],
             ].map(([l, v, c]) => (
               <div key={l} style={{ textAlign: "center", minWidth: 48 }}>
@@ -1487,19 +1508,19 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
         {profileTab === "matches" && (
           <div>
-            {upcoming.length > 0 && (
+            {currentUpcoming.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Upcoming</div>
-                {upcoming.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)}
+                {currentUpcoming.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)}
               </div>
             )}
-            {completed.length > 0 && (
+            {currentCompleted.length > 0 && (
               <div>
                 <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Results</div>
-                {completed.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)}
+                {currentCompleted.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)}
               </div>
             )}
-            {!upcoming.length && !completed.length && <Empty msg="No matches found" />}
+            {!currentUpcoming.length && !currentCompleted.length && <Empty msg="No matches this season" />}
           </div>
         )}
 
