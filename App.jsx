@@ -1524,15 +1524,65 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           </div>
         )}
 
-        {profileTab === "stats" && (
-          <Card style={{ padding: "24px 16px", textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-            <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>Team Stats</div>
-            <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>
-              Head-to-head records, court win rates, and more coming soon.
-            </p>
-          </Card>
-        )}
+        {profileTab === "stats" && (() => {
+          const allIds = t._allTeamIds || [selectedId];
+          const courtStats = {};
+          completed.forEach(m => {
+            if (!m.court) return;
+            const ct = String(m.court).replace(/^Court\s*/i, "").replace(/^0+/, "") || m.court;
+            if (!courtStats[ct]) courtStats[ct] = { wins: 0, losses: 0 };
+            const isWin = allIds.includes(m.winner_id);
+            const isLoss = m.winner_id && !allIds.includes(m.winner_id) && (allIds.includes(m.team_a_id) || allIds.includes(m.team_b_id));
+            if (isWin) courtStats[ct].wins++;
+            else if (isLoss) courtStats[ct].losses++;
+          });
+          const courts = Object.entries(courtStats)
+            .map(([ct, s]) => ({ court: ct, ...s, total: s.wins + s.losses, pct: s.wins / Math.max(s.wins + s.losses, 1) }))
+            .sort((a, b) => +a.court - +b.court);
+
+          return (
+            <div>
+              {courts.length > 0 ? (
+                <Card style={{ padding: "16px 18px" }}>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Court Win Rates</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {courts.map(c => (
+                      <div key={c.court}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                          <span style={{ fontFamily: F.m, fontSize: 12, color: C.text }}>Court {c.court}</span>
+                          <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
+                            {c.wins}W-{c.losses}L
+                            <span style={{ color: c.pct >= 0.6 ? C.green : c.pct <= 0.4 ? C.red : C.text, fontWeight: 700, marginLeft: 6 }}>
+                              {(c.pct * 100).toFixed(0)}%
+                            </span>
+                          </span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: C.surfAlt, overflow: "hidden" }}>
+                          <div style={{
+                            height: "100%", borderRadius: 3,
+                            width: `${c.pct * 100}%`,
+                            background: c.pct >= 0.6 ? C.green : c.pct <= 0.4 ? C.red : C.amber,
+                            transition: "width 0.3s",
+                          }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ) : (
+                <Empty msg="No court data available" />
+              )}
+
+              <Card style={{ padding: "24px 16px", textAlign: "center", marginTop: 16 }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+                <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>More Stats</div>
+                <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>
+                  Head-to-head records and more coming soon.
+                </p>
+              </Card>
+            </div>
+          );
+        })()}
 
         {profileTab === "roster" && (
           <Card style={{ padding: "24px 16px", textAlign: "center" }}>
