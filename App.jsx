@@ -539,7 +539,7 @@ function TeamLink({ name, teamId, goPage, style }) {
 // ─── Division Pills ───
 function DivisionPills({ divisions, selected, onSelect }) {
   const grouped = {};
-  const sorted = [...(divisions || [])].sort((a, b) =>
+  const sorted = [...(divisions || [])].filter(d => d.level !== "party").sort((a, b) =>
     (dayOrder[a.day_of_week] ?? 9) - (dayOrder[b.day_of_week] ?? 9) ||
     (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9)
   );
@@ -1127,7 +1127,12 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
               <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.team_name}</span>
                 {t.playoffRound && (
-                  <span style={{ fontSize: 10, flexShrink: 0, color: C.amber }}>☆</span>
+                  <span style={{ fontSize: 10, flexShrink: 0 }}>{
+                    t.playoffRound === "champion" ? "🏆" :
+                    t.playoffRound === "final" ? "🥈" :
+                    t.playoffRound === "semifinal" ? "🎖️" :
+                    "☆"
+                  }</span>
                 )}</div>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, fontWeight: 700, color: C.green }}>{t.wins}</span>
               <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 13, color: C.red }}>{t.losses}</span>
@@ -1150,9 +1155,23 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
 
       <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
         {rows.some(t => t.playoffRound) ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10, color: C.amber }}>☆</span>
-            <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Qualified for Playoffs</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            {rows.some(t => t.playoffRound === "champion") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10 }}>🏆</span>
+              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Champion</span>
+            </div>}
+            {rows.some(t => t.playoffRound === "final") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10 }}>🥈</span>
+              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Runner-up</span>
+            </div>}
+            {rows.some(t => t.playoffRound === "semifinal") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10 }}>🎖️</span>
+              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Final Four</span>
+            </div>}
+            {rows.some(t => t.playoffRound === "round_1") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10, color: C.amber }}>☆</span>
+              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoffs</span>
+            </div>}
           </div>
         ) : (<>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2027,7 +2046,7 @@ export default function TangTime() {
   useEffect(() => {
     if (!selectedSeason) return;
     q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level`).then(d => {
-      setDivisions(d || []);
+      setDivisions((d || []).filter(div => div.level !== "party"));
     });
   }, [selectedSeason]);
 
