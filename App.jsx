@@ -1327,7 +1327,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teamDetail, setTeamDetail] = useState(null);
   const [teamMatches, setTeamMatches] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [profileTab, setProfileTab] = useState("results");
+  const [profileTab, setProfileTab] = useState("matches");
 
   useEffect(() => {
     if (!activeSeason) return;
@@ -1367,7 +1367,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   useEffect(() => {
     if (!selectedId) { setTeamDetail(null); return; }
     setDetailLoading(true);
-    setProfileTab("results");
+    setProfileTab("matches");
     Promise.all([
       q("teams", `id=eq.${selectedId}`),
       q("division_standings", `team_id=eq.${selectedId}&order=season_name.desc`),
@@ -1475,7 +1475,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         </Card>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["results", "Results"], ["schedule", "Schedule"], ["history", "History"], ["roster", "Roster"]].map(([k, l]) => (
+          {[["matches", "Matches"], ["history", "History"], ["stats", "Stats"], ["roster", "Roster"]].map(([k, l]) => (
             <button key={k} onClick={() => setProfileTab(k)} style={{
               flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
               background: profileTab === k ? C.amber : "transparent",
@@ -1485,9 +1485,32 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           ))}
         </div>
 
-        {profileTab === "results" && (
-          !completed.length ? <Empty msg="No match history" /> :
-          completed.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)
+        {profileTab === "matches" && (
+          <div>
+            {upcoming.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Upcoming</div>
+                {upcoming.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)}
+              </div>
+            )}
+            {completed.length > 0 && (
+              <div>
+                <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Results</div>
+                {completed.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)}
+              </div>
+            )}
+            {!upcoming.length && !completed.length && <Empty msg="No matches found" />}
+          </div>
+        )}
+
+        {profileTab === "stats" && (
+          <Card style={{ padding: "24px 16px", textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+            <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>Team Stats</div>
+            <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>
+              Head-to-head records, court win rates, and more coming soon.
+            </p>
+          </Card>
         )}
 
         {profileTab === "roster" && (
@@ -1500,15 +1523,13 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           </Card>
         )}
 
-        {profileTab === "schedule" && (
-          !upcoming.length ? <Empty msg="No upcoming matches" /> :
-          upcoming.map((m, i) => <MatchRow key={m.id || i} m={m} goPage={goPage} />)
-        )}
-
         {profileTab === "history" && (
           <div>
             <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 12px" }}>All match results across seasons</p>
             {!completed.length ? <Empty msg="No historical matches" /> : (() => {
+              const allIds = t._allTeamIds || [selectedId];
+              const standingsMap = {};
+              (t._standings || []).forEach(s => { standingsMap[s.season_name] = s; });
               const byDate = {};
               completed.forEach(m => {
                 const year = m.scheduled_date?.slice(0, 4) || "?";
@@ -1521,18 +1542,31 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                 if (!byDate[season]) byDate[season] = [];
                 byDate[season].push(m);
               });
-              return Object.entries(byDate).map(([season, matches]) => (
+              return Object.entries(byDate).map(([season, matches]) => {
+                const st = standingsMap[season];
+                const wins = matches.filter(m2 => allIds.includes(m2.winner_id) || (allIds.includes(m2.team_a_id) && m2.team_a_match_wins > m2.team_b_match_wins) || (allIds.includes(m2.team_b_id) && m2.team_b_match_wins > m2.team_a_match_wins)).length;
+                const losses = matches.filter(m2 => m2.winner_id && !allIds.includes(m2.winner_id) && (allIds.includes(m2.team_a_id) || allIds.includes(m2.team_b_id))).length;
+                // Check if this season was played under an alias name
+                const aliasName = matches.reduce((found, m) => {
+                  if (found) return found;
+                  const aId = allIds.find(id => id !== selectedId && (m.team_a_id === id || m.team_b_id === id));
+                  if (aId) return m.team_a_id === aId ? m.team_a_name : m.team_b_name;
+                  return null;
+                }, null);
+                return (
                 <div key={season} style={{ marginBottom: 20 }}>
-                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
                     {season}
-                    <span style={{ color: C.dim, fontWeight: 500, marginLeft: 8 }}>
-                      {(() => { const ids = t._allTeamIds || [selectedId]; return matches.filter(m2 => ids.includes(m2.winner_id) || (ids.includes(m2.team_a_id) && m2.team_a_match_wins > m2.team_b_match_wins) || (ids.includes(m2.team_b_id) && m2.team_b_match_wins > m2.team_a_match_wins)).length; })()}W-
-                      {(() => { const ids = t._allTeamIds || [selectedId]; return matches.filter(m2 => m2.winner_id && !ids.includes(m2.winner_id) && (ids.includes(m2.team_a_id) || ids.includes(m2.team_b_id))).length; })()}L
-                    </span>
+                    <span style={{ color: C.dim, fontWeight: 500, marginLeft: 8 }}>{wins}W-{losses}L</span>
+                    {st?.division_name && <span style={{ color: C.dim, fontWeight: 400, marginLeft: 8 }}>{st.division_name}</span>}
                   </div>
+                  {aliasName && aliasName !== t.name && (
+                    <div style={{ fontFamily: F.b, fontSize: 11, color: C.dim, fontStyle: "italic", marginBottom: 6 }}>as {aliasName}</div>
+                  )}
                   {matches.map((m2, i) => <MatchRow key={m2.id || i} m={m2} goPage={goPage} />)}
                 </div>
-              ));
+                );
+              });
             })()}
           </div>
         )}
