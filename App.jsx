@@ -1485,7 +1485,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               ["Wins", t.all_time_wins || 0, C.green],
               ["Losses", t.all_time_losses || 0, C.red],
               ["Win %", `${winPct}%`, C.text],
-              ["Playoffs", t.playoff_appearances || 0, C.amber],
+              ["Playoffs*", t.playoff_appearances || 0, C.amber],
             ].map(([l, v, c]) => (
               <div key={l} style={{ textAlign: "center", minWidth: 48 }}>
                 <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color: c }}>{v}</div>
@@ -1493,6 +1493,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               </div>
             ))}
           </div>
+          <div style={{ fontFamily: F.b, fontSize: 10, color: C.dim, textAlign: "center", marginTop: 10 }}>*Playoff data is incomplete for some seasons</div>
         </Card>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
