@@ -1526,15 +1526,57 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
         {profileTab === "stats" && (() => {
           const allIds = t._allTeamIds || [selectedId];
+
+          // ── H2H records ──
+          const h2h = {};
+          completed.forEach(m => {
+            const isTeamA = allIds.includes(m.team_a_id);
+            const isTeamB = allIds.includes(m.team_b_id);
+            if (!isTeamA && !isTeamB) return;
+            const oppId = isTeamA ? m.team_b_id : m.team_a_id;
+            const oppName = isTeamA ? m.team_b_name : m.team_a_name;
+            if (!oppId) return;
+            if (!h2h[oppId]) h2h[oppId] = { name: oppName, wins: 0, losses: 0 };
+            h2h[oppId].name = oppName;
+            if (allIds.includes(m.winner_id)) h2h[oppId].wins++;
+            else if (m.winner_id) h2h[oppId].losses++;
+          });
+          const opponents = Object.entries(h2h)
+            .map(([id, s]) => ({ id, ...s, total: s.wins + s.losses, pct: s.wins / Math.max(s.wins + s.losses, 1) }))
+            .filter(o => o.total > 0)
+            .sort((a, b) => b.total - a.total || b.pct - a.pct);
+
+          // ── Streaks ──
+          const sortedMatches = [...completed].sort((a, b) => (b.scheduled_date || "").localeCompare(a.scheduled_date || ""));
+          let currentStreak = 0, streakType = null;
+          for (const m of sortedMatches) {
+            const won = allIds.includes(m.winner_id);
+            const lost = m.winner_id && !allIds.includes(m.winner_id);
+            if (!won && !lost) continue;
+            const thisType = won ? "W" : "L";
+            if (!streakType) { streakType = thisType; currentStreak = 1; }
+            else if (thisType === streakType) currentStreak++;
+            else break;
+          }
+          let longestWin = 0, run = 0;
+          for (const m of [...completed].sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""))) {
+            if (allIds.includes(m.winner_id)) { run++; if (run > longestWin) longestWin = run; }
+            else if (m.winner_id) run = 0;
+          }
+
+          // ── Best/worst opponents (min 2 meetings) ──
+          const qualified = opponents.filter(o => o.total >= 2);
+          const best = qualified.length ? qualified.reduce((a, b) => a.pct > b.pct || (a.pct === b.pct && a.total > b.total) ? a : b) : null;
+          const worst = qualified.length ? qualified.reduce((a, b) => a.pct < b.pct || (a.pct === b.pct && a.total > b.total) ? a : b) : null;
+
+          // ── Court stats ──
           const courtStats = {};
           completed.forEach(m => {
             if (!m.court) return;
             const ct = String(m.court).replace(/^Court\s*/i, "").replace(/^0+/, "") || m.court;
             if (!courtStats[ct]) courtStats[ct] = { wins: 0, losses: 0 };
-            const isWin = allIds.includes(m.winner_id);
-            const isLoss = m.winner_id && !allIds.includes(m.winner_id) && (allIds.includes(m.team_a_id) || allIds.includes(m.team_b_id));
-            if (isWin) courtStats[ct].wins++;
-            else if (isLoss) courtStats[ct].losses++;
+            if (allIds.includes(m.winner_id)) courtStats[ct].wins++;
+            else if (m.winner_id && !allIds.includes(m.winner_id) && (allIds.includes(m.team_a_id) || allIds.includes(m.team_b_id))) courtStats[ct].losses++;
           });
           const courts = Object.entries(courtStats)
             .map(([ct, s]) => ({ court: ct, ...s, total: s.wins + s.losses, pct: s.wins / Math.max(s.wins + s.losses, 1) }))
@@ -1542,8 +1584,73 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
           return (
             <div>
-              {courts.length > 0 ? (
-                <Card style={{ padding: "16px 18px" }}>
+              {/* Quick Stats */}
+              {completed.length > 0 && (
+                <Card style={{ padding: "16px 18px", marginBottom: 16 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Quick Stats</div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {streakType && (
+                      <div style={{ flex: "1 1 45%", background: C.surfAlt, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>Current Streak</div>
+                        <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color: streakType === "W" ? C.green : C.red }}>
+                          {streakType === "W" ? "🔥" : "❄️"} {streakType}{currentStreak}
+                        </div>
+                      </div>
+                    )}
+                    {longestWin > 1 && (
+                      <div style={{ flex: "1 1 45%", background: C.surfAlt, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>Best Win Streak</div>
+                        <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color: C.green }}>🔥 {longestWin}</div>
+                      </div>
+                    )}
+                    {best && (
+                      <div style={{ flex: "1 1 45%", background: C.surfAlt, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>Best Matchup</div>
+                        <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.green }}>{best.wins}-{best.losses}</div>
+                        <div style={{ fontFamily: F.b, fontSize: 11, color: C.muted, marginTop: 2 }}>vs {best.name}</div>
+                      </div>
+                    )}
+                    {worst && worst.id !== best?.id && (
+                      <div style={{ flex: "1 1 45%", background: C.surfAlt, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>Toughest Matchup</div>
+                        <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.red }}>{worst.wins}-{worst.losses}</div>
+                        <div style={{ fontFamily: F.b, fontSize: 11, color: C.muted, marginTop: 2 }}>vs {worst.name}</div>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {/* H2H Records */}
+              {opponents.length > 0 && (
+                <Card style={{ padding: "16px 18px", marginBottom: 16 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Head-to-Head</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {opponents.map(o => (
+                      <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <TeamAvatar name={o.name} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</div>
+                        </div>
+                        <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>
+                          <span style={{ color: C.green, fontWeight: 700 }}>{o.wins}</span>
+                          <span style={{ color: C.dim }}> - </span>
+                          <span style={{ color: C.red, fontWeight: 700 }}>{o.losses}</span>
+                        </div>
+                        <div style={{
+                          width: 40, textAlign: "right",
+                          fontFamily: F.m, fontSize: 11, fontWeight: 700,
+                          color: o.pct >= 0.6 ? C.green : o.pct <= 0.4 ? C.red : C.text,
+                        }}>{(o.pct * 100).toFixed(0)}%</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {/* Court Win Rates */}
+              {courts.length > 0 && (
+                <Card style={{ padding: "16px 18px", marginBottom: 16 }}>
                   <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Court Win Rates</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {courts.map(c => (
@@ -1569,17 +1676,12 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                     ))}
                   </div>
                 </Card>
-              ) : (
-                <Empty msg="No court data available" />
               )}
 
-              <Card style={{ padding: "24px 16px", textAlign: "center", marginTop: 16 }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-                <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>More Stats</div>
-                <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>
-                  Head-to-head records and more coming soon.
-                </p>
-              </Card>
+              {/* Disclaimer */}
+              <p style={{ fontFamily: F.b, fontSize: 11, color: C.dim, textAlign: "center", margin: "8px 0 0", lineHeight: 1.4 }}>
+                Stats based on available match data and may not reflect official league records.
+              </p>
             </div>
           );
         })()}
