@@ -737,12 +737,12 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
   const progress = getSeasonProgress(activeSeason);
   const isPast = progress.status === "completed";
 
-  // Compute actual current week from data (max games played + 1)
+  // Compute actual current week from data
   const dataWeek = useMemo(() => {
-    if (isPast) return null; // Past seasons don't need week
+    if (isPast) return null;
     if (!allStandings.length) return progress.week;
     const maxGames = Math.max(...allStandings.map(s => (s.wins || 0) + (s.losses || 0)));
-    return maxGames > 0 ? Math.min(maxGames + 1, 8) : progress.week;
+    return maxGames > 0 ? Math.min(maxGames, 8) : progress.week;
   }, [allStandings, progress.week, isPast]);
   const progressLabel = isPast ? "Completed" : (dataWeek ? `Week ${dataWeek} of 8` : progress.label);
 
