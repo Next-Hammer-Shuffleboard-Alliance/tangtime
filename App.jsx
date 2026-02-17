@@ -1166,7 +1166,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 10 }}>🎖️</span>
-              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Final Four</span>
+              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Banquet</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 10, color: C.amber }}>☆</span>
@@ -1886,11 +1886,11 @@ function HallOfFamePage({ seasons, goPage }) {
   });
   const sortedLB = Object.values(leaderboard).sort((a, b) => b.count - a.count);
 
-  const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
+  const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
 
-  const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Final 4", round_2: "Round 2", round_1: "Round 1" };
+  const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Banquet", round_2: "Round 2", round_1: "Round 1" };
 
-  const dataNote = tab === "banquet" ? "Final 4 data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
+  const dataNote = tab === "banquet" ? "Banquet data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
     : tab === "playoffs" ? "Playoff data available for Winter 2023 – Spring 2024. Earlier seasons coming soon."
     : tab === "division" ? "Division champion data coming soon." : null;
 
