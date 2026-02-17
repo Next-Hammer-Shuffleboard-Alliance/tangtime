@@ -1156,22 +1156,22 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
         {rows.some(t => t.playoffRound) ? (
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            {rows.some(t => t.playoffRound === "champion") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 10 }}>🏆</span>
               <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Champion</span>
-            </div>}
-            {rows.some(t => t.playoffRound === "final") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 10 }}>🥈</span>
               <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Runner-up</span>
-            </div>}
-            {rows.some(t => t.playoffRound === "semifinal") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 10 }}>🎖️</span>
               <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Final Four</span>
-            </div>}
-            {rows.some(t => t.playoffRound === "round_1") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 10, color: C.amber }}>☆</span>
               <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoffs</span>
-            </div>}
+            </div>
           </div>
         ) : (<>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
