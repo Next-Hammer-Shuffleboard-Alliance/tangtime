@@ -97,7 +97,9 @@ function getSeasonProgress(season) {
   const end = new Date(season.end_date + "T12:00:00");
   if (now < start) return { label: "Starting Soon", status: "upcoming", week: null };
   if (now > end || !season.is_active) return { label: "Completed", status: "completed", week: null };
-  const week = Math.min(Math.max(Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
+  // Shift by 2 days so week doesn't advance until Wednesday (after Mon+Tue play)
+  const adjusted = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+  const week = Math.min(Math.max(Math.floor((adjusted - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
   return { label: `Week ${week} of 8`, status: "active", week };
 }
 
