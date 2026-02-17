@@ -1392,9 +1392,27 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
         playoff_appearances: teamsRow?.playoff_appearances || 0,
         _standings: sd || [],
+        _allTeamIds: [selectedId],
       });
       setTeamMatches(md || []);
       setDetailLoading(false);
+
+      // Non-blocking: fetch alias teams and their matches
+      q("teams", `primary_team_id=eq.${selectedId}&select=id,name`).then(aliasTeams => {
+        const aliases = (aliasTeams || []).filter(a => a.id !== selectedId);
+        if (!aliases.length) return;
+        const aliasIds = aliases.map(a => a.id);
+        const orMatch = aliasIds.map(id => `team_a_id.eq.${id},team_b_id.eq.${id}`).join(",");
+        q("recent_matches", `or=(${orMatch})&order=scheduled_date.desc&limit=500`).then(aliasMd => {
+          setTeamMatches(prev => {
+            const seen = new Set(prev.map(m => m.id));
+            const newMatches = (aliasMd || []).filter(m => !seen.has(m.id));
+            if (!newMatches.length) return prev;
+            return [...prev, ...newMatches].sort((a, b) => (b.scheduled_date || "").localeCompare(a.scheduled_date || ""));
+          });
+          setTeamDetail(prev => prev ? { ...prev, _allTeamIds: [selectedId, ...aliasIds] } : prev);
+        });
+      });
     });
   }, [selectedId]);
 
@@ -1508,8 +1526,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                   <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
                     {season}
                     <span style={{ color: C.dim, fontWeight: 500, marginLeft: 8 }}>
-                      {matches.filter(m2 => m2.winner_id === selectedId || (m2.team_a_id === selectedId && m2.team_a_match_wins > m2.team_b_match_wins) || (m2.team_b_id === selectedId && m2.team_b_match_wins > m2.team_a_match_wins)).length}W-
-                      {matches.filter(m2 => m2.winner_id && m2.winner_id !== selectedId && (m2.team_a_id === selectedId || m2.team_b_id === selectedId)).length}L
+                      {(() => { const ids = t._allTeamIds || [selectedId]; return matches.filter(m2 => ids.includes(m2.winner_id) || (ids.includes(m2.team_a_id) && m2.team_a_match_wins > m2.team_b_match_wins) || (ids.includes(m2.team_b_id) && m2.team_b_match_wins > m2.team_a_match_wins)).length; })()}W-
+                      {(() => { const ids = t._allTeamIds || [selectedId]; return matches.filter(m2 => m2.winner_id && !ids.includes(m2.winner_id) && (ids.includes(m2.team_a_id) || ids.includes(m2.team_b_id))).length; })()}L
                     </span>
                   </div>
                   {matches.map((m2, i) => <MatchRow key={m2.id || i} m={m2} goPage={goPage} />)}
