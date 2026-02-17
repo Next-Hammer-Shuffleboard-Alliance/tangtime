@@ -1544,7 +1544,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           const opponents = Object.entries(h2h)
             .map(([id, s]) => ({ id, ...s, total: s.wins + s.losses, pct: s.wins / Math.max(s.wins + s.losses, 1) }))
             .filter(o => o.total > 0)
-            .sort((a, b) => b.total - a.total || b.pct - a.pct);
+            .sort((a, b) => b.wins - a.wins || b.total - a.total || b.pct - a.pct);
 
           // ── Streaks ──
           const sortedMatches = [...completed].sort((a, b) => (b.scheduled_date || "").localeCompare(a.scheduled_date || ""));
@@ -1678,10 +1678,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                 </Card>
               )}
 
-              {/* Disclaimer */}
-              <p style={{ fontFamily: F.b, fontSize: 11, color: C.dim, textAlign: "center", margin: "8px 0 0", lineHeight: 1.4 }}>
-                Stats based on available match data and may not reflect official league records.
-              </p>
+
             </div>
           );
         })()}
