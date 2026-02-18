@@ -2954,8 +2954,8 @@ function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
               <button
                 onClick={() => handleToggleCaptain(p.id, p.is_captain)}
                 title={p.is_captain ? "Remove captain" : "Make captain"}
-                style={{ padding: "4px 8px", borderRadius: 7, border: `1px solid ${p.is_captain ? C.amber : C.border}`, background: p.is_captain ? `${C.amber}20` : "transparent", color: p.is_captain ? C.amber : C.dim, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
-              >{p.is_captain ? "C ✓" : "C"}</button>
+                style={{ padding: "4px 10px", borderRadius: 7, border: `1px solid ${p.is_captain ? C.amber : C.border}`, background: p.is_captain ? `${C.amber}20` : "transparent", color: p.is_captain ? C.amber : C.dim, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
+              >{p.is_captain ? "★ Captain" : "☆ Captain"}</button>
               <button onClick={() => { setEditingId(p.id); setEditName(p.name); }} style={{ padding: "4px 8px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Edit</button>
               <button onClick={() => handleRemove(p.id)} style={{ padding: "4px 8px", borderRadius: 7, border: `1px solid ${C.red}30`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>✕</button>
             </>
