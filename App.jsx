@@ -1,4 +1,4 @@
-]// App v26 — v22 base + week fix + auth + captain/admin routes (no external deps)
+// App v26 — v22 base + week fix + auth + captain/admin routes (no external deps)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -2217,7 +2217,7 @@ function SignInPage({ mode = "captain" }) {
         <Card>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>{mode === "admin" ? "🔐" : <CaptainBadge size={40} />}</div>
-            <h2 style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>Sign In</h2>
+            <h2 style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, margin: "0 0 8px", color: C.text }}>Sign In</h2>
             <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 24px", lineHeight: 1.5 }}>
               {mode === "captain" ? "Sign in to submit match results and update rosters for your team." : "Sign in to edit any match result, manage captains, or update team rosters."}
             </p>
