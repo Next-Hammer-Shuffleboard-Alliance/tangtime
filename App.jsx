@@ -1801,13 +1801,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         })()}
 
         {profileTab === "roster" && (
-          <Card style={{ padding: "24px 16px", textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
-            <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>Roster</div>
-            <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.5 }}>
-              Roster info coming soon.<br />Captains will be able to add their team members here.
-            </p>
-          </Card>
+          <RosterPublicView teamId={selectedId} seasonId={activeSeason?.id} />
         )}
 
         {profileTab === "history" && (
@@ -2104,9 +2098,57 @@ function HallOfFamePage({ seasons, goPage }) {
 }
 
 
-// ══════════════════════════════════════
-// ─── AUTH COMPONENTS ───
-// ══════════════════════════════════════
+// ── Public Roster View (team profile page) ───────────────
+function RosterPublicView({ teamId, seasonId }) {
+  const [players, setPlayers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!teamId || !seasonId) { setLoading(false); return; }
+    q("team_players", `team_id=eq.${teamId}&season_id=eq.${seasonId}&order=is_captain.desc&select=id,is_captain,players(id,name)`)
+      .then(data => {
+        setPlayers((data || []).map(tp => ({ ...tp, name: tp.players?.name || "—" })));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [teamId, seasonId]);
+
+  if (loading) return <Loader />;
+
+  if (!players.length) return (
+    <Card style={{ padding: "24px 16px", textAlign: "center" }}>
+      <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
+      <div style={{ fontFamily: F.d, fontSize: 16, color: C.text, marginBottom: 8 }}>Roster</div>
+      <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0 }}>No roster added yet.</p>
+    </Card>
+  );
+
+  return (
+    <Card style={{ padding: "16px" }}>
+      <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 12 }}>Roster</div>
+      {players.map(p => (
+        <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: C.surfAlt, border: `1px solid ${C.border}`, marginBottom: 6 }}>
+          {p.is_captain && <CaptainBadge size={20} />}
+          <span style={{ fontFamily: F.b, fontSize: 14, color: C.text, fontWeight: p.is_captain ? 700 : 400 }}>{p.name}</span>
+          {p.is_captain && <span style={{ fontFamily: F.m, fontSize: 11, color: C.amber, marginLeft: "auto" }}>Captain</span>}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// ── Captain Badge (styled C) ──────────────────────────────
+function CaptainBadge({ size = 18 }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      width: size, height: size, borderRadius: "50%",
+      background: C.amber, color: C.bg,
+      fontFamily: F.b, fontSize: size * 0.55, fontWeight: 900,
+      flexShrink: 0, lineHeight: 1,
+    }}>C</span>
+  );
+}
 
 function TosModal({ onAccept, onDecline }) {
   const [scrolled, setScrolled] = useState(false);
@@ -2406,6 +2448,7 @@ function AdminEditModal({ match, onClose, onSave }) {
 function AdminApp({ user, myRole }) {
   const [tab, setTab] = useState("requests");
   const [divisionId, setDivisionId] = useState(null);
+  const [seasonId, setSeasonId] = useState(null);
   const [divisions, setDivisions] = useState([]);
   const [matches, setMatches] = useState([]);
   const [captains, setCaptains] = useState([]);
@@ -2420,6 +2463,7 @@ function AdminApp({ user, myRole }) {
     (async () => {
       const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
       if (!seasons?.length) return;
+      setSeasonId(seasons[0].id);
       const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level`);
       const filtered = (d || []).filter(x => x.level !== "party");
       setDivisions(filtered);
@@ -2512,7 +2556,7 @@ function AdminApp({ user, myRole }) {
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span><button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button></div>}
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["captains", "👥 Captains"]].map(([k, l]) => (
+          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["roster", "👕 Roster"], ["captains", "👥 Captains"]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>{l}</button>
           ))}
         </div>
@@ -2586,6 +2630,8 @@ function AdminApp({ user, myRole }) {
             ))}
           </>
         )}
+
+        {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
 
         {tab === "captains" && (
           <>
@@ -2733,7 +2779,306 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
   );
 }
 
-function AuthWrapper({ mode }) {
+// ── Roster Manager (shared by Admin + Captain) ───────────
+function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
+  const [players, setPlayers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await qAuth(
+        "team_players",
+        `team_id=eq.${teamId}&season_id=eq.${seasonId}&order=is_captain.desc,players(name).asc&select=id,is_captain,player_id,players(id,name)`
+      );
+      setPlayers((data || []).map(tp => ({ ...tp, name: tp.players?.name || "—" })));
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }, [teamId, seasonId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleAdd = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // Find or create player by name (case-insensitive)
+      let playerData = await qAuth("players", `name=ilike.${encodeURIComponent(newName.trim())}&limit=1`);
+      let playerId;
+      if (playerData?.length) {
+        playerId = playerData[0].id;
+      } else {
+        const created = await qAuth("players", "", "POST", { name: newName.trim() });
+        playerId = created[0].id;
+      }
+      await qAuth("team_players", "", "POST", { player_id: playerId, team_id: teamId, season_id: seasonId, is_captain: false });
+      setNewName("");
+      setAdding(false);
+      await load();
+    } catch (e) {
+      setError(e.message.includes("unique") ? "Player already on this roster." : e.message);
+    }
+    setSaving(false);
+  };
+
+  const handleRemove = async (tpId) => {
+    if (!window.confirm("Remove this player from the roster?")) return;
+    try {
+      await qAuth(`team_players`, `id=eq.${tpId}`, "DELETE");
+      setPlayers(prev => prev.filter(p => p.id !== tpId));
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleToggleCaptain = async (tpId, current) => {
+    try {
+      await qAuth("team_players", `id=eq.${tpId}`, "PATCH", { is_captain: !current });
+      setPlayers(prev => prev.map(p => p.id === tpId ? { ...p, is_captain: !current } : p));
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleEditSave = async (tpId, playerId) => {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      await qAuth("players", `id=eq.${playerId}`, "PATCH", { name: editName.trim() });
+      setPlayers(prev => prev.map(p => p.id === tpId ? { ...p, name: editName.trim() } : p));
+      setEditingId(null);
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontFamily: F.b, fontSize: 13, color: C.muted }}>{players.length} player{players.length !== 1 ? "s" : ""}</div>
+        <button onClick={() => { setAdding(true); setNewName(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${C.amber}40`, background: `${C.amber}12`, color: C.amber, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Add Player</button>
+      </div>
+
+      {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}><span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>{error}</span></div>}
+
+      {adding && (
+        <div style={{ background: C.surfAlt, border: `1px solid ${C.amber}30`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+          <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 6 }}>New Player Name</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleAdd()}
+              placeholder="e.g. Jane Smith"
+              autoFocus
+              style={{ flex: 1, padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 13, outline: "none" }}
+            />
+            <button onClick={() => setAdding(false)} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            <button onClick={handleAdd} disabled={!newName.trim() || saving} style={{ padding: "9px 14px", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {saving ? "..." : "Add"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <Loader /> : players.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "24px 0", fontFamily: F.b, fontSize: 13, color: C.dim }}>No players on roster yet.</div>
+      ) : players.map(p => (
+        <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, background: C.surfAlt, border: `1px solid ${C.border}`, marginBottom: 6 }}>
+          {editingId === p.id ? (
+            <>
+              <input
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleEditSave(p.id, p.player_id)}
+                autoFocus
+                style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.amber}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 13, outline: "none" }}
+              />
+              <button onClick={() => setEditingId(null)} style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => handleEditSave(p.id, p.player_id)} disabled={saving} style={{ padding: "5px 10px", borderRadius: 7, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                {p.is_captain && <CaptainBadge size={18} />}
+                <span style={{ fontFamily: F.b, fontSize: 14, color: C.text, fontWeight: p.is_captain ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+              </div>
+              <button
+                onClick={() => handleToggleCaptain(p.id, p.is_captain)}
+                title={p.is_captain ? "Remove captain" : "Make captain"}
+                style={{ padding: "4px 8px", borderRadius: 7, border: `1px solid ${p.is_captain ? C.amber : C.border}`, background: p.is_captain ? `${C.amber}20` : "transparent", color: p.is_captain ? C.amber : C.dim, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+              >C</button>
+              <button onClick={() => { setEditingId(p.id); setEditName(p.name); }} style={{ padding: "4px 8px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Edit</button>
+              <button onClick={() => handleRemove(p.id)} style={{ padding: "4px 8px", borderRadius: 7, border: `1px solid ${C.red}30`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>✕</button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Admin Roster Tab ──────────────────────────────────────
+function AdminRosterTab({ seasonId }) {
+  const [teams, setTeams] = useState([]);
+  const [selectedTeam, setSelectedTeam] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [csvMode, setCsvMode] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [csvError, setCsvError] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
+  useEffect(() => {
+    if (!seasonId) return;
+    q("divisions", `season_id=eq.${seasonId}&select=id,team_seasons(team_id,teams(id,name))&level=neq.party`)
+      .then(divs => {
+        const teamSet = new Map();
+        divs?.forEach(d => d.team_seasons?.forEach(ts => {
+          if (ts.teams) teamSet.set(ts.teams.id, ts.teams.name);
+        }));
+        const sorted = [...teamSet.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+        setTeams(sorted);
+        if (sorted.length) setSelectedTeam(sorted[0]);
+        setLoading(false);
+      });
+  }, [seasonId]);
+
+  const parseCSV = (text) => {
+    const lines = text.trim().split("\n").filter(l => l.trim());
+    const rows = [];
+    const errors = [];
+    lines.forEach((line, i) => {
+      const parts = line.split(",").map(s => s.trim());
+      if (parts.length < 2) { errors.push(`Line ${i + 1}: needs at least player_name, team_name`); return; }
+      const [playerName, teamName, isCap] = parts;
+      if (!playerName) { errors.push(`Line ${i + 1}: missing player name`); return; }
+      if (!teamName) { errors.push(`Line ${i + 1}: missing team name`); return; }
+      const team = teams.find(t => t.name.toLowerCase() === teamName.toLowerCase());
+      if (!team) { errors.push(`Line ${i + 1}: team "${teamName}" not found`); return; }
+      rows.push({ playerName, teamName, teamId: team.id, isCaptain: isCap?.toLowerCase() === "true" });
+    });
+    return { rows, errors };
+  };
+
+  const handleCsvPreview = () => {
+    setCsvError(null);
+    setCsvPreview(null);
+    const { rows, errors } = parseCSV(csvText);
+    if (errors.length) { setCsvError(errors.join("\n")); return; }
+    setCsvPreview(rows);
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvPreview?.length) return;
+    setImporting(true);
+    setCsvError(null);
+    let added = 0, skipped = 0;
+    for (const row of csvPreview) {
+      try {
+        let pData = await qAuth("players", `name=ilike.${encodeURIComponent(row.playerName)}&limit=1`);
+        let playerId;
+        if (pData?.length) {
+          playerId = pData[0].id;
+        } else {
+          const created = await qAuth("players", "", "POST", { name: row.playerName });
+          playerId = created[0].id;
+        }
+        await qAuth("team_players", "", "POST", { player_id: playerId, team_id: row.teamId, season_id: seasonId, is_captain: row.isCaptain });
+        added++;
+      } catch (e) {
+        if (e.message.includes("unique")) skipped++; else skipped++;
+      }
+    }
+    setImportResult({ added, skipped });
+    setCsvText("");
+    setCsvPreview(null);
+    setCsvMode(false);
+    setImporting(false);
+  };
+
+  if (loading) return <Loader />;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontFamily: F.b, fontSize: 13, color: C.muted }}>Manage team rosters</div>
+        <button onClick={() => { setCsvMode(!csvMode); setCsvPreview(null); setCsvError(null); }} style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: csvMode ? C.surface : "transparent", color: csvMode ? C.amber : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+          {csvMode ? "✕ Cancel CSV" : "⬆ Bulk CSV Upload"}
+        </button>
+      </div>
+
+      {importResult && (
+        <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+          <span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ Import complete — {importResult.added} added, {importResult.skipped} skipped</span>
+          <button onClick={() => setImportResult(null)} style={{ background: "none", border: "none", color: C.green, cursor: "pointer", float: "right" }}>✕</button>
+        </div>
+      )}
+
+      {csvMode ? (
+        <Card style={{ padding: "16px" }}>
+          <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>CSV Format</div>
+          <div style={{ background: C.surfAlt, borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontFamily: "monospace", fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
+            player_name, team_name, is_captain<br />
+            John Smith, Hammered at the Palms, true<br />
+            Jane Doe, Hammered at the Palms, false<br />
+            Jane Doe, Sling Blades, false
+          </div>
+          {csvError && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontFamily: "monospace", fontSize: 11, color: C.red, whiteSpace: "pre" }}>{csvError}</div>}
+          <textarea
+            value={csvText}
+            onChange={e => { setCsvText(e.target.value); setCsvPreview(null); setCsvError(null); }}
+            placeholder="Paste CSV here..."
+            rows={8}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: "monospace", fontSize: 12, resize: "vertical", outline: "none", boxSizing: "border-box", marginBottom: 10 }}
+          />
+          {csvPreview ? (
+            <>
+              <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 8 }}>{csvPreview.length} rows ready to import:</div>
+              <div style={{ maxHeight: 200, overflowY: "auto", marginBottom: 12 }}>
+                {csvPreview.map((r, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 7, background: C.surfAlt, marginBottom: 4 }}>
+                    {r.isCaptain && <CaptainBadge size={16} />}
+                    <span style={{ fontFamily: F.b, fontSize: 13, color: C.text, flex: 1 }}>{r.playerName}</span>
+                    <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{r.teamName}</span>
+                  </div>
+                ))}
+              </div>
+              <button onClick={handleCsvImport} disabled={importing} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: importing ? "wait" : "pointer" }}>
+                {importing ? "Importing..." : `Import ${csvPreview.length} Players`}
+              </button>
+            </>
+          ) : (
+            <button onClick={handleCsvPreview} disabled={!csvText.trim()} style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: csvText.trim() ? C.amber : C.border, color: csvText.trim() ? C.bg : C.dim, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: csvText.trim() ? "pointer" : "not-allowed" }}>
+              Preview Import
+            </button>
+          )}
+        </Card>
+      ) : (
+        <>
+          <div style={{ overflowX: "auto", margin: "0 -16px 14px", padding: "0 16px" }}>
+            <div style={{ display: "flex", gap: 6, minWidth: "max-content" }}>
+              {teams.map(t => (
+                <button key={t.id} onClick={() => setSelectedTeam(t)} style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${selectedTeam?.id === t.id ? C.amber : C.border}`, background: selectedTeam?.id === t.id ? C.amber : C.surface, color: selectedTeam?.id === t.id ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          {selectedTeam && (
+            <Card>
+              <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 14 }}>{selectedTeam.name}</div>
+              <RosterManager teamId={selectedTeam.id} teamName={selectedTeam.name} seasonId={seasonId} isAdmin />
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
   const [authState, setAuthState] = useState("loading");
   const [user, setUser] = useState(null);
   const [myRole, setMyRole] = useState(null);
