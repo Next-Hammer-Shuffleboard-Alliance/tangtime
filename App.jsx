@@ -2163,7 +2163,7 @@ function TosModal({ onAccept, onDecline }) {
         <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <Logo size={28} />
-            <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800 }}>Tang<span style={{ color: C.amber }}> Time</span></div>
+            <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800 }}><span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span></div>
           </div>
           <h2 style={{ fontFamily: F.d, fontSize: 20, margin: 0, color: C.text }}>Terms of Service</h2>
           <p style={{ fontFamily: F.b, fontSize: 12, color: C.muted, margin: "4px 0 0" }}>Please read and accept to continue as a captain.</p>
@@ -2208,7 +2208,7 @@ function SignInPage({ mode = "captain" }) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 6 }}>
             <Logo size={44} />
             <div>
-              <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>Tang<span style={{ color: C.amber }}> Time</span></div>
+              <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}><span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span></div>
               <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 2 }}>Royal Palms BK</div>
             </div>
           </div>
@@ -2345,7 +2345,7 @@ function CaptainApp({ user, myRole }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Logo size={30} />
           <div>
-            <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800 }}>Tang<span style={{ color: C.amber }}> Time</span></div>
+            <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800 }}><span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span></div>
             <div style={{ fontFamily: F.m, fontSize: 9, color: C.amber, letterSpacing: 1 }}>Captain Portal</div>
           </div>
         </div>
@@ -3136,7 +3136,7 @@ function AuthWrapper({ mode }) {
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 4 }}>
             <Logo size={32} />
-            <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800 }}>Tang<span style={{ color: C.amber }}> Time</span></div>
+            <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800 }}><span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span></div>
           </div>
         </div>
         <Card>
@@ -3173,7 +3173,7 @@ function TermsPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
           <a href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
             <Logo size={28} />
-            <span style={{ fontFamily: F.d, fontSize: 16, color: C.text }}>Tang<span style={{ color: C.amber }}> Time</span></span>
+            <span style={{ fontFamily: F.d, fontSize: 16, color: C.text }}><span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span></span>
           </a>
         </div>
         <h1 style={{ fontFamily: F.d, fontSize: 26, color: C.text, margin: "0 0 6px" }}>Terms of Service</h1>
@@ -3293,7 +3293,7 @@ function MainApp() {
           <Logo size={34} />
           <div>
             <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, lineHeight: 1.1 }}>
-              Tang<span style={{ color: C.amber }}> Time</span>
+              <span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span>
             </div>
             <div style={{ fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase", letterSpacing: 2 }}>
               Royal Palms BK
