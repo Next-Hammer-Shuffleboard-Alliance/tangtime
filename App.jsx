@@ -2264,7 +2264,7 @@ function CaptainMatchCard({ match, myTeamId, onSubmit, submitting }) {
       <div style={{ padding: "14px 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{fmtDate(match.scheduled_date)}{match.court ? ` · Court ${match.court}` : ""}</span>
-          {done && <Badge color={iWon ? C.green : C.red}>{iWon ? (match.went_to_ot ? "✓ Won in OT" : "✓ Won 2-0") : "✗ Lost"}</Badge>}
+          {done && <Badge color={iWon ? C.green : C.red}>{iWon ? (match.went_to_ot ? "✓ Won in OT" : "✓ Won") : (match.went_to_ot ? "✗ Lost in OT" : "✗ Lost")}</Badge>}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6 }}>
           <div>
@@ -2308,6 +2308,7 @@ function CaptainApp({ user, myRole }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [tab, setTab] = useState("results");
 
   const loadMatches = useCallback(async () => {
     if (!myRole?.team_id) return;
@@ -2336,8 +2337,8 @@ function CaptainApp({ user, myRole }) {
     setSubmitting(false);
   };
 
-  const pending = matches.filter(m => m.status !== "completed");
-  const completed = matches.filter(m => m.status === "completed").slice(0, 5);
+  const pending = matches.filter(m => m.status !== "completed").sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
+  const completed = matches.filter(m => m.status === "completed").sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date)).slice(0, 5);
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
@@ -2360,22 +2361,46 @@ function CaptainApp({ user, myRole }) {
       <main style={{ padding: "16px 16px 60px", maxWidth: 520, margin: "0 auto" }}>
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span></div>}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 12px" }}>
-          <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: 0 }}>Submit Results</h3>
-          <Badge color={pending.length > 0 ? C.amber : C.green}>{pending.length > 0 ? `${pending.length} pending` : "All reported"}</Badge>
+
+        <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+          {[["results", "📋 Results"], ["roster", "👕 Roster"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>{l}</button>
+          ))}
         </div>
-        {loading ? <Loader /> : pending.length === 0 ? (
-          <Card style={{ textAlign: "center", padding: "32px 20px" }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}><CaptainBadge size={40} /></div>
-            <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>No pending matches to report.</p>
-          </Card>
-        ) : pending.map(m => <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />)}
-        {completed.length > 0 && !loading && (
+
+        {tab === "results" && (
           <>
-            <h3 style={{ fontFamily: F.d, fontSize: 16, color: C.muted, margin: "24px 0 10px" }}>Recent Results</h3>
-            {completed.map(m => <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />)}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 12px" }}>
+              <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: 0 }}>Submit Results</h3>
+              <Badge color={pending.length > 0 ? C.amber : C.green}>{pending.length > 0 ? `${pending.length} pending` : "All reported"}</Badge>
+            </div>
+            {loading ? <Loader /> : pending.length === 0 ? (
+              <Card style={{ textAlign: "center", padding: "32px 20px" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}><CaptainBadge size={40} /></div>
+                <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>No pending matches to report.</p>
+              </Card>
+            ) : pending.map(m => <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />)}
+            {completed.length > 0 && !loading && (
+              <>
+                <h3 style={{ fontFamily: F.d, fontSize: 16, color: C.muted, margin: "24px 0 10px" }}>Recent Results</h3>
+                {completed.map(m => <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />)}
+              </>
+            )}
           </>
         )}
+
+        {tab === "roster" && myRole?.team_id && myRole?.season_id && (
+          <>
+            <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: "0 0 12px" }}>Your Roster</h3>
+            <RosterManager teamId={myRole.team_id} seasonId={myRole.season_id} />
+          </>
+        )}
+        {tab === "roster" && myRole?.team_id && !myRole?.season_id && (
+          <Card style={{ textAlign: "center", padding: "32px 20px" }}>
+            <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>Roster management unavailable — no active season found.</p>
+          </Card>
+        )}
+
         <div style={{ textAlign: "center", marginTop: 32 }}><a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a></div>
       </main>
     </div>
@@ -3131,6 +3156,11 @@ function AuthWrapper({ mode }) {
       try { roleData = await rpc("get_my_role"); } catch { setAuthState("needs_request"); return; }
       if (!roleData?.length) { setAuthState("needs_request"); return; }
       const role = roleData[0];
+      // Also fetch active season_id for roster management
+      try {
+        const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
+        if (seasons?.length) role.season_id = seasons[0].id;
+      } catch {}
       setMyRole(role);
       if (mode === "admin" && role.role !== "super_admin") { setAuthState("needs_request"); return; }
       if (mode === "captain" && !["captain", "super_admin"].includes(role.role)) { setAuthState("needs_request"); return; }
