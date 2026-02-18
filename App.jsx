@@ -1,10 +1,18 @@
+// App v23 — Auth + Captain Score Entry
+// New in v23: Google OAuth, /captain route (score entry), /admin route (full edit)
+// Requires: npm install @supabase/supabase-js
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase ───
-const SUPA = "https://ynwohnffmlfyejhfttxq.supabase.co/rest/v1";
+const SUPA_URL = "https://ynwohnffmlfyejhfttxq.supabase.co";
+const SUPA = `${SUPA_URL}/rest/v1`;
 const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlud29obmZmbWxmeWVqaGZ0dHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NTUxMzIsImV4cCI6MjA4NjQzMTEzMn0.ICBlMtcXmWGxd8gKAa6miEVWpr0uJROUV3osfnhm-9g";
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 let USE_MOCK = false;
+
+// Auth client — used for Google OAuth + session management
+const supabase = createClient(SUPA_URL, KEY);
 
 async function q(table, params = "") {
   if (USE_MOCK) return getMock(table, params);
@@ -16,6 +24,27 @@ async function q(table, params = "") {
     console.warn(`Supabase query failed for ${table}:`, e.message);
     return [];
   }
+}
+
+// Authenticated REST call using current session token
+async function qAuth(table, params = "", method = "GET", body = null) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || KEY;
+  const headers = {
+    apikey: KEY,
+    Authorization: `Bearer ${token}`,
+    ...(body ? { "Content-Type": "application/json", Prefer: "return=representation" } : {}),
+  };
+  const r = await fetch(`${SUPA}/${table}?${params}`, {
+    method, headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(err);
+  }
+  if (method !== "GET" && !r.headers.get("content-type")?.includes("json")) return null;
+  return r.json().catch(() => null);
 }
 
 // ─── Design Tokens ───
@@ -97,9 +126,7 @@ function getSeasonProgress(season) {
   const end = new Date(season.end_date + "T12:00:00");
   if (now < start) return { label: "Starting Soon", status: "upcoming", week: null };
   if (now > end || !season.is_active) return { label: "Completed", status: "completed", week: null };
-  // Shift by 2 days so week doesn't advance until Wednesday (after Mon+Tue play)
-  const adjusted = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-  const week = Math.min(Math.max(Math.floor((adjusted - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
+  const week = Math.min(Math.max(Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
   return { label: `Week ${week} of 8`, status: "active", week };
 }
 
@@ -516,7 +543,11 @@ function MockBanner() {
 
 function Footer() {
   return (
-    <div style={{ textAlign: "center", marginTop: 40, paddingBottom: 8 }}>
+    <div style={{ textAlign: "center", marginTop: 40, paddingBottom: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", gap: 16 }}>
+        <a href="/captain" style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Captain Login</a>
+        <a href="/tos" onClick={(e) => { e.preventDefault(); window.open("/tos", "_blank"); }} style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Terms of Service</a>
+      </div>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}` }}>
         <NHSALogo size={20} />
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
@@ -740,9 +771,11 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
   // Compute actual current week from data
   const dataWeek = useMemo(() => {
     if (isPast) return null;
-    if (!allStandings.length) return progress.week;
-    const maxGames = Math.max(...allStandings.map(s => (s.wins || 0) + (s.losses || 0)));
-    return maxGames > 0 ? Math.min(maxGames, 8) : progress.week;
+    const maxGames = allStandings.length
+      ? Math.max(...allStandings.map(s => (s.wins || 0) + (s.losses || 0)))
+      : 0;
+    const dataW = maxGames > 0 ? Math.min(maxGames, 8) : 0;
+    return Math.max(dataW, progress.week || 0) || null;
   }, [allStandings, progress.week, isPast]);
   const progressLabel = isPast ? "Completed" : (dataWeek ? `Week ${dataWeek} of 8` : progress.label);
 
@@ -2009,10 +2042,947 @@ function HallOfFamePage({ seasons, goPage }) {
 }
 
 // ══════════════════════════════════════
-// ─── MAIN APP ───
+// ─── AUTH COMPONENTS ───
 // ══════════════════════════════════════
 
+// ─── Terms of Service Modal ───
+const TOS_VERSION = "2026-02-17";
+
+function TosModal({ onAccept, onDecline }) {
+  const [scrolled, setScrolled] = useState(false);
+  const bodyRef = useRef(null);
+
+  const handleScroll = () => {
+    const el = bodyRef.current;
+    if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 10) setScrolled(true);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div style={{
+        background: C.surface, border: `1px solid ${C.borderL}`, borderRadius: 18,
+        width: "100%", maxWidth: 480, maxHeight: "90vh", display: "flex", flexDirection: "column",
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <Logo size={28} />
+            <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800 }}>
+              Tang<span style={{ color: C.amber }}> Time</span>
+            </div>
+          </div>
+          <h2 style={{ fontFamily: F.d, fontSize: 20, margin: 0, color: C.text }}>Terms of Service</h2>
+          <p style={{ fontFamily: F.b, fontSize: 12, color: C.muted, margin: "4px 0 0" }}>
+            Please read and accept to continue as a captain.
+          </p>
+        </div>
+
+        {/* Body */}
+        <div ref={bodyRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
+          {[
+            ["What TangTime Does", "TangTime is an unofficial companion app for the shuffleboard league at Royal Palms Brooklyn. It is not affiliated with, endorsed by, or operated by Royal Palms."],
+            ["Captain Responsibilities", "As a team captain, you are responsible for accurately reporting your match results. Submitting false or misleading results is a violation of these Terms."],
+            ["Player & Team Information", "TangTime displays team names, player names, match results, and statistics. By participating in the league, players consent to the display of their name in connection with their team. Players may request removal by contacting us."],
+            ["Account & Access", "Your captain account is associated with a single team. You may only submit results for matches in which your team participates. Access may be revoked at any time by an administrator."],
+            ["Data & Privacy", "We collect your Google account name and email solely for authentication. We do not sell or share your personal data. League data is sourced from publicly available information."],
+            ["Disclaimer", "TangTime is provided \"as is\" without warranties. We are not responsible for official league decisions, standings disputes, or scheduling. This is a community project."],
+          ].map(([title, body]) => (
+            <div key={title} style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{title}</div>
+              <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{body}</div>
+            </div>
+          ))}
+          <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginTop: 8 }}>
+            Last updated: {TOS_VERSION} · Version {TOS_VERSION}
+          </div>
+          {!scrolled && (
+            <div style={{ textAlign: "center", padding: "12px 0 4px" }}>
+              <span style={{ fontFamily: F.m, fontSize: 11, color: C.amber }}>↓ Scroll to read all</span>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
+          <button onClick={onDecline} style={{
+            flex: 1, padding: "12px 0", borderRadius: 10, border: `1px solid ${C.border}`,
+            background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 14, cursor: "pointer",
+          }}>Decline</button>
+          <button onClick={scrolled ? onAccept : null} style={{
+            flex: 2, padding: "12px 0", borderRadius: 10, border: "none",
+            background: scrolled ? C.amber : C.border, color: scrolled ? C.bg : C.dim,
+            fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: scrolled ? "pointer" : "not-allowed",
+            transition: "all 0.2s",
+          }}>
+            {scrolled ? "I Accept" : "Read to Accept"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sign In Page (captain + admin shared) ───
+function SignInPage({ mode = "captain" }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError(null);
+    const { error: e } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin + (mode === "admin" ? "/admin" : "/captain"),
+      },
+    });
+    if (e) { setError(e.message); setLoading(false); }
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center",
+      justifyContent: "center", padding: 24,
+    }}>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 6 }}>
+            <Logo size={44} />
+            <div>
+              <div style={{ fontFamily: F.d, fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>
+                Tang<span style={{ color: C.amber }}> Time</span>
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 2 }}>Royal Palms BK</div>
+            </div>
+          </div>
+          <div style={{ fontFamily: F.b, fontSize: 14, color: C.muted, marginTop: 8 }}>
+            {mode === "admin" ? "Admin Panel" : "Captain Portal"}
+          </div>
+        </div>
+
+        <Card>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>{mode === "admin" ? "🔐" : "🎯"}</div>
+            <h2 style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>Sign In</h2>
+            <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 24px", lineHeight: 1.5 }}>
+              {mode === "captain"
+                ? "Captains sign in to submit match results for their team."
+                : "Super admins sign in to edit any match or manage captains."}
+            </p>
+
+            {error && (
+              <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+                <span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>{error}</span>
+              </div>
+            )}
+
+            <button onClick={handleGoogleSignIn} disabled={loading} style={{
+              width: "100%", padding: "14px 20px", borderRadius: 12,
+              border: `1px solid ${C.borderL}`, background: loading ? C.surface : C.surfAlt,
+              color: loading ? C.dim : C.text, cursor: loading ? "wait" : "pointer",
+              fontFamily: F.b, fontSize: 15, fontWeight: 600,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+              transition: "all 0.15s",
+            }}>
+              {loading ? (
+                <><div style={{ width: 18, height: 18, border: `2px solid ${C.border}`, borderTopColor: C.amber, borderRadius: "50%", animation: "ttspin 0.8s linear infinite" }} /> Signing in...</>
+              ) : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  Continue with Google
+                </>
+              )}
+            </button>
+
+            <p style={{ fontFamily: F.b, fontSize: 11, color: C.dim, margin: "16px 0 0", lineHeight: 1.5 }}>
+              By signing in, you agree to the{" "}
+              <a href="/tos" target="_blank" style={{ color: C.amber, textDecoration: "none" }}>Terms of Service</a>.
+              {mode === "captain" && " Only authorized team captains can access this page."}
+            </p>
+          </div>
+        </Card>
+
+        <div style={{ textAlign: "center", marginTop: 24 }}>
+          <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a>
+        </div>
+      </div>
+      <style>{`@keyframes ttspin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+// ─── Captain Match Card ───
+function CaptainMatchCard({ match, myTeamId, onSubmit, submitting }) {
+  const [confirm, setConfirm] = useState(null); // 'won' | 'won_ot' | null
+  const isTeamA = match.team_a_id === myTeamId;
+  const myName = isTeamA ? match.team_a_name : match.team_b_name;
+  const oppName = isTeamA ? match.team_b_name : match.team_a_name;
+  const oppId = isTeamA ? match.team_b_id : match.team_a_id;
+  const done = match.status === "completed";
+  const iWon = done && match.winner_id === myTeamId;
+  const iLost = done && match.winner_id === oppId;
+
+  const handleConfirm = async () => {
+    await onSubmit(match.id, confirm === "won_ot");
+    setConfirm(null);
+  };
+
+  return (
+    <Card style={{ padding: 0, overflow: "hidden", marginBottom: 10, opacity: done ? 0.75 : 1 }}>
+      {/* Match header */}
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>
+            {fmtDate(match.scheduled_date)}{match.court ? ` · Court ${match.court}` : ""}
+          </span>
+          {done && (
+            <Badge color={iWon ? C.green : C.red}>
+              {iWon ? (match.went_to_ot ? "✓ Won in OT" : "✓ Won 2-0") : "✗ Lost"}
+            </Badge>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 6 }}>
+          <div>
+            <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>{myName}</div>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Your team</div>
+          </div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textAlign: "center" }}>vs</div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 500, color: C.text }}>{oppName}</div>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Opponent</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons (only for pending matches) */}
+      {!done && (
+        confirm ? (
+          <div style={{ padding: "10px 16px", background: `${C.amber}10`, borderTop: `1px solid ${C.amber}30` }}>
+            <p style={{ fontFamily: F.b, fontSize: 13, color: C.text, margin: "0 0 10px", textAlign: "center" }}>
+              Confirm: {myName} {confirm === "won_ot" ? "won in OT (1-1)" : "won 2-0"}?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setConfirm(null)} style={{
+                flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.border}`,
+                background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer",
+              }}>Cancel</button>
+              <button onClick={handleConfirm} disabled={submitting} style={{
+                flex: 2, padding: "10px 0", borderRadius: 10, border: "none",
+                background: C.green, color: "#fff", fontFamily: F.b, fontSize: 13, fontWeight: 700,
+                cursor: submitting ? "wait" : "pointer",
+              }}>
+                {submitting ? "Submitting..." : "✓ Confirm Result"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
+            <button onClick={() => setConfirm("won")} style={{
+              flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.green}40`,
+              background: `${C.green}12`, color: C.green, fontFamily: F.b, fontSize: 12, fontWeight: 600,
+              cursor: "pointer",
+            }}>🏆 Won 2-0</button>
+            <button onClick={() => setConfirm("won_ot")} style={{
+              flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.amber}40`,
+              background: `${C.amber}12`, color: C.amber, fontFamily: F.b, fontSize: 12, fontWeight: 600,
+              cursor: "pointer",
+            }}>⚡ Won in OT</button>
+          </div>
+        )
+      )}
+    </Card>
+  );
+}
+
+// ─── Captain App ───
+function CaptainApp({ user, myRole }) {
+  const [matches, setMatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+
+  const loadMatches = useCallback(async () => {
+    if (!myRole?.team_id) return;
+    setLoading(true);
+    try {
+      // Get all matches for this team this season (pending + recent completed)
+      const data = await qAuth(
+        "matches",
+        `or=(team_a_id.eq.${myRole.team_id},team_b_id.eq.${myRole.team_id})` +
+        `&scheduled_date=gte.2026-01-01` +
+        `&order=scheduled_date.desc&limit=50` +
+        `&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,` +
+        `team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`
+      );
+      // Flatten team names
+      const flat = (data || []).map(m => ({
+        ...m,
+        team_a_name: m.team_a?.name || "—",
+        team_b_name: m.team_b?.name || "—",
+      }));
+      setMatches(flat);
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  }, [myRole?.team_id]);
+
+  useEffect(() => { loadMatches(); }, [loadMatches]);
+
+  const handleSubmit = async (matchId, isOT) => {
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { error: rpcErr } = await supabase.rpc("submit_match_result", {
+        match_id: matchId,
+        winner_team_id: myRole.team_id,
+        is_ot: isOT,
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+      setSuccess("Result submitted! Standings will update shortly.");
+      await loadMatches();
+    } catch (e) {
+      setError(e.message);
+    }
+    setSubmitting(false);
+  };
+
+  const pending = matches.filter(m => m.status !== "completed");
+  const completed = matches.filter(m => m.status === "completed").slice(0, 5);
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
+      {/* Header */}
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+        background: `${C.surface}dd`, backdropFilter: "blur(12px)",
+        position: "sticky", top: 0, zIndex: 100,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Logo size={30} />
+          <div>
+            <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800 }}>
+              Tang<span style={{ color: C.amber }}> Time</span>
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 9, color: C.amber, letterSpacing: 1 }}>Captain Portal</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: F.b, fontSize: 12, color: C.text, fontWeight: 600 }}>{myRole?.team_name}</div>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{user?.email}</div>
+          </div>
+          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} style={{
+            padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`,
+            background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer",
+          }}>Sign out</button>
+        </div>
+      </header>
+
+      <main style={{ padding: "16px 16px 60px", maxWidth: 520, margin: "0 auto" }}>
+        {/* Alerts */}
+        {success && (
+          <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14 }}>✓</span>
+            <span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>{success}</span>
+          </div>
+        )}
+        {error && (
+          <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span>
+          </div>
+        )}
+
+        {/* Pending matches */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 12px" }}>
+          <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: 0 }}>Submit Results</h3>
+          <Badge color={pending.length > 0 ? C.amber : C.green}>
+            {pending.length > 0 ? `${pending.length} pending` : "All reported"}
+          </Badge>
+        </div>
+
+        {loading ? <Loader /> : pending.length === 0 ? (
+          <Card style={{ textAlign: "center", padding: "32px 20px" }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
+            <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>
+              No pending matches to report.
+            </p>
+            <p style={{ fontFamily: F.b, fontSize: 12, color: C.dim, margin: "6px 0 0" }}>
+              Check back after your next game.
+            </p>
+          </Card>
+        ) : (
+          pending.map(m => (
+            <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />
+          ))
+        )}
+
+        {/* Recent completed */}
+        {completed.length > 0 && !loading && (
+          <>
+            <h3 style={{ fontFamily: F.d, fontSize: 16, color: C.muted, margin: "24px 0 10px" }}>Recent Results</h3>
+            {completed.map(m => (
+              <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />
+            ))}
+          </>
+        )}
+
+        <div style={{ textAlign: "center", marginTop: 32 }}>
+          <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ─── Admin Match Edit Modal ───
+function AdminEditModal({ match, onClose, onSave }) {
+  const [winnerId, setWinnerId] = useState(match.winner_id || "");
+  const [isOT, setIsOT] = useState(match.went_to_ot || false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: rpcErr } = await supabase.rpc("admin_update_match_result", {
+        match_id: match.id,
+        new_winner_id: winnerId || null,
+        is_ot: isOT,
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+      onSave();
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  };
+
+  const clearResult = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: rpcErr } = await supabase.rpc("admin_clear_match_result", { match_id: match.id });
+      if (rpcErr) throw new Error(rpcErr.message);
+      onSave();
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <Card style={{ width: "100%", maxWidth: 420, padding: "20px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ fontFamily: F.d, fontSize: 18, margin: 0 }}>Edit Result</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ fontFamily: F.b, fontSize: 12, color: C.dim, marginBottom: 16 }}>
+          {fmtDate(match.scheduled_date)} · {match.team_a_name} vs {match.team_b_name}
+          {match.court ? ` · Court ${match.court}` : ""}
+        </div>
+
+        {error && (
+          <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+            <span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>{error}</span>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 8 }}>Winner</div>
+          {[
+            { id: match.team_a_id, name: match.team_a_name },
+            { id: match.team_b_id, name: match.team_b_name },
+          ].map(t => (
+            <button key={t.id} onClick={() => setWinnerId(t.id)} style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%",
+              padding: "12px 14px", borderRadius: 10, border: `1px solid ${winnerId === t.id ? C.amber : C.border}`,
+              background: winnerId === t.id ? C.amberGlow : "transparent",
+              color: winnerId === t.id ? C.amber : C.text,
+              fontFamily: F.b, fontSize: 14, fontWeight: winnerId === t.id ? 700 : 400,
+              cursor: "pointer", marginBottom: 6, textAlign: "left",
+            }}>
+              <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${winnerId === t.id ? C.amber : C.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {winnerId === t.id && <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.amber }} />}
+              </span>
+              {t.name}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <button onClick={() => setIsOT(!isOT)} style={{
+            width: 22, height: 22, borderRadius: 6, border: `2px solid ${isOT ? C.amber : C.border}`,
+            background: isOT ? C.amber : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            {isOT && <span style={{ color: C.bg, fontSize: 12, fontWeight: 900 }}>✓</span>}
+          </button>
+          <span style={{ fontFamily: F.b, fontSize: 13, color: C.text }}>Went to overtime (1-1)</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          {match.winner_id && (
+            <button onClick={clearResult} disabled={saving} style={{
+              padding: "11px 14px", borderRadius: 10, border: `1px solid ${C.red}40`,
+              background: `${C.red}12`, color: C.red, fontFamily: F.b, fontSize: 12, cursor: saving ? "wait" : "pointer",
+            }}>Clear Result</button>
+          )}
+          <button onClick={handleSave} disabled={!winnerId || saving} style={{
+            flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
+            background: winnerId ? C.amber : C.border, color: winnerId ? C.bg : C.dim,
+            fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: winnerId && !saving ? "pointer" : "not-allowed",
+          }}>
+            {saving ? "Saving..." : "Save Result"}
+          </button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Admin App ───
+function AdminApp({ user, myRole }) {
+  const [tab, setTab] = useState("matches"); // 'matches' | 'captains'
+  const [divisionId, setDivisionId] = useState(null);
+  const [divisions, setDivisions] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [captains, setCaptains] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [filter, setFilter] = useState("all"); // 'all' | 'pending' | 'completed'
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+
+  // Load divisions for current active season
+  useEffect(() => {
+    (async () => {
+      const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
+      if (!seasons?.length) return;
+      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level`);
+      const filtered = (d || []).filter(x => x.level !== "party");
+      setDivisions(filtered);
+      if (filtered.length) setDivisionId(filtered[0].id);
+    })();
+  }, []);
+
+  // Load matches for selected division
+  useEffect(() => {
+    if (!divisionId) return;
+    setLoading(true);
+    qAuth(
+      "matches",
+      `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80` +
+      `&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,` +
+      `team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`
+    ).then(data => {
+      const flat = (data || []).map(m => ({
+        ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—",
+      }));
+      setMatches(flat);
+      setLoading(false);
+    }).catch(e => { setError(e.message); setLoading(false); });
+  }, [divisionId]);
+
+  // Load captains + teams
+  useEffect(() => {
+    if (tab !== "captains") return;
+    setLoading(true);
+    Promise.all([
+      qAuth("user_roles", "select=id,email,role,team_id,tos_accepted,teams(name)&order=created_at.desc"),
+      q("teams", "select=id,name&order=name&limit=300"),
+    ]).then(([caps, tms]) => {
+      setCaptains(caps || []);
+      setTeams(tms || []);
+      setLoading(false);
+    }).catch(e => { setError(e.message); setLoading(false); });
+  }, [tab]);
+
+  const visibleMatches = matches.filter(m =>
+    filter === "all" ? true :
+    filter === "pending" ? m.status !== "completed" :
+    m.status === "completed"
+  );
+
+  const handleEditSave = async () => {
+    setEditing(null);
+    setSuccess("Result updated!");
+    // Reload
+    setDivisionId(id => { setTimeout(() => setDivisionId(id), 50); return null; });
+    setTimeout(() => setSuccess(null), 3000);
+  };
+
+  const removeCapRole = async (roleId) => {
+    if (!window.confirm("Remove this captain's access?")) return;
+    try {
+      await qAuth("user_roles", `id=eq.${roleId}`, "DELETE");
+      setCaptains(prev => prev.filter(c => c.id !== roleId));
+      setSuccess("Captain removed.");
+    } catch (e) { setError(e.message); }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
+      {/* Header */}
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+        background: `${C.surface}dd`, backdropFilter: "blur(12px)",
+        position: "sticky", top: 0, zIndex: 100,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Logo size={30} />
+          <div>
+            <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800 }}>
+              Tang<span style={{ color: C.amber }}> Time</span>
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 9, color: C.red, letterSpacing: 1 }}>Admin Panel</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ textAlign: "right" }}>
+            <Badge color={C.red} style={{ marginBottom: 2 }}>🔐 Super Admin</Badge>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{user?.email}</div>
+          </div>
+          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} style={{
+            padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`,
+            background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer",
+          }}>Sign out</button>
+        </div>
+      </header>
+
+      <main style={{ padding: "16px 16px 60px", maxWidth: 520, margin: "0 auto" }}>
+        {/* Alerts */}
+        {success && (
+          <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span>
+          </div>
+        )}
+        {error && (
+          <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span>
+            <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button>
+          </div>
+        )}
+
+        {/* Tab bar */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+          {[["matches", "📋 Matches"], ["captains", "👥 Captains"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
+              background: tab === k ? C.amber : "transparent",
+              color: tab === k ? C.bg : C.muted,
+              fontFamily: F.m, fontSize: 12, fontWeight: 700, transition: "all 0.15s",
+            }}>{l}</button>
+          ))}
+        </div>
+
+        {/* ── MATCHES TAB ── */}
+        {tab === "matches" && (
+          <>
+            {/* Division picker */}
+            <div style={{ overflowX: "auto", margin: "0 -16px 14px", padding: "0 16px" }}>
+              <div style={{ display: "flex", gap: 6, minWidth: "max-content" }}>
+                {divisions.map(d => (
+                  <button key={d.id} onClick={() => setDivisionId(d.id)} style={{
+                    padding: "7px 12px", borderRadius: 8, border: `1px solid ${divisionId === d.id ? C.amber : C.border}`,
+                    background: divisionId === d.id ? C.amber : C.surface,
+                    color: divisionId === d.id ? C.bg : C.muted,
+                    fontFamily: F.m, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+                  }}>
+                    {levelEmoji(d.level)} {d.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Filter */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+              {[["all", "All"], ["pending", "Pending"], ["completed", "Completed"]].map(([k, l]) => (
+                <button key={k} onClick={() => setFilter(k)} style={{
+                  padding: "6px 12px", borderRadius: 8, border: `1px solid ${filter === k ? C.amber : C.border}`,
+                  background: filter === k ? C.amberGlow : "transparent",
+                  color: filter === k ? C.amber : C.muted,
+                  fontFamily: F.m, fontSize: 11, fontWeight: filter === k ? 700 : 500, cursor: "pointer",
+                }}>{l}</button>
+              ))}
+              <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim, alignSelf: "center", marginLeft: 4 }}>
+                {visibleMatches.length} matches
+              </span>
+            </div>
+
+            {/* Match list */}
+            {loading ? <Loader /> : visibleMatches.length === 0 ? (
+              <Empty msg="No matches found" />
+            ) : (
+              visibleMatches.map(m => {
+                const done = m.status === "completed";
+                const winnerId = m.winner_id;
+                return (
+                  <div key={m.id} onClick={() => setEditing(m)} style={{
+                    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
+                    padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+                    transition: "border-color 0.15s",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>
+                        {fmtDate(m.scheduled_date)}{m.court ? ` · Court ${m.court}` : ""}
+                      </span>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {done && m.went_to_ot && <Badge color={C.amber} style={{ fontSize: 9, padding: "1px 6px" }}>OT</Badge>}
+                        <Badge color={done ? C.green : C.muted} style={{ fontSize: 9, padding: "1px 6px" }}>
+                          {done ? "✓ Done" : "⋯ Pending"}
+                        </Badge>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>Edit →</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontFamily: F.b, fontSize: 13, fontWeight: winnerId === m.team_a_id ? 700 : 400, color: winnerId === m.team_a_id ? C.text : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {winnerId === m.team_a_id && "🏆 "}{m.team_a_name}
+                      </span>
+                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textAlign: "center" }}>vs</span>
+                      <span style={{ fontFamily: F.b, fontSize: 13, fontWeight: winnerId === m.team_b_id ? 700 : 400, color: winnerId === m.team_b_id ? C.text : C.muted, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {winnerId === m.team_b_id && "🏆 "}{m.team_b_name}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </>
+        )}
+
+        {/* ── CAPTAINS TAB ── */}
+        {tab === "captains" && (
+          <>
+            <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+              <span style={{ fontFamily: F.b, fontSize: 12, color: C.blue }}>
+                ℹ️ To add a new captain, have them sign in at <strong>/captain</strong> first. Then assign them in Supabase.
+              </span>
+            </div>
+
+            {loading ? <Loader /> : captains.length === 0 ? (
+              <Empty msg="No captains yet" />
+            ) : (
+              captains.map(c => (
+                <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <Badge color={c.role === "super_admin" ? C.red : C.amber} style={{ fontSize: 10 }}>
+                          {c.role === "super_admin" ? "🔐 Admin" : "🎯 Captain"}
+                        </Badge>
+                        {c.tos_accepted && <Badge color={C.green} style={{ fontSize: 10 }}>✓ ToS</Badge>}
+                      </div>
+                      <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
+                      {c.teams?.name && <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{c.teams.name}</div>}
+                    </div>
+                    {c.role === "captain" && (
+                      <button onClick={() => removeCapRole(c.id)} style={{
+                        padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`,
+                        background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer",
+                      }}>Remove</button>
+                    )}
+                  </div>
+                </Card>
+              ))
+            )}
+          </>
+        )}
+
+        <div style={{ textAlign: "center", marginTop: 32 }}>
+          <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a>
+        </div>
+      </main>
+
+      {editing && (
+        <AdminEditModal match={editing} onClose={() => setEditing(null)} onSave={handleEditSave} />
+      )}
+    </div>
+  );
+}
+
+// ─── Auth wrapper (shared by captain + admin routes) ───
+function AuthWrapper({ mode }) {
+  const [authState, setAuthState] = useState("loading"); // loading | unauthenticated | needs_tos | authorized | unauthorized
+  const [user, setUser] = useState(null);
+  const [myRole, setMyRole] = useState(null);
+  const [showTos, setShowTos] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkRole = async (session) => {
+      if (!session) { if (mounted) setAuthState("unauthenticated"); return; }
+      const u = session.user;
+      if (mounted) setUser(u);
+
+      // Fetch role
+      const { data, error } = await supabase.rpc("get_my_role");
+      if (!mounted) return;
+
+      if (error || !data?.length) {
+        // User exists in auth but no role → unauthorized
+        setAuthState("unauthorized");
+        return;
+      }
+
+      const role = data[0];
+      setMyRole(role);
+
+      // Check mode access
+      if (mode === "admin" && role.role !== "super_admin") { setAuthState("unauthorized"); return; }
+      if (mode === "captain" && !["captain", "super_admin"].includes(role.role)) { setAuthState("unauthorized"); return; }
+
+      // Check ToS for captains
+      if (role.role === "captain" && !role.tos_accepted) {
+        setAuthState("needs_tos");
+        setShowTos(true);
+        return;
+      }
+
+      setAuthState("authorized");
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      checkRole(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      checkRole(session);
+    });
+
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, [mode]);
+
+  const handleTosAccept = async () => {
+    const { error } = await supabase
+      .from("user_roles")
+      .update({ tos_accepted: true, tos_accepted_at: new Date().toISOString() })
+      .eq("user_id", user.id);
+    if (!error) {
+      setMyRole(prev => ({ ...prev, tos_accepted: true }));
+      setShowTos(false);
+      setAuthState("authorized");
+    }
+  };
+
+  const handleTosDecline = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  };
+
+  if (authState === "loading") {
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Loader />
+      </div>
+    );
+  }
+
+  if (authState === "unauthenticated") return <SignInPage mode={mode} />;
+
+  if (authState === "unauthorized") {
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <Card style={{ maxWidth: 360, textAlign: "center", padding: "32px 24px" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🚫</div>
+          <h2 style={{ fontFamily: F.d, fontSize: 20, margin: "0 0 10px" }}>Access Denied</h2>
+          <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 20px", lineHeight: 1.6 }}>
+            {mode === "admin"
+              ? "This page requires super admin access."
+              : "Your account is not authorized as a team captain. Contact an admin if this is an error."}
+          </p>
+          <button onClick={() => supabase.auth.signOut().then(() => window.location.href = "/")} style={{
+            padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`,
+            background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer",
+          }}>Sign out & go home</button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {showTos && <TosModal onAccept={handleTosAccept} onDecline={handleTosDecline} />}
+      {authState === "authorized" && (
+        mode === "admin"
+          ? <AdminApp user={user} myRole={myRole} />
+          : <CaptainApp user={user} myRole={myRole} />
+      )}
+    </>
+  );
+}
+
+// ─── Terms of Service Page ───
+function TosPage() {
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b, padding: "24px 16px" }}>
+      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+          <a href="/" style={{ textDecoration: "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Logo size={28} />
+              <span style={{ fontFamily: F.d, fontSize: 16, color: C.text }}>Tang<span style={{ color: C.amber }}> Time</span></span>
+            </div>
+          </a>
+        </div>
+        <h1 style={{ fontFamily: F.d, fontSize: 26, color: C.text, margin: "0 0 6px" }}>Terms of Service</h1>
+        <p style={{ fontFamily: F.m, fontSize: 11, color: C.dim, margin: "0 0 24px" }}>Last updated: February 17, 2026</p>
+        {[
+          ["Welcome to TangTime", "TangTime is an unofficial companion app for the shuffleboard league community at Royal Palms Brooklyn. TangTime is not affiliated with, endorsed by, or operated by Royal Palms. By accessing or using TangTime, you agree to these Terms of Service. If you do not agree, please do not use the App."],
+          ["What TangTime Does", "TangTime provides league standings, match results, team statistics, and historical data for the shuffleboard community. Certain features, such as submitting match results, require a registered account."],
+          ["User Accounts", "Account creation is available for team captains and league administrators. By creating an account, you agree to provide accurate information and are responsible for maintaining the security of your account credentials."],
+          ["Player & Team Information", "TangTime displays team names, player first names and last initials, match results, and league statistics. By participating in the league and using the App, you consent to the display of your name in connection with your team and match results. If you wish to have your name removed, please contact us and we will accommodate your request within a reasonable timeframe."],
+          ["Acceptable Use", "You agree not to attempt to access accounts or data belonging to other users, interfere with or disrupt the App's functionality, use the App for any unlawful purpose, scrape or redistribute data without permission, or submit false or misleading match results."],
+          ["Match Results", "Team captains who submit match results are responsible for the accuracy of their submissions. TangTime reserves the right to correct or override submitted results at any time."],
+          ["Data & Privacy", "TangTime collects minimal personal information. For accounts created via Google Sign-In, we store your name, email address, and profile photo solely for authentication and account management. We do not sell or share your personal information with third parties. League data is sourced from publicly available information and internal record-keeping."],
+          ["Disclaimer", "TangTime is provided \"as is\" without warranties of any kind, express or implied. We do not guarantee the accuracy, completeness, or timeliness of any data displayed in the App. TangTime is a community project and is not responsible for official league decisions, standings disputes, or scheduling."],
+          ["Changes to These Terms", "We may update these Terms from time to time. Continued use of the App after changes constitutes acceptance of the updated Terms."],
+          ["Contact", "For questions, concerns, or removal requests, reach out through the league community or via the App."],
+        ].map(([title, body]) => (
+          <div key={title} style={{ marginBottom: 20 }}>
+            <h3 style={{ fontFamily: F.d, fontSize: 16, color: C.text, margin: "0 0 6px" }}>{title}</h3>
+            <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: 0, lineHeight: 1.7 }}>{body}</p>
+          </div>
+        ))}
+        <div style={{ marginTop: 32, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
+          <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+// Top-level router — checks URL path and renders the right experience.
 export default function TangTime() {
+  const path = window.location.pathname;
+  if (path === "/captain") return <AuthWrapper mode="captain" />;
+  if (path === "/admin") return <AuthWrapper mode="admin" />;
+  if (path === "/tos") return <TosPage />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [page, setPage] = useState("home");
   const [pageData, setPageData] = useState({});
   const [seasons, setSeasons] = useState([]);
