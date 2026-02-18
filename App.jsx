@@ -606,14 +606,14 @@ function MockBanner() {
 function Footer() {
   return (
     <div style={{ textAlign: "center", marginTop: 40, paddingBottom: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-      <div style={{ display: "flex", gap: 16 }}>
-        <a href="/captain" style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Captain Login</a>
-        <a href="/terms" style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Terms of Service</a>
-      </div>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}` }}>
         <NHSALogo size={20} />
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
       </div>
+      <p style={{ fontFamily: F.m, fontSize: 11, color: C.dim, margin: 0 }}>
+        By using this app, you agree to the{" "}
+        <a href="/terms" style={{ color: C.amber, textDecoration: "none" }}>Terms of Service</a>.
+      </p>
     </div>
   );
 }
