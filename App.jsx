@@ -1643,33 +1643,6 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                 </Card>
               )}
 
-              {/* H2H Records */}
-              {opponents.length > 0 && (
-                <Card style={{ padding: "16px 18px", marginBottom: 16 }}>
-                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Head-to-Head</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {opponents.map(o => (
-                      <div key={o.id} onClick={() => { setSelectedId(o.id); setProfileTab("matches"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
-                        <TeamAvatar name={o.name} size={28} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</div>
-                        </div>
-                        <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>
-                          <span style={{ color: C.green, fontWeight: 700 }}>{o.wins}</span>
-                          <span style={{ color: C.dim }}> - </span>
-                          <span style={{ color: C.red, fontWeight: 700 }}>{o.losses}</span>
-                        </div>
-                        <div style={{
-                          width: 40, textAlign: "right",
-                          fontFamily: F.m, fontSize: 11, fontWeight: 700,
-                          color: o.pct >= 0.6 ? C.green : o.pct <= 0.4 ? C.red : C.text,
-                        }}>{(o.pct * 100).toFixed(0)}%</div>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
               {/* Court Win Rates */}
               {courts.length > 0 && (
                 <Card style={{ padding: "16px 18px", marginBottom: 16 }}>
@@ -1694,6 +1667,33 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                             transition: "width 0.3s",
                           }} />
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {/* H2H Records */}
+              {opponents.length > 0 && (
+                <Card style={{ padding: "16px 18px", marginBottom: 16 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>Head-to-Head</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {opponents.map(o => (
+                      <div key={o.id} onClick={() => { setSelectedId(o.id); setProfileTab("matches"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
+                        <TeamAvatar name={o.name} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</div>
+                        </div>
+                        <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, whiteSpace: "nowrap" }}>
+                          <span style={{ color: C.green, fontWeight: 700 }}>{o.wins}</span>
+                          <span style={{ color: C.dim }}> - </span>
+                          <span style={{ color: C.red, fontWeight: 700 }}>{o.losses}</span>
+                        </div>
+                        <div style={{
+                          width: 40, textAlign: "right",
+                          fontFamily: F.m, fontSize: 11, fontWeight: 700,
+                          color: o.pct >= 0.6 ? C.green : o.pct <= 0.4 ? C.red : C.text,
+                        }}>{(o.pct * 100).toFixed(0)}%</div>
                       </div>
                     ))}
                   </div>
