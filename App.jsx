@@ -1,4 +1,4 @@
-// App v26 — v22 base + week fix + auth + captain/admin routes (no external deps)
+]// App v26 — v22 base + week fix + auth + captain/admin routes (no external deps)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -2202,9 +2202,9 @@ function SignInPage({ mode = "captain" }) {
     signInWithGoogle(mode === "admin" ? "/admin" : "/captain");
   };
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "16px 24px" }}>
       <div style={{ width: "100%", maxWidth: 360 }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 6 }}>
             <Logo size={44} />
             <div>
