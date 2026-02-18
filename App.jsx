@@ -2404,11 +2404,12 @@ function AdminEditModal({ match, onClose, onSave }) {
 }
 
 function AdminApp({ user, myRole }) {
-  const [tab, setTab] = useState("matches");
+  const [tab, setTab] = useState("requests");
   const [divisionId, setDivisionId] = useState(null);
   const [divisions, setDivisions] = useState([]);
   const [matches, setMatches] = useState([]);
   const [captains, setCaptains] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -2437,14 +2438,39 @@ function AdminApp({ user, myRole }) {
   }, [divisionId]);
 
   useEffect(() => {
+    if (tab !== "requests") return;
+    setLoading(true);
+    qAuth("access_requests", "status=eq.pending&order=created_at.asc&select=id,email,request_type,team_id,reason,created_at,teams(id,name)")
+      .then(data => { setRequests(data || []); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [tab]);
+
+  const handleApprove = async (requestId) => {
+    try {
+      await rpc("approve_access_request", { request_id: requestId });
+      setRequests(prev => prev.filter(r => r.id !== requestId));
+      setSuccess("Access approved!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleDeny = async (requestId) => {
+    if (!window.confirm("Deny this request?")) return;
+    try {
+      await rpc("deny_access_request", { request_id: requestId });
+      setRequests(prev => prev.filter(r => r.id !== requestId));
+      setSuccess("Request denied.");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+  };
+
+  useEffect(() => {
     if (tab !== "captains") return;
     setLoading(true);
     qAuth("user_roles", "select=id,email,role,team_id,tos_accepted,teams(name)&order=created_at.desc")
       .then(caps => { setCaptains(caps || []); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [tab]);
-
-  const visibleMatches = matches.filter(m => filter === "all" ? true : filter === "pending" ? m.status !== "completed" : m.status === "completed");
 
   const handleEditSave = () => {
     setEditing(null);
@@ -2486,8 +2512,8 @@ function AdminApp({ user, myRole }) {
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span><button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button></div>}
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["matches", "📋 Matches"], ["captains", "👥 Captains"]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>{l}</button>
+          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["captains", "👥 Captains"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>{l}</button>
           ))}
         </div>
 
@@ -2528,6 +2554,39 @@ function AdminApp({ user, myRole }) {
           </>
         )}
 
+        {tab === "requests" && (
+          <>
+            {loading ? <Loader /> : requests.length === 0 ? (
+              <Card style={{ textAlign: "center", padding: "32px 20px" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
+                <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>No pending requests.</p>
+              </Card>
+            ) : requests.map(r => (
+              <Card key={r.id} style={{ padding: "14px 16px", marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <Badge color={r.request_type === "admin" ? C.red : C.amber} style={{ marginBottom: 6 }}>
+                      {r.request_type === "admin" ? "🔐 Admin Request" : "🎯 Captain Request"}
+                    </Badge>
+                    <div style={{ fontFamily: F.b, fontSize: 14, color: C.text, fontWeight: 600 }}>{r.email}</div>
+                    {r.request_type === "captain" && r.teams?.name && (
+                      <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 2 }}>Team: {r.teams.name}</div>
+                    )}
+                    {r.request_type === "admin" && r.reason && (
+                      <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginTop: 4, fontStyle: "italic" }}>"{r.reason}"</div>
+                    )}
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => handleDeny(r.id)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.red}40`, background: `${C.red}12`, color: C.red, fontFamily: F.b, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Deny</button>
+                  <button onClick={() => handleApprove(r.id)} style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ Approve</button>
+                </div>
+              </Card>
+            ))}
+          </>
+        )}
+
         {tab === "captains" && (
           <>
             <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
@@ -2558,11 +2617,128 @@ function AdminApp({ user, myRole }) {
   );
 }
 
+function RequestAccessForm({ user, mode, onSubmitted }) {
+  const [teams, setTeams] = useState([]);
+  const [teamId, setTeamId] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [existingRequest, setExistingRequest] = useState(null);
+  const [checkingRequest, setCheckingRequest] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      // Check if they already submitted a request
+      try {
+        const existing = await qAuth("access_requests", `user_id=eq.${user.id}&select=id,status,request_type,team_id`);
+        if (existing?.length) { setExistingRequest(existing[0]); setCheckingRequest(false); return; }
+      } catch {}
+
+      // Load teams for captain requests
+      if (mode === "captain") {
+        try {
+          const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
+          if (seasons?.length) {
+            const divs = await q("divisions", `season_id=eq.${seasons[0].id}&select=id,team_seasons(team_id,teams(id,name))&level=neq.party`);
+            const teamSet = new Map();
+            divs?.forEach(d => d.team_seasons?.forEach(ts => {
+              if (ts.teams) teamSet.set(ts.teams.id, ts.teams.name);
+            }));
+            setTeams([...teamSet.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)));
+          }
+        } catch {}
+      }
+      setCheckingRequest(false);
+    })();
+  }, [user.id, mode]);
+
+  const handleSubmit = async () => {
+    if (mode === "captain" && !teamId) { setError("Please select your team."); return; }
+    if (mode === "admin" && !reason.trim()) { setError("Please enter a reason for access."); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await qAuth("access_requests", "", "POST", {
+        user_id: user.id,
+        email: user.email,
+        request_type: mode === "admin" ? "admin" : "captain",
+        team_id: mode === "captain" ? teamId : null,
+        reason: mode === "admin" ? reason.trim() : null,
+        status: "pending",
+      });
+      onSubmitted();
+    } catch (e) {
+      setError(e.message.includes("unique") ? "You already submitted a request." : e.message);
+    }
+    setSubmitting(false);
+  };
+
+  if (checkingRequest) return <Loader />;
+
+  if (existingRequest) {
+    return (
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>
+          {existingRequest.status === "approved" ? "✅" : existingRequest.status === "denied" ? "❌" : "⏳"}
+        </div>
+        <h3 style={{ fontFamily: F.d, fontSize: 18, margin: "0 0 8px" }}>
+          {existingRequest.status === "approved" ? "Access Approved!" : existingRequest.status === "denied" ? "Request Denied" : "Request Submitted"}
+        </h3>
+        <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 16px", lineHeight: 1.6 }}>
+          {existingRequest.status === "approved"
+            ? "Your access has been approved. Please refresh the page to continue."
+            : existingRequest.status === "denied"
+            ? "Your request was not approved. Contact a league admin for more information."
+            : "Your request is pending review. You'll be notified once approved."}
+        </p>
+        {existingRequest.status === "approved"
+          ? <button onClick={() => window.location.reload()} style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Refresh</button>
+          : <button onClick={signOut} style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out</button>
+        }
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>{mode === "captain" ? "🎯" : "🔐"}</div>
+      <h3 style={{ fontFamily: F.d, fontSize: 18, textAlign: "center", margin: "0 0 6px" }}>Request Access</h3>
+      <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, textAlign: "center", margin: "0 0 20px", lineHeight: 1.5 }}>
+        {mode === "captain" ? "Select your team to request captain access." : "Tell us why you need admin access."}
+      </p>
+      <div style={{ background: C.surfAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 16 }}>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginBottom: 2 }}>Signed in as</div>
+        <div style={{ fontFamily: F.m, fontSize: 12, color: C.text }}>{user.email}</div>
+      </div>
+      {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>{error}</span></div>}
+      {mode === "captain" ? (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 6 }}>Your Team</div>
+          <select value={teamId} onChange={e => setTeamId(e.target.value)} style={{ width: "100%", padding: "11px 12px", borderRadius: 10, border: `1px solid ${teamId ? C.amber : C.border}`, background: C.surface, color: teamId ? C.text : C.dim, fontFamily: F.b, fontSize: 14, cursor: "pointer", outline: "none" }}>
+            <option value="">Select your team...</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 6 }}>Reason for Access</div>
+          <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. League coordinator, need to manage match results..." rows={3} style={{ width: "100%", padding: "11px 12px", borderRadius: 10, border: `1px solid ${reason ? C.amber : C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 13, resize: "none", outline: "none", boxSizing: "border-box" }} />
+        </div>
+      )}
+      <button onClick={handleSubmit} disabled={submitting} style={{ width: "100%", padding: "13px 0", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: submitting ? "wait" : "pointer" }}>
+        {submitting ? "Submitting..." : "Request Access"}
+      </button>
+      <button onClick={signOut} style={{ width: "100%", marginTop: 8, padding: "10px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out</button>
+    </div>
+  );
+}
+
 function AuthWrapper({ mode }) {
   const [authState, setAuthState] = useState("loading");
   const [user, setUser] = useState(null);
   const [myRole, setMyRole] = useState(null);
   const [showTos, setShowTos] = useState(false);
+  const [showRequestForm, setShowRequestForm] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -2573,12 +2749,12 @@ function AuthWrapper({ mode }) {
       if (!u) { setAuthState("unauthenticated"); return; }
       setUser(u);
       let roleData;
-      try { roleData = await rpc("get_my_role"); } catch { setAuthState("unauthorized"); return; }
-      if (!roleData?.length) { setAuthState("unauthorized"); return; }
+      try { roleData = await rpc("get_my_role"); } catch { setAuthState("needs_request"); return; }
+      if (!roleData?.length) { setAuthState("needs_request"); return; }
       const role = roleData[0];
       setMyRole(role);
-      if (mode === "admin" && role.role !== "super_admin") { setAuthState("unauthorized"); return; }
-      if (mode === "captain" && !["captain", "super_admin"].includes(role.role)) { setAuthState("unauthorized"); return; }
+      if (mode === "admin" && role.role !== "super_admin") { setAuthState("needs_request"); return; }
+      if (mode === "captain" && !["captain", "super_admin"].includes(role.role)) { setAuthState("needs_request"); return; }
       if (role.role === "captain" && !role.tos_accepted) { setAuthState("needs_tos"); setShowTos(true); return; }
       setAuthState("authorized");
     })();
@@ -2594,15 +2770,31 @@ function AuthWrapper({ mode }) {
 
   if (authState === "loading") return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Loader /></div>;
   if (authState === "unauthenticated") return <SignInPage mode={mode} />;
-  if (authState === "unauthorized") return (
+  if (authState === "needs_request") return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <Card style={{ maxWidth: 360, textAlign: "center", padding: "32px 24px" }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🚫</div>
-        <h2 style={{ fontFamily: F.d, fontSize: 20, margin: "0 0 10px" }}>Access Denied</h2>
-        <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 20px", lineHeight: 1.6 }}>
-          {mode === "admin" ? "This page requires super admin access." : "Your account is not authorized as a captain. Contact an admin if this is an error."}
-        </p>
-        <button onClick={signOut} style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out & go home</button>
+      <div style={{ width: "100%", maxWidth: 400 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 4 }}>
+            <Logo size={32} />
+            <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800 }}>Tang<span style={{ color: C.amber }}> Time</span></div>
+          </div>
+        </div>
+        <Card>
+          <RequestAccessForm user={user} mode={mode} onSubmitted={() => setAuthState("request_submitted")} />
+        </Card>
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a>
+        </div>
+      </div>
+    </div>
+  );
+  if (authState === "request_submitted") return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <Card style={{ maxWidth: 380, textAlign: "center", padding: "32px 24px" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
+        <h2 style={{ fontFamily: F.d, fontSize: 20, margin: "0 0 10px" }}>Request Submitted!</h2>
+        <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 20px", lineHeight: 1.6 }}>Your request has been sent. You'll be notified once it's been approved.</p>
+        <button onClick={signOut} style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out</button>
       </Card>
     </div>
   );
