@@ -2216,7 +2216,7 @@ function SignInPage({ mode = "captain" }) {
         </div>
         <Card>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>{mode === "admin" ? "🔐" : "🎯"}</div>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>{mode === "admin" ? "🔐" : <CaptainBadge size={40} />}</div>
             <h2 style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>Sign In</h2>
             <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 24px", lineHeight: 1.5 }}>
               {mode === "captain" ? "Sign in to submit match results and update rosters for your team." : "Sign in to edit any match result, manage captains, or update team rosters."}
@@ -2366,7 +2366,7 @@ function CaptainApp({ user, myRole }) {
         </div>
         {loading ? <Loader /> : pending.length === 0 ? (
           <Card style={{ textAlign: "center", padding: "32px 20px" }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
+            <div style={{ fontSize: 36, marginBottom: 10 }}><CaptainBadge size={40} /></div>
             <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>No pending matches to report.</p>
           </Card>
         ) : pending.map(m => <CaptainMatchCard key={m.id} match={m} myTeamId={myRole.team_id} onSubmit={handleSubmit} submitting={submitting} />)}
@@ -2630,7 +2630,7 @@ function AdminApp({ user, myRole }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                   <div>
                     <Badge color={r.request_type === "admin" ? C.red : C.amber} style={{ marginBottom: 6 }}>
-                      {r.request_type === "admin" ? "🔐 Admin Request" : "🎯 Captain Request"}
+                      {r.request_type === "admin" ? "🔐 Admin Request" : "Captain Request"}
                     </Badge>
                     <div style={{ fontFamily: F.b, fontSize: 14, color: C.text, fontWeight: 600 }}>{r.email}</div>
                     {r.request_type === "captain" && r.teams?.name && (
@@ -2663,7 +2663,7 @@ function AdminApp({ user, myRole }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <Badge color={c.role === "super_admin" ? C.red : C.amber} style={{ fontSize: 10 }}>{c.role === "super_admin" ? "🔐 Admin" : "🎯 Captain"}</Badge>
+                      <Badge color={c.role === "super_admin" ? C.red : C.amber} style={{ fontSize: 10 }}>{c.role === "super_admin" ? "🔐 Admin" : "Captain"}</Badge>
                       {c.tos_accepted && <Badge color={C.green} style={{ fontSize: 10 }}>✓ ToS</Badge>}
                     </div>
                     <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
@@ -2767,7 +2767,7 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
 
   return (
     <div>
-      <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>{mode === "captain" ? "🎯" : "🔐"}</div>
+      <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>{mode === "captain" ? <CaptainBadge size={40} /> : "🔐"}</div>
       <h3 style={{ fontFamily: F.d, fontSize: 18, textAlign: "center", margin: "0 0 6px" }}>Request Access</h3>
       <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, textAlign: "center", margin: "0 0 20px", lineHeight: 1.5 }}>
         {mode === "captain" ? "Select your team to request captain access." : "Tell us why you need admin access."}
@@ -3134,7 +3134,7 @@ function AuthWrapper({ mode }) {
       setMyRole(role);
       if (mode === "admin" && role.role !== "super_admin") { setAuthState("needs_request"); return; }
       if (mode === "captain" && !["captain", "super_admin"].includes(role.role)) { setAuthState("needs_request"); return; }
-      if (role.role === "captain" && !role.tos_accepted) { setAuthState("needs_tos"); setShowTos(true); return; }
+      if (role.role === "captain" && !role.tos_accepted) { setAuthState("authorized"); return; }
       setAuthState("authorized");
     })();
     return () => { mounted = false; };
