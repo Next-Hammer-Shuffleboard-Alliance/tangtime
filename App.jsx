@@ -2552,6 +2552,8 @@ function AdminApp({ user, myRole }) {
     } catch (e) { setError(e.message); }
   };
 
+  const visibleMatches = matches.filter(m => filter === "all" ? true : filter === "pending" ? m.status !== "completed" : m.status === "completed");
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}dd`, backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
