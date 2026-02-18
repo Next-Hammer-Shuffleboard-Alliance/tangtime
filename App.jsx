@@ -2678,28 +2678,36 @@ function AdminApp({ user, myRole }) {
 
         {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
 
-        {tab === "captains" && (
-          <>
-            <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
-              <span style={{ fontFamily: F.b, fontSize: 12, color: C.blue }}>ℹ️ To add a new captain, have them sign in at <strong>/captain</strong> first, then assign them in Supabase.</span>
-            </div>
-            {loadingCaptains ? <Loader /> : captains.length === 0 ? <Empty msg="No captains yet" /> : captains.map(c => (
-              <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <Badge color={c.role === "super_admin" ? C.red : C.amber} style={{ fontSize: 10 }}>{c.role === "super_admin" ? "🔐 Admin" : "Captain"}</Badge>
-                      {c.tos_accepted && <Badge color={C.green} style={{ fontSize: 10 }}>✓ ToS</Badge>}
-                    </div>
-                    <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
-                    {c.teams?.name && <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{c.teams.name}</div>}
-                  </div>
-                  {c.role === "captain" && <button onClick={() => removeCapRole(c.id)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Remove</button>}
+        {tab === "captains" && (() => {
+          const admins = captains.filter(c => c.role === "super_admin");
+          const caps = captains.filter(c => c.role === "captain");
+          const renderCard = (c) => (
+            <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
+                  {c.teams?.name && <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{c.teams.name}</div>}
                 </div>
-              </Card>
-            ))}
-          </>
-        )}
+                {c.role === "captain" && <button onClick={() => removeCapRole(c.id)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Remove</button>}
+              </div>
+            </Card>
+          );
+          return (
+            <>
+              <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+                <span style={{ fontFamily: F.b, fontSize: 12, color: C.blue }}>ℹ️ To add a new captain, have them sign in at <strong>/captain</strong> and submit an access request.</span>
+              </div>
+              {loadingCaptains ? <Loader /> : (
+                <>
+                  <div style={{ fontFamily: F.d, fontSize: 13, color: C.red, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>🔐 Admins ({admins.length})</div>
+                  {admins.length === 0 ? <Empty msg="No admins" /> : admins.map(renderCard)}
+                  <div style={{ fontFamily: F.d, fontSize: 13, color: C.amber, letterSpacing: 1, textTransform: "uppercase", margin: "16px 0 8px" }}>👥 Captains ({caps.length})</div>
+                  {caps.length === 0 ? <Empty msg="No captains yet" /> : caps.map(renderCard)}
+                </>
+              )}
+            </>
+          );
+        })()}
 
         <div style={{ textAlign: "center", marginTop: 32 }}><a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a></div>
       </main>
