@@ -1,8 +1,5 @@
-// App v23 — Auth + Captain Score Entry
-// New in v23: Google OAuth, /captain route (score entry), /admin route (full edit)
-// Requires: npm install @supabase/supabase-js
+// App v25 — Auth + Captain Score Entry (no external dependencies)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
 
 // ─── Supabase ───
 const SUPA_URL = "https://ynwohnffmlfyejhfttxq.supabase.co";
@@ -11,8 +8,108 @@ const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZi
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 let USE_MOCK = false;
 
-// Auth client — used for Google OAuth + session management
-const supabase = createClient(SUPA_URL, KEY);
+// ─── Auth helpers (no supabase-js needed) ───────────────────────────────────
+
+const AUTH_URL = `${SUPA_URL}/auth/v1`;
+
+// Get current session from localStorage (Supabase stores it there after OAuth)
+function getSession() {
+  try {
+    const raw = localStorage.getItem(`sb-ynwohnffmlfyejhfttxq-auth-token`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Check expiry
+    if (parsed?.expires_at && parsed.expires_at * 1000 < Date.now()) return null;
+    return parsed;
+  } catch { return null; }
+}
+
+function getAccessToken() {
+  return getSession()?.access_token || null;
+}
+
+function authHeaders() {
+  const token = getAccessToken() || KEY;
+  return { apikey: KEY, Authorization: `Bearer ${token}` };
+}
+
+async function signInWithGoogle(redirectPath = "/captain") {
+  const redirectTo = encodeURIComponent(`${window.location.origin}${redirectPath}`);
+  window.location.href = `${AUTH_URL}/authorize?provider=google&redirect_to=${redirectTo}`;
+}
+
+async function signOut() {
+  const token = getAccessToken();
+  if (token) {
+    await fetch(`${AUTH_URL}/logout`, {
+      method: "POST",
+      headers: { apikey: KEY, Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  }
+  localStorage.removeItem(`sb-ynwohnffmlfyejhfttxq-auth-token`);
+  window.location.href = "/";
+}
+
+// Handle OAuth callback — Supabase puts tokens in the URL hash after redirect
+function handleAuthCallback() {
+  const hash = window.location.hash;
+  if (!hash.includes("access_token")) return false;
+  const params = new URLSearchParams(hash.replace("#", ""));
+  const access_token = params.get("access_token");
+  const refresh_token = params.get("refresh_token");
+  const expires_at = params.get("expires_at");
+  if (access_token) {
+    localStorage.setItem(`sb-ynwohnffmlfyejhfttxq-auth-token`, JSON.stringify({
+      access_token, refresh_token, expires_at: parseInt(expires_at),
+    }));
+    // Clean up URL
+    window.history.replaceState({}, "", window.location.pathname);
+    return true;
+  }
+  return false;
+}
+
+async function getUser() {
+  const token = getAccessToken();
+  if (!token) return null;
+  const r = await fetch(`${AUTH_URL}/user`, {
+    headers: { apikey: KEY, Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  return r.json();
+}
+
+// Authenticated REST call
+async function qAuth(table, params = "", method = "GET", body = null) {
+  const headers = {
+    ...authHeaders(),
+    ...(body ? { "Content-Type": "application/json", Prefer: "return=representation" } : {}),
+  };
+  const r = await fetch(`${SUPA}/${table}?${params}`, {
+    method, headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(err);
+  }
+  if (method === "DELETE") return null;
+  return r.json().catch(() => null);
+}
+
+// Call a Supabase RPC function
+async function rpc(fnName, params = {}) {
+  const r = await fetch(`${SUPA}/rpc/${fnName}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(err);
+  }
+  return r.json().catch(() => null);
+}
 
 async function q(table, params = "") {
   if (USE_MOCK) return getMock(table, params);
@@ -28,7 +125,7 @@ async function q(table, params = "") {
 
 // Authenticated REST call using current session token
 async function qAuth(table, params = "", method = "GET", body = null) {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = const token = getAccessToken(); const session = token ? { access_token: token } : null;
   const token = session?.access_token || KEY;
   const headers = {
     apikey: KEY,
@@ -546,7 +643,7 @@ function Footer() {
     <div style={{ textAlign: "center", marginTop: 40, paddingBottom: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
       <div style={{ display: "flex", gap: 16 }}>
         <a href="/captain" style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Captain Login</a>
-        <a href="/tos" onClick={(e) => { e.preventDefault(); window.open("/tos", "_blank"); }} style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Terms of Service</a>
+        <a href="/terms" onClick={(e) => { e.preventDefault(); window.open("/terms", "_blank"); }} style={{ fontFamily: F.m, fontSize: 11, color: C.dim, textDecoration: "none" }}>Terms of Service</a>
       </div>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}` }}>
         <NHSALogo size={20} />
@@ -2134,13 +2231,7 @@ function SignInPage({ mode = "captain" }) {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
-    const { error: e } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: window.location.origin + (mode === "admin" ? "/admin" : "/captain"),
-      },
-    });
-    if (e) { setError(e.message); setLoading(false); }
+    signInWithGoogle(mode === "admin" ? "/admin" : "/captain");
   };
 
   return (
@@ -2206,7 +2297,7 @@ function SignInPage({ mode = "captain" }) {
 
             <p style={{ fontFamily: F.b, fontSize: 11, color: C.dim, margin: "16px 0 0", lineHeight: 1.5 }}>
               By signing in, you agree to the{" "}
-              <a href="/tos" target="_blank" style={{ color: C.amber, textDecoration: "none" }}>Terms of Service</a>.
+              <a href="/terms" target="_blank" style={{ color: C.amber, textDecoration: "none" }}>Terms of Service</a>.
               {mode === "captain" && " Only authorized team captains can access this page."}
             </p>
           </div>
@@ -2346,12 +2437,11 @@ function CaptainApp({ user, myRole }) {
     setError(null);
     setSuccess(null);
     try {
-      const { error: rpcErr } = await supabase.rpc("submit_match_result", {
+      await rpc("submit_match_result", {
         match_id: matchId,
         winner_team_id: myRole.team_id,
         is_ot: isOT,
       });
-      if (rpcErr) throw new Error(rpcErr.message);
       setSuccess("Result submitted! Standings will update shortly.");
       await loadMatches();
     } catch (e) {
@@ -2386,7 +2476,7 @@ function CaptainApp({ user, myRole }) {
             <div style={{ fontFamily: F.b, fontSize: 12, color: C.text, fontWeight: 600 }}>{myRole?.team_name}</div>
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{user?.email}</div>
           </div>
-          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} style={{
+          <button onClick={() => signOut} style={{
             padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`,
             background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer",
           }}>Sign out</button>
@@ -2460,12 +2550,11 @@ function AdminEditModal({ match, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
-      const { error: rpcErr } = await supabase.rpc("admin_update_match_result", {
+      await rpc("admin_update_match_result", {
         match_id: match.id,
         new_winner_id: winnerId || null,
         is_ot: isOT,
       });
-      if (rpcErr) throw new Error(rpcErr.message);
       onSave();
     } catch (e) {
       setError(e.message);
@@ -2477,8 +2566,7 @@ function AdminEditModal({ match, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
-      const { error: rpcErr } = await supabase.rpc("admin_clear_match_result", { match_id: match.id });
-      if (rpcErr) throw new Error(rpcErr.message);
+      await rpc("admin_clear_match_result", { match_id: match.id });
       onSave();
     } catch (e) {
       setError(e.message);
@@ -2661,7 +2749,7 @@ function AdminApp({ user, myRole }) {
             <Badge color={C.red} style={{ marginBottom: 2 }}>🔐 Super Admin</Badge>
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{user?.email}</div>
           </div>
-          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} style={{
+          <button onClick={() => signOut} style={{
             padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`,
             background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer",
           }}>Sign out</button>
@@ -2821,7 +2909,7 @@ function AdminApp({ user, myRole }) {
 
 // ─── Auth wrapper (shared by captain + admin routes) ───
 function AuthWrapper({ mode }) {
-  const [authState, setAuthState] = useState("loading"); // loading | unauthenticated | needs_tos | authorized | unauthorized
+  const [authState, setAuthState] = useState("loading");
   const [user, setUser] = useState(null);
   const [myRole, setMyRole] = useState(null);
   const [showTos, setShowTos] = useState(false);
@@ -2829,29 +2917,33 @@ function AuthWrapper({ mode }) {
   useEffect(() => {
     let mounted = true;
 
-    const checkRole = async (session) => {
-      if (!session) { if (mounted) setAuthState("unauthenticated"); return; }
-      const u = session.user;
-      if (mounted) setUser(u);
+    const init = async () => {
+      // Handle OAuth callback if tokens are in the URL hash
+      handleAuthCallback();
 
-      // Fetch role
-      const { data, error } = await supabase.rpc("get_my_role");
+      const u = await getUser();
       if (!mounted) return;
 
-      if (error || !data?.length) {
-        // User exists in auth but no role → unauthorized
+      if (!u) { setAuthState("unauthenticated"); return; }
+      setUser(u);
+
+      // Fetch role via RPC
+      let roleData;
+      try {
+        roleData = await rpc("get_my_role");
+      } catch (e) {
         setAuthState("unauthorized");
         return;
       }
 
-      const role = data[0];
+      if (!roleData?.length) { setAuthState("unauthorized"); return; }
+
+      const role = roleData[0];
       setMyRole(role);
 
-      // Check mode access
       if (mode === "admin" && role.role !== "super_admin") { setAuthState("unauthorized"); return; }
       if (mode === "captain" && !["captain", "super_admin"].includes(role.role)) { setAuthState("unauthorized"); return; }
 
-      // Check ToS for captains
       if (role.role === "captain" && !role.tos_accepted) {
         setAuthState("needs_tos");
         setShowTos(true);
@@ -2861,32 +2953,24 @@ function AuthWrapper({ mode }) {
       setAuthState("authorized");
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      checkRole(session);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      checkRole(session);
-    });
-
-    return () => { mounted = false; subscription.unsubscribe(); };
+    init();
+    return () => { mounted = false; };
   }, [mode]);
 
   const handleTosAccept = async () => {
-    const { error } = await supabase
-      .from("user_roles")
-      .update({ tos_accepted: true, tos_accepted_at: new Date().toISOString() })
-      .eq("user_id", user.id);
-    if (!error) {
-      setMyRole(prev => ({ ...prev, tos_accepted: true }));
-      setShowTos(false);
-      setAuthState("authorized");
-    }
+    await qAuth(
+      "user_roles",
+      `user_id=eq.${user.id}`,
+      "PATCH",
+      { tos_accepted: true, tos_accepted_at: new Date().toISOString() }
+    );
+    setMyRole(prev => ({ ...prev, tos_accepted: true }));
+    setShowTos(false);
+    setAuthState("authorized");
   };
 
   const handleTosDecline = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/";
+    await signOut();
   };
 
   if (authState === "loading") {
@@ -2910,7 +2994,7 @@ function AuthWrapper({ mode }) {
               ? "This page requires super admin access."
               : "Your account is not authorized as a team captain. Contact an admin if this is an error."}
           </p>
-          <button onClick={() => supabase.auth.signOut().then(() => window.location.href = "/")} style={{
+          <button onClick={signOut} style={{
             padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`,
             background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer",
           }}>Sign out & go home</button>
@@ -2978,7 +3062,7 @@ export default function TangTime() {
   const path = window.location.pathname;
   if (path === "/captain") return <AuthWrapper mode="captain" />;
   if (path === "/admin") return <AuthWrapper mode="admin" />;
-  if (path === "/tos") return <TosPage />;
+  if (path === "/terms") return <TosPage />;
   return <MainApp />;
 }
 
