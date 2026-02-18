@@ -2531,9 +2531,9 @@ function AdminApp({ user, myRole }) {
       .catch(e => { setError(e.message); setLoadingRequests(false); });
   }, [tab]);
 
-  // Load captains when on captains tab
+  // Load captains when on captains or admins tab
   useEffect(() => {
-    if (tab !== "captains") return;
+    if (tab !== "captains" && tab !== "admins") return;
     setLoadingCaptains(true);
     qAuth("user_roles", "select=id,email,role,team_id,tos_accepted,teams(name)&order=created_at.desc")
       .then(caps => { setCaptains(caps || []); setLoadingCaptains(false); })
@@ -2601,7 +2601,7 @@ function AdminApp({ user, myRole }) {
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span><button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button></div>}
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["roster", "👕 Roster"], ["captains", "👥 Captains"]].map(([k, l]) => (
+          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["roster", "👕 Roster"], ["captains", "👥 Captains"], ["admins", "🔐 Admins"]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>{l}</button>
           ))}
         </div>
@@ -2678,36 +2678,43 @@ function AdminApp({ user, myRole }) {
 
         {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
 
-        {tab === "captains" && (() => {
-          const admins = captains.filter(c => c.role === "super_admin");
-          const caps = captains.filter(c => c.role === "captain");
-          const renderCard = (c) => (
-            <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
-                  {c.teams?.name && <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{c.teams.name}</div>}
-                </div>
-                {c.role === "captain" && <button onClick={() => removeCapRole(c.id)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Remove</button>}
-              </div>
-            </Card>
-          );
-          return (
-            <>
-              <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
-                <span style={{ fontFamily: F.b, fontSize: 12, color: C.blue }}>ℹ️ To add a new captain, have them sign in at <strong>/captain</strong> and submit an access request.</span>
-              </div>
-              {loadingCaptains ? <Loader /> : (
-                <>
-                  <div style={{ fontFamily: F.d, fontSize: 13, color: C.red, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>🔐 Admins ({admins.length})</div>
-                  {admins.length === 0 ? <Empty msg="No admins" /> : admins.map(renderCard)}
-                  <div style={{ fontFamily: F.d, fontSize: 13, color: C.amber, letterSpacing: 1, textTransform: "uppercase", margin: "16px 0 8px" }}>👥 Captains ({caps.length})</div>
-                  {caps.length === 0 ? <Empty msg="No captains yet" /> : caps.map(renderCard)}
-                </>
-              )}
-            </>
-          );
-        })()}
+        {tab === "captains" && (
+          <>
+            <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+              <span style={{ fontFamily: F.b, fontSize: 12, color: C.blue }}>ℹ️ To add a new captain, have them sign in at <strong>/captain</strong> and submit an access request.</span>
+            </div>
+            {loadingCaptains ? <Loader /> : (() => {
+              const caps = captains.filter(c => c.role === "captain");
+              return caps.length === 0 ? <Empty msg="No captains yet" /> : caps.map(c => (
+                <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
+                      {c.teams?.name && <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{c.teams.name}</div>}
+                    </div>
+                    <button onClick={() => removeCapRole(c.id)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Remove</button>
+                  </div>
+                </Card>
+              ));
+            })()}
+          </>
+        )}
+
+        {tab === "admins" && (
+          <>
+            <div style={{ background: `${C.red}10`, border: `1px solid ${C.red}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+              <span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>⚠️ Admins have full access to all data. Grant carefully.</span>
+            </div>
+            {loadingCaptains ? <Loader /> : (() => {
+              const admins = captains.filter(c => c.role === "super_admin");
+              return admins.length === 0 ? <Empty msg="No admins" /> : admins.map(c => (
+                <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
+                  <div style={{ fontFamily: F.b, fontSize: 13, color: C.text }}>{c.email}</div>
+                </Card>
+              ));
+            })()}
+          </>
+        )}
 
         <div style={{ textAlign: "center", marginTop: 32 }}><a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a></div>
       </main>
