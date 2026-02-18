@@ -2472,14 +2472,14 @@ function AdminApp({ user, myRole }) {
   }, []);
 
   useEffect(() => {
-    if (!divisionId) return;
+    if (!divisionId || tab !== "matches") return;
     setLoading(true);
     qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         setMatches((data || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—" })));
         setLoading(false);
       }).catch(e => { setError(e.message); setLoading(false); });
-  }, [divisionId]);
+  }, [divisionId, tab]);
 
   useEffect(() => {
     if (tab !== "requests") return;
@@ -2540,7 +2540,7 @@ function AdminApp({ user, myRole }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Logo size={30} />
           <div>
-            <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800 }}>Tang<span style={{ color: C.amber }}> Time</span></div>
+            <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800 }}><span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span></div>
             <div style={{ fontFamily: F.m, fontSize: 9, color: C.red, letterSpacing: 1 }}>Admin Panel</div>
           </div>
         </div>
@@ -2924,6 +2924,7 @@ function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
 function AdminRosterTab({ seasonId }) {
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const [teamSearch, setTeamSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [csvMode, setCsvMode] = useState(false);
   const [csvText, setCsvText] = useState("");
@@ -3059,14 +3060,26 @@ function AdminRosterTab({ seasonId }) {
         </Card>
       ) : (
         <>
-          <div style={{ overflowX: "auto", margin: "0 -16px 14px", padding: "0 16px" }}>
-            <div style={{ display: "flex", gap: 6, minWidth: "max-content" }}>
-              {teams.map(t => (
-                <button key={t.id} onClick={() => setSelectedTeam(t)} style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${selectedTeam?.id === t.id ? C.amber : C.border}`, background: selectedTeam?.id === t.id ? C.amber : C.surface, color: selectedTeam?.id === t.id ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                  {t.name}
-                </button>
-              ))}
-            </div>
+          <div style={{ marginBottom: 14 }}>
+            <input
+              placeholder="Search team..."
+              value={teamSearch || ""}
+              onChange={e => {
+                setTeamSearch(e.target.value);
+                const match = teams.find(t => t.name.toLowerCase().includes(e.target.value.toLowerCase()));
+                if (match) setSelectedTeam(match);
+              }}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 14, outline: "none", boxSizing: "border-box" }}
+            />
+            {teamSearch && (
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
+                {teams.filter(t => t.name.toLowerCase().includes(teamSearch.toLowerCase())).map(t => (
+                  <div key={t.id} onClick={() => { setSelectedTeam(t); setTeamSearch(""); }} style={{ padding: "10px 14px", cursor: "pointer", fontFamily: F.b, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.border}` }}>
+                    {t.name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           {selectedTeam && (
             <Card>
