@@ -2453,12 +2453,15 @@ function AdminApp({ user, myRole }) {
   const [matches, setMatches] = useState([]);
   const [captains, setCaptains] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [loadingCaptains, setLoadingCaptains] = useState(false);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
+  // Load season + divisions once on mount
   useEffect(() => {
     (async () => {
       const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
@@ -2471,22 +2474,45 @@ function AdminApp({ user, myRole }) {
     })();
   }, []);
 
+  // Load matches when divisionId changes (only if on matches tab)
   useEffect(() => {
     if (!divisionId) return;
-    setLoading(true);
+    if (tab !== "matches") return;
+    setLoadingMatches(true);
     qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         setMatches((data || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—" })));
-        setLoading(false);
-      }).catch(e => { setError(e.message); setLoading(false); });
+        setLoadingMatches(false);
+      }).catch(e => { setError(e.message); setLoadingMatches(false); });
   }, [divisionId]);
 
+  // Load matches when switching to matches tab
+  useEffect(() => {
+    if (tab !== "matches" || !divisionId) return;
+    setLoadingMatches(true);
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+      .then(data => {
+        setMatches((data || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—" })));
+        setLoadingMatches(false);
+      }).catch(e => { setError(e.message); setLoadingMatches(false); });
+  }, [tab]);
+
+  // Load requests when on requests tab
   useEffect(() => {
     if (tab !== "requests") return;
-    setLoading(true);
+    setLoadingRequests(true);
     qAuth("access_requests", "status=eq.pending&order=created_at.asc&select=id,email,request_type,team_id,reason,created_at,teams(id,name)")
-      .then(data => { setRequests(data || []); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .then(data => { setRequests(data || []); setLoadingRequests(false); })
+      .catch(e => { setError(e.message); setLoadingRequests(false); });
+  }, [tab]);
+
+  // Load captains when on captains tab
+  useEffect(() => {
+    if (tab !== "captains") return;
+    setLoadingCaptains(true);
+    qAuth("user_roles", "select=id,email,role,team_id,tos_accepted,teams(name)&order=created_at.desc")
+      .then(caps => { setCaptains(caps || []); setLoadingCaptains(false); })
+      .catch(e => { setError(e.message); setLoadingCaptains(false); });
   }, [tab]);
 
   const handleApprove = async (requestId) => {
@@ -2507,14 +2533,6 @@ function AdminApp({ user, myRole }) {
       setTimeout(() => setSuccess(null), 3000);
     } catch (e) { setError(e.message); }
   };
-
-  useEffect(() => {
-    if (tab !== "captains") return;
-    setLoading(true);
-    qAuth("user_roles", "select=id,email,role,team_id,tos_accepted,teams(name)&order=created_at.desc")
-      .then(caps => { setCaptains(caps || []); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
-  }, [tab]);
 
   const handleEditSave = () => {
     setEditing(null);
@@ -2578,7 +2596,7 @@ function AdminApp({ user, myRole }) {
               ))}
               <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim, alignSelf: "center", marginLeft: 4 }}>{visibleMatches.length} matches</span>
             </div>
-            {loading ? <Loader /> : visibleMatches.length === 0 ? <Empty msg="No matches found" /> : visibleMatches.map(m => (
+            {loadingMatches ? <Loader /> : visibleMatches.length === 0 ? <Empty msg="No matches found" /> : visibleMatches.map(m => (
               <div key={m.id} onClick={() => setEditing(m)} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{fmtDate(m.scheduled_date)}{m.court ? ` · Court ${m.court}` : ""}</span>
@@ -2600,7 +2618,7 @@ function AdminApp({ user, myRole }) {
 
         {tab === "requests" && (
           <>
-            {loading ? <Loader /> : requests.length === 0 ? (
+            {loadingRequests ? <Loader /> : requests.length === 0 ? (
               <Card style={{ textAlign: "center", padding: "32px 20px" }}>
                 <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
                 <p style={{ fontFamily: F.b, fontSize: 14, color: C.muted, margin: 0 }}>No pending requests.</p>
@@ -2638,7 +2656,7 @@ function AdminApp({ user, myRole }) {
             <div style={{ background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
               <span style={{ fontFamily: F.b, fontSize: 12, color: C.blue }}>ℹ️ To add a new captain, have them sign in at <strong>/captain</strong> first, then assign them in Supabase.</span>
             </div>
-            {loading ? <Loader /> : captains.length === 0 ? <Empty msg="No captains yet" /> : captains.map(c => (
+            {loadingCaptains ? <Loader /> : captains.length === 0 ? <Empty msg="No captains yet" /> : captains.map(c => (
               <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
