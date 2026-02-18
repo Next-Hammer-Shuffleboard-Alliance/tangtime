@@ -2472,14 +2472,14 @@ function AdminApp({ user, myRole }) {
   }, []);
 
   useEffect(() => {
-    if (!divisionId || tab !== "matches") return;
+    if (!divisionId) return;
     setLoading(true);
     qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         setMatches((data || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—" })));
         setLoading(false);
       }).catch(e => { setError(e.message); setLoading(false); });
-  }, [divisionId, tab]);
+  }, [divisionId]);
 
   useEffect(() => {
     if (tab !== "requests") return;
@@ -2943,7 +2943,6 @@ function AdminRosterTab({ seasonId }) {
         }));
         const sorted = [...teamSet.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
         setTeams(sorted);
-        if (sorted.length) setSelectedTeam(sorted[0]);
         setLoading(false);
       });
   }, [seasonId]);
