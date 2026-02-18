@@ -2601,8 +2601,10 @@ function AdminApp({ user, myRole }) {
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span><button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button></div>}
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["roster", "👕 Roster"], ["captains", "👥 Captains"], ["admins", "🔐 Admins"]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s" }}>{l}</button>
+          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              {k === "captains" ? <><CaptainBadge size={13} /> Captains</> : l}
+            </button>
           ))}
         </div>
 
