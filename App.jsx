@@ -606,14 +606,14 @@ function MockBanner() {
 function Footer() {
   return (
     <div style={{ textAlign: "center", marginTop: 40, paddingBottom: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}` }}>
-        <NHSALogo size={20} />
-        <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
-      </div>
       <p style={{ fontFamily: F.m, fontSize: 11, color: C.dim, margin: 0 }}>
         By using this app, you agree to the{" "}
         <a href="/terms" style={{ color: C.amber, textDecoration: "none" }}>Terms of Service</a>.
       </p>
+      <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}` }}>
+        <NHSALogo size={20} />
+        <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
+      </div>
     </div>
   );
 }
@@ -2177,7 +2177,7 @@ function SignInPage({ mode = "captain" }) {
             <div style={{ fontSize: 36, marginBottom: 12 }}>{mode === "admin" ? "🔐" : "🎯"}</div>
             <h2 style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, margin: "0 0 8px" }}>Sign In</h2>
             <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 24px", lineHeight: 1.5 }}>
-              {mode === "captain" ? "Captains sign in to submit match results for their team." : "Super admins sign in to edit any match or manage captains."}
+              {mode === "captain" ? "Sign in to submit match results and update rosters for your team." : "Sign in to edit any match result, manage captains, or update team rosters."}
             </p>
             <button onClick={handleSignIn} disabled={loading} style={{ width: "100%", padding: "14px 20px", borderRadius: 12, border: `1px solid ${C.borderL}`, background: loading ? C.surface : C.surfAlt, color: loading ? C.dim : C.text, cursor: loading ? "wait" : "pointer", fontFamily: F.b, fontSize: 15, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, transition: "all 0.15s" }}>
               {loading ? (
