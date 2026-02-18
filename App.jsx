@@ -3079,6 +3079,8 @@ function AdminRosterTab({ seasonId }) {
     </div>
   );
 }
+
+function AuthWrapper({ mode }) {
   const [authState, setAuthState] = useState("loading");
   const [user, setUser] = useState(null);
   const [myRole, setMyRole] = useState(null);
