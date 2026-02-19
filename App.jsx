@@ -2390,10 +2390,7 @@ function CaptainApp({ user, myRole }) {
         )}
 
         {tab === "roster" && myRole?.team_id && myRole?.season_id && (
-          <>
-            <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: "0 0 12px" }}>{myRole?.team_name || "Your Roster"}</h3>
-            <RosterManager teamId={myRole.team_id} seasonId={myRole.season_id} />
-          </>
+          <RosterManager teamId={myRole.team_id} teamName={myRole.team_name} seasonId={myRole.season_id} />
         )}
         {tab === "roster" && myRole?.team_id && !myRole?.season_id && (
           <Card style={{ textAlign: "center", padding: "32px 20px" }}>
@@ -2870,9 +2867,9 @@ function TeamNameEditor({ teamId, teamName, onSaved }) {
   };
 
   if (!editing) return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
       <span style={{ fontFamily: F.d, fontSize: 16, color: C.text, fontWeight: 700 }}>{teamName}</span>
-      <button onClick={() => { setEditing(true); setName(teamName || ""); }} style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>✎ Rename</button>
+      <button onClick={() => { setEditing(true); setName(teamName || ""); }} style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✎ Rename</button>
     </div>
   );
 
@@ -3041,7 +3038,7 @@ function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
 function AdminRosterTab({ seasonId }) {
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(null);
-  const [teamSearch, setTeamSearch] = useState("");
+  const [teamSearch, setTeamSearch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [csvMode, setCsvMode] = useState(false);
   const [csvText, setCsvText] = useState("");
@@ -3176,17 +3173,19 @@ function AdminRosterTab({ seasonId }) {
         </Card>
       ) : (
         <>
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 14, position: "relative", zIndex: 10 }}>
             <input
               placeholder="Search team..."
-              value={teamSearch || ""}
+              value={teamSearch !== null ? teamSearch : (selectedTeam?.name || "")}
+              onFocus={() => setTeamSearch("")}
+              onBlur={() => { if (!teamSearch) setTeamSearch(null); }}
               onChange={e => setTeamSearch(e.target.value)}
               style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 14, outline: "none", boxSizing: "border-box" }}
             />
-            {teamSearch && (
+            {teamSearch !== null && teamSearch !== "" && (
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 4, maxHeight: 200, overflowY: "auto" }}>
                 {teams.filter(t => t.name.toLowerCase().includes(teamSearch.toLowerCase())).map(t => (
-                  <div key={t.id} onClick={() => { setSelectedTeam(t); setTeamSearch(""); }} style={{ padding: "10px 14px", cursor: "pointer", fontFamily: F.b, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.border}` }}>
+                  <div key={t.id} onClick={() => { setSelectedTeam(t); setTeamSearch(null); }} style={{ padding: "10px 14px", cursor: "pointer", fontFamily: F.b, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.border}` }}>
                     {t.name}
                   </div>
                 ))}
