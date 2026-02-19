@@ -3191,7 +3191,6 @@ function AdminRosterTab({ seasonId }) {
           </div>
           {selectedTeam && (
             <Card>
-              <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 14 }}>{selectedTeam.name}</div>
               <RosterManager teamId={selectedTeam.id} teamName={selectedTeam.name} seasonId={seasonId} isAdmin />
             </Card>
           )}
