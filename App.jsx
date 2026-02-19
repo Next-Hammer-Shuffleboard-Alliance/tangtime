@@ -2738,7 +2738,7 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
     (async () => {
       // Check if they already submitted a request
       try {
-        const existing = await qAuth("access_requests", `user_id=eq.${user.id}&select=id,status,request_type,team_id`);
+        const existing = await qAuth("access_requests", `user_id=eq.${user.id}&request_type=eq.${mode === "admin" ? "admin" : "captain"}&select=id,status,request_type,team_id&order=created_at.desc&limit=1`);
         if (existing?.length) { setExistingRequest(existing[0]); setCheckingRequest(false); return; }
       } catch {}
 
@@ -2800,7 +2800,10 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
             : "Your request is pending review. You'll be notified once approved."}
         </p>
         {existingRequest.status === "approved"
-          ? <button onClick={() => window.location.reload()} style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Refresh</button>
+          ? <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+              <button onClick={() => window.location.reload()} style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Refresh</button>
+              <button onClick={signOut} style={{ padding: "8px 16px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 12, cursor: "pointer" }}>Sign out instead</button>
+            </div>
           : <button onClick={signOut} style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out</button>
         }
       </div>
@@ -3191,6 +3194,7 @@ function AdminRosterTab({ seasonId }) {
           </div>
           {selectedTeam && (
             <Card>
+              <button onClick={() => { setSelectedTeam(null); setTeamSearch(""); }} style={{ marginBottom: 12, padding: "4px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>← Change team</button>
               <RosterManager teamId={selectedTeam.id} teamName={selectedTeam.name} seasonId={seasonId} isAdmin />
             </Card>
           )}
