@@ -2391,7 +2391,7 @@ function CaptainApp({ user, myRole }) {
 
         {tab === "roster" && myRole?.team_id && myRole?.season_id && (
           <>
-            <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: "0 0 12px" }}>Your Roster</h3>
+            <h3 style={{ fontFamily: F.d, fontSize: 18, color: C.text, margin: "0 0 12px" }}>{myRole?.team_name || "Your Roster"}</h3>
             <RosterManager teamId={myRole.team_id} seasonId={myRole.season_id} />
           </>
         )}
@@ -2784,12 +2784,13 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
   if (checkingRequest) return <Loader />;
 
   if (existingRequest) {
+    const isStaleApproval = existingRequest.status === "approved";
     return (
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 36, marginBottom: 12 }}>
           {existingRequest.status === "approved" ? "✅" : existingRequest.status === "denied" ? "❌" : "⏳"}
         </div>
-        <h3 style={{ fontFamily: F.d, fontSize: 18, margin: "0 0 8px" }}>
+        <h3 style={{ fontFamily: F.d, fontSize: 18, margin: "0 0 8px", color: C.text }}>
           {existingRequest.status === "approved" ? "Access Approved!" : existingRequest.status === "denied" ? "Request Denied" : "Request Submitted"}
         </h3>
         <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 16px", lineHeight: 1.6 }}>
@@ -2802,7 +2803,11 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
         {existingRequest.status === "approved"
           ? <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
               <button onClick={() => window.location.reload()} style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Refresh</button>
-              <button onClick={signOut} style={{ padding: "8px 16px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 12, cursor: "pointer" }}>Sign out instead</button>
+              <button onClick={async () => {
+                try { await qAuth("access_requests", `id=eq.${existingRequest.id}`, "DELETE"); } catch {}
+                setExistingRequest(null);
+              }} style={{ padding: "8px 16px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 12, cursor: "pointer" }}>Re-submit request instead</button>
+              <button onClick={signOut} style={{ padding: "6px 14px", borderRadius: 10, border: "none", background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Sign out</button>
             </div>
           : <button onClick={signOut} style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out</button>
         }
@@ -3175,13 +3180,7 @@ function AdminRosterTab({ seasonId }) {
             <input
               placeholder="Search team..."
               value={teamSearch || ""}
-              onChange={e => {
-                setTeamSearch(e.target.value);
-                if (e.target.value) {
-                  const match = teams.find(t => t.name.toLowerCase().includes(e.target.value.toLowerCase()));
-                  if (match) setSelectedTeam(match);
-                }
-              }}
+              onChange={e => setTeamSearch(e.target.value)}
               style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 14, outline: "none", boxSizing: "border-box" }}
             />
             {teamSearch && (
@@ -3269,7 +3268,7 @@ function AuthWrapper({ mode }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <Card style={{ maxWidth: 380, textAlign: "center", padding: "32px 24px" }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
-        <h2 style={{ fontFamily: F.d, fontSize: 20, margin: "0 0 10px" }}>Request Submitted!</h2>
+        <h2 style={{ fontFamily: F.d, fontSize: 20, margin: "0 0 10px", color: C.text }}>Request Submitted!</h2>
         <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 20px", lineHeight: 1.6 }}>Your request has been sent. You'll be notified once it's been approved.</p>
         <button onClick={signOut} style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 13, cursor: "pointer" }}>Sign out</button>
       </Card>
