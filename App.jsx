@@ -3177,8 +3177,10 @@ function AdminRosterTab({ seasonId }) {
               value={teamSearch || ""}
               onChange={e => {
                 setTeamSearch(e.target.value);
-                const match = teams.find(t => t.name.toLowerCase().includes(e.target.value.toLowerCase()));
-                if (match) setSelectedTeam(match);
+                if (e.target.value) {
+                  const match = teams.find(t => t.name.toLowerCase().includes(e.target.value.toLowerCase()));
+                  if (match) setSelectedTeam(match);
+                }
               }}
               style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 14, outline: "none", boxSizing: "border-box" }}
             />
@@ -3194,7 +3196,6 @@ function AdminRosterTab({ seasonId }) {
           </div>
           {selectedTeam && (
             <Card>
-              <button onClick={() => { setSelectedTeam(null); setTeamSearch(""); }} style={{ marginBottom: 12, padding: "4px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>← Change team</button>
               <RosterManager teamId={selectedTeam.id} teamName={selectedTeam.name} seasonId={seasonId} isAdmin />
             </Card>
           )}
