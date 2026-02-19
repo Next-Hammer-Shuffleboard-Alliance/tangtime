@@ -2690,11 +2690,11 @@ function AdminApp({ user, myRole }) {
               return caps.length === 0 ? <Empty msg="No captains yet" /> : caps.map(c => (
                 <Card key={c.id} style={{ padding: "12px 16px", marginBottom: 8 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 2 }}>{c.email}</div>
-                      {c.teams?.name && <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>{c.teams.name}</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 4 }}>{c.email}</div>
+                      {c.team_id && <TeamNameEditor teamId={c.team_id} teamName={c.teams?.name} onSaved={(n) => setCaptains(prev => prev.map(x => x.id === c.id ? { ...x, teams: { ...x.teams, name: n } } : x))} />}
                     </div>
-                    <button onClick={() => removeCapRole(c.id)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Remove</button>
+                    <button onClick={() => removeCapRole(c.id)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.red}40`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>Remove</button>
                   </div>
                 </Card>
               ));
@@ -2842,6 +2842,50 @@ function RequestAccessForm({ user, mode, onSubmitted }) {
 }
 
 // ── Roster Manager (shared by Admin + Captain) ───────────
+// ── Team Name Editor ─────────────────────────────────────
+function TeamNameEditor({ teamId, teamName, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(teamName || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSave = async () => {
+    if (!name.trim() || name.trim() === teamName) { setEditing(false); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await qAuth("teams", `id=eq.${teamId}`, "PATCH", { name: name.trim() });
+      onSaved(name.trim());
+      setEditing(false);
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  };
+
+  if (!editing) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontFamily: F.d, fontSize: 16, color: C.text, fontWeight: 700 }}>{teamName}</span>
+      <button onClick={() => { setEditing(true); setName(teamName || ""); }} style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>✎ Rename</button>
+    </div>
+  );
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+          autoFocus
+          style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.amber}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 14, outline: "none" }}
+        />
+        <button onClick={() => setEditing(false)} style={{ padding: "6px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+        <button onClick={handleSave} disabled={saving} style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{saving ? "..." : "Save"}</button>
+      </div>
+      {error && <div style={{ fontFamily: F.m, fontSize: 11, color: C.red, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
 function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2851,6 +2895,7 @@ function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [error, setError] = useState(null);
+  const [currentTeamName, setCurrentTeamName] = useState(teamName || "");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2918,6 +2963,7 @@ function RosterManager({ teamId, teamName, seasonId, isAdmin = false }) {
 
   return (
     <div>
+      <TeamNameEditor teamId={teamId} teamName={currentTeamName} onSaved={setCurrentTeamName} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ fontFamily: F.b, fontSize: 13, color: C.muted }}>{players.length} player{players.length !== 1 ? "s" : ""}</div>
         <button onClick={() => { setAdding(true); setNewName(""); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${C.amber}40`, background: `${C.amber}12`, color: C.amber, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Add Player</button>
