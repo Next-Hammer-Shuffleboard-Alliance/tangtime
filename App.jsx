@@ -3173,32 +3173,32 @@ function AdminRosterTab({ seasonId }) {
         </Card>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ width: 180, flexShrink: 0 }}>
+          <>
+            <div style={{ marginBottom: 14, position: "relative" }}>
               <input
-                placeholder="Filter teams..."
+                placeholder="Search team..."
                 value={teamSearch || ""}
                 onChange={e => setTeamSearch(e.target.value)}
-                style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", boxSizing: "border-box", marginBottom: 6 }}
+                onFocus={() => { if (!teamSearch) setTeamSearch(""); }}
+                onBlur={() => setTimeout(() => setTeamSearch(""), 150)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 14, outline: "none", boxSizing: "border-box" }}
               />
-              <div style={{ maxHeight: 400, overflowY: "auto", borderRadius: 10, border: `1px solid ${C.border}` }}>
-                {teams.filter(t => !teamSearch || t.name.toLowerCase().includes(teamSearch.toLowerCase())).map(t => (
-                  <div key={t.id} onClick={() => setSelectedTeam(t)} style={{ padding: "9px 12px", cursor: "pointer", fontFamily: F.b, fontSize: 12, color: selectedTeam?.id === t.id ? C.bg : C.text, background: selectedTeam?.id === t.id ? C.amber : "transparent", borderBottom: `1px solid ${C.border}`, transition: "all 0.1s" }}>
-                    {t.name}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {selectedTeam ? (
-                <Card>
-                  <RosterManager teamId={selectedTeam.id} teamName={selectedTeam.name} seasonId={seasonId} isAdmin />
-                </Card>
-              ) : (
-                <div style={{ textAlign: "center", padding: "40px 20px", color: C.dim, fontFamily: F.b, fontSize: 13 }}>← Select a team</div>
+              {teamSearch !== "" && teamSearch !== null && teamSearch !== undefined && (
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 4, maxHeight: 240, overflowY: "auto", zIndex: 20 }}>
+                  {teams.filter(t => !teamSearch || t.name.toLowerCase().includes(teamSearch.toLowerCase())).map(t => (
+                    <div key={t.id} onMouseDown={() => { setSelectedTeam(t); setTeamSearch(""); }} style={{ padding: "10px 14px", cursor: "pointer", fontFamily: F.b, fontSize: 13, color: C.text, borderBottom: `1px solid ${C.border}` }}>
+                      {t.name}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
+            {selectedTeam && (
+              <Card>
+                <RosterManager key={selectedTeam.id} teamId={selectedTeam.id} teamName={selectedTeam.name} seasonId={seasonId} isAdmin />
+              </Card>
+            )}
+          </>
         </>
       )}
     </div>
