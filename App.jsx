@@ -202,7 +202,6 @@ function getWeekNum(matchDate, seasonStart) {
 function NHSALogo({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" style={{ borderRadius: 4, flexShrink: 0 }}>
-      <rect width="40" height="40" rx="8" fill="#0f1a2e" />
       <line x1="20" y1="6" x2="8" y2="32" stroke="#d4cfc0" strokeWidth="2" strokeLinecap="round" />
       <line x1="20" y1="6" x2="32" y2="32" stroke="#d4cfc0" strokeWidth="2" strokeLinecap="round" />
       <line x1="10" y1="32" x2="30" y2="32" stroke="#c9a84c" strokeWidth="2.5" strokeLinecap="round" />
@@ -509,7 +508,7 @@ function Logo({ size = 38 }) {
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none">
       <circle cx={cx} cy={cy} r={r} stroke={C.amber} strokeWidth={size * 0.04} fill="none" />
-      <circle cx={cx} cy={cy} r={r * 0.85} fill="#1a1a2e" stroke={`${C.amber}22`} strokeWidth={1} />
+      <circle cx={cx} cy={cy} r={r * 0.85} fill="transparent" stroke={`${C.amber}22`} strokeWidth={1} />
       <circle cx={cx} cy={cy} r={r * 0.6} fill={`${C.amber}11`} stroke={`${C.amber}33`} strokeWidth={1} />
       <circle cx={cx} cy={cy} r={r * 0.35} fill={`${C.amber}22`} stroke={`${C.amber}44`} strokeWidth={1} />
       <circle cx={cx} cy={cy} r={r * 0.15} fill={C.amber} />
