@@ -1937,7 +1937,7 @@ function HallOfFamePage({ seasons, goPage }) {
 
   const filtered = champs.filter(c => {
     if (tab === "league") return c.type === "league";
-    if (tab === "banquet") return c.type === "banquet";
+    if (tab === "banquet") return ["league", "finalist", "banquet"].includes(c.type);
     if (tab === "division") return c.type === "division";
     return true;
   }).sort((a, b) => {
@@ -2112,7 +2112,10 @@ function HallOfFamePage({ seasons, goPage }) {
                   )}
                 </div>
               </div>
-              <Badge color={C.muted}>{c.seasons?.name || "—"}</Badge>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                <Badge color={C.muted}>{c.seasons?.name || "—"}</Badge>
+                {tab === "banquet" && <Badge color={c.type === "league" ? C.amber : c.type === "finalist" ? C.blue : C.muted} style={{ fontSize: 9 }}>{c.type === "league" ? "🏆 Champ" : c.type === "finalist" ? "🥈 Finalist" : "🎖️ Final 4"}</Badge>}
+              </div>
             </Card>
           ))}
         </>
