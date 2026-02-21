@@ -1968,11 +1968,29 @@ function HallOfFamePage({ seasons, goPage }) {
   });
   const playoffSeasons = Object.values(playoffsBySeason).sort((a, b) => b.start_date.localeCompare(a.start_date));
 
+  // Team alias map: old name → current name
+  const TEAM_ALIASES = {
+    "The Tanglorious Bastards": 'Shuffle-"Bored to Death"',
+    "Tanglorious Basterds": 'Shuffle-"Bored to Death"',
+    "There Will Be Biscuits": "The Philly Specials",
+    "Kitchensurfing": "The Philly Specials",
+    "Chicken In A Biscuit": "Kitchensurfing",
+  };
+  // Old names that should show as aliases in the leaderboard
+  const ALIAS_LABELS = {
+    'Shuffle-"Bored to Death"': "formerly Tanglorious Basterds",
+    "The Philly Specials": "formerly There Will Be Biscuits & Kitchensurfing",
+    "Kitchensurfing": "formerly Chicken In A Biscuit",
+  };
+
   const leaderboard = {};
   filtered.forEach(c => {
-    const n = c.teams?.name || "Unknown";
-    if (!leaderboard[n]) leaderboard[n] = { name: n, count: 0, teamId: c.team_id };
+    const rawName = c.teams?.name || "Unknown";
+    const n = TEAM_ALIASES[rawName] || rawName;
+    if (!leaderboard[n]) leaderboard[n] = { name: n, count: 0, teamId: c.team_id, alias: ALIAS_LABELS[n] || null };
     leaderboard[n].count++;
+    // prefer the current team's id for linking
+    if (!TEAM_ALIASES[rawName]) leaderboard[n].teamId = c.team_id;
   });
   const sortedLB = Object.values(leaderboard).sort((a, b) => b.count - a.count);
 
@@ -2062,7 +2080,10 @@ function HallOfFamePage({ seasons, goPage }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
                       <span style={{ fontFamily: F.m, fontSize: 14, fontWeight: 800, width: 24, flexShrink: 0, color: C.muted }}>{i + 1}</span>
                       <TeamAvatar name={t.name} size={28} />
-                      <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{t.name}</span>
+                      {t.alias && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{t.alias}</span>}
+                    </div>
                     </div>
                     <Badge color={C.amber} style={{ flexShrink: 0, marginLeft: 8 }}>
                       {tab === "banquet" ? "🎖️" : tab === "division" ? "🥇" : "🏆"} {t.count}
