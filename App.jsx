@@ -1961,17 +1961,27 @@ function HallOfFamePage({ seasons, goPage }) {
     "Kitchensurfing": "formerly Chicken In A Biscuit",
   };
 
-  // Playoff leaderboard
+  // Playoff leaderboard — merge playoff_appearances + championships (all banquet/finalist/champ = playoff appearance)
   const playoffLB = {};
-  playoffData.forEach(p => {
-    const rawName = p.teams?.name || "Unknown";
+  const playoffSeenKey = new Set(); // dedupe team+season
+
+  const addToPlayoffLB = (rawName, teamId, seasonName, seasonDate) => {
+    const key = `${teamId}__${seasonName}`;
+    if (playoffSeenKey.has(key)) return;
+    playoffSeenKey.add(key);
     const n = TEAM_ALIASES[rawName] || rawName;
-    if (!playoffLB[n]) playoffLB[n] = { name: n, count: 0, teamId: p.team_id, deepRuns: 0, alias: ALIAS_LABELS[n] || null };
+    if (!playoffLB[n]) playoffLB[n] = { name: n, count: 0, teamId, alias: ALIAS_LABELS[n] || null };
     playoffLB[n].count++;
-    if (["semifinal", "final", "champion"].includes(p.round_reached)) playoffLB[n].deepRuns++;
-    if (!TEAM_ALIASES[rawName]) playoffLB[n].teamId = p.team_id;
-  });
-  const sortedPlayoffLB = Object.values(playoffLB).sort((a, b) => b.count - a.count || b.deepRuns - a.deepRuns);
+    if (!TEAM_ALIASES[rawName]) playoffLB[n].teamId = teamId;
+  };
+
+  playoffData.forEach(p => addToPlayoffLB(p.teams?.name || "Unknown", p.team_id, p.seasons?.name, p.seasons?.start_date));
+  // Also count banquet/finalist/league champs as playoff appearances
+  champs.filter(c => ["league","finalist","banquet"].includes(c.type)).forEach(c =>
+    addToPlayoffLB(c.teams?.name || "Unknown", c.team_id, c.seasons?.name, c.seasons?.start_date)
+  );
+
+  const sortedPlayoffLB = Object.values(playoffLB).sort((a, b) => b.count - a.count);
 
   // Playoffs by season
   const playoffsBySeason = {};
