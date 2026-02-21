@@ -1948,6 +1948,19 @@ function HallOfFamePage({ seasons, goPage }) {
     return (b.seasons?.name || "").localeCompare(a.seasons?.name || "");
   });
 
+  // Team alias map: old name → current name
+  const TEAM_ALIASES = {
+    "The Tanglorious Bastards": 'Shuffle-"Bored to Death"',
+    "Tanglorious Basterds": 'Shuffle-"Bored to Death"',
+    "There Will Be Biscuits": "The Philly Specials",
+    "Chicken In A Biscuit": "Kitchensurfing",
+  };
+  const ALIAS_LABELS = {
+    'Shuffle-"Bored to Death"': "formerly Tanglorious Basterds",
+    "The Philly Specials": "formerly There Will Be Biscuits",
+    "Kitchensurfing": "formerly Chicken In A Biscuit",
+  };
+
   // Playoff leaderboard
   const playoffLB = {};
   playoffData.forEach(p => {
@@ -1969,20 +1982,6 @@ function HallOfFamePage({ seasons, goPage }) {
     playoffsBySeason[sn].teams.push(p);
   });
   const playoffSeasons = Object.values(playoffsBySeason).sort((a, b) => b.start_date.localeCompare(a.start_date));
-
-  // Team alias map: old name → current name
-  const TEAM_ALIASES = {
-    "The Tanglorious Bastards": 'Shuffle-"Bored to Death"',
-    "Tanglorious Basterds": 'Shuffle-"Bored to Death"',
-    "There Will Be Biscuits": "The Philly Specials",
-    "Chicken In A Biscuit": "Kitchensurfing",
-  };
-  // Old names that should show as aliases in the leaderboard
-  const ALIAS_LABELS = {
-    'Shuffle-"Bored to Death"': "formerly Tanglorious Basterds",
-    "The Philly Specials": "formerly There Will Be Biscuits",
-    "Kitchensurfing": "formerly Chicken In A Biscuit",
-  };
 
   const leaderboard = {};
   filtered.forEach(c => {
