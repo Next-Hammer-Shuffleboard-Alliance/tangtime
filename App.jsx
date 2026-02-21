@@ -1941,9 +1941,11 @@ function HallOfFamePage({ seasons, goPage }) {
     if (tab === "division") return c.type === "division";
     return true;
   }).sort((a, b) => {
-    const da = a.seasons?.start_date || "";
-    const db = b.seasons?.start_date || "";
-    return db.localeCompare(da);
+    const da = a.seasons?.start_date || "0000";
+    const db = b.seasons?.start_date || "0000";
+    if (db !== da) return db.localeCompare(da);
+    // fallback: sort by season name
+    return (b.seasons?.name || "").localeCompare(a.seasons?.name || "");
   });
 
   // Playoff leaderboard
