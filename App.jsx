@@ -661,8 +661,9 @@ function DivisionPills({ divisions, selected, onSelect }) {
                   whiteSpace: "nowrap", transition: "all 0.15s",
                 }}>
                   {(() => {
-                    const nameLabel = d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim();
-                    const label = (nameLabel && nameLabel.toLowerCase() !== d.level) ? nameLabel : cap(d.level);
+                    const days = ['monday','tuesday','wednesday'];
+                    const stripped = d.name.replace(/^(monday|tuesday|wednesday)\s*/i, '').trim();
+                    const label = (stripped && !days.includes(stripped.toLowerCase()) && stripped.toLowerCase() !== d.level) ? stripped : cap(d.level);
                     return <>{levelEmoji(d.level)} {label}</>;
                   })()}
                 </button>
@@ -889,9 +890,10 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
   }, [isPast, champs, activeSeason]);
 
   const divisionWinners = useMemo(() => {
-    if (!isPast || !champs?.length) return [];
-    return champs.filter(c => c.seasons?.name === activeSeason?.name && c.type === "league" && c.divisions);
-  }, [isPast, champs, activeSeason]);
+    if (!isPast) return [];
+    // Use leaders (rank 1 per division from standings) for division champions display
+    return leaders.filter(l => l.calculated_rank === 1 || l.division_rank === 1);
+  }, [isPast, leaders]);
 
   if (loading) return <Loader />;
 
@@ -965,11 +967,11 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
             <Card key={i} onClick={() => goPage("teams", { teamId: dw.team_id })}
               style={{ padding: "14px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <TeamAvatar name={dw.teams?.name || "?"} size={36} />
+                <TeamAvatar name={dw.teams?.name || dw.team_name || "?"} size={36} />
                 <div>
-                  <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text }}>{dw.teams?.name}</div>
+                  <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text }}>{dw.teams?.name || dw.team_name}</div>
                   <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
-                    {dw.divisions ? `${cap(dw.divisions.day_of_week)} ${cap(dw.divisions.level)}` : ""}
+                    {dw.divisions ? `${cap(dw.divisions.day_of_week)} ${cap(dw.divisions.level)}` : (dw.division_name || "")}
                   </div>
                 </div>
               </div>
@@ -1177,12 +1179,13 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
           ))}
         </div>
       )}
-      {/* Level pills */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+      {/* Level pills - only show if more than one division in this day */}
+      {dayDivisions.length > 1 && <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
         {dayDivisions.sort((a, b) => (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9)).map(d => {
           const active = divId === d.id;
-          const nameLabel = d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim();
-          const label = (nameLabel && nameLabel.toLowerCase() !== d.level) ? nameLabel : cap(d.level);
+          const days_ = ['monday','tuesday','wednesday'];
+          const stripped_ = d.name.replace(/^(monday|tuesday|wednesday)\s*/i, '').trim();
+          const label = (stripped_ && !days_.includes(stripped_.toLowerCase()) && stripped_.toLowerCase() !== d.level) ? stripped_ : cap(d.level);
           return (
             <button key={d.id} onClick={() => setDivId(d.id)} style={{
               background: active ? C.amber : C.surface, color: active ? C.bg : C.muted,
@@ -1195,7 +1198,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {loading ? <Loader /> : !rows.length ? <Empty msg="No standings data" /> : (() => {
         const hasPlayoffData = rows.some(t => t.playoffRound);
