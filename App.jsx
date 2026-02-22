@@ -1526,7 +1526,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         Promise.all([
           q("recent_matches", `or=(${orMatch})&order=scheduled_date.desc&limit=500`),
           q("championships", `or=(${orChamps})&select=type`),
-        ]).then(([aliasMd, aliasCd]) => {
+          q("playoff_appearances", `team_id=in.(${aliasIds.join(",")})&select=team_id`),
+        ]).then(([aliasMd, aliasCd, aliasPa]) => {
           setTeamMatches(prev => {
             const seen = new Set(prev.map(m => m.id));
             const newMatches = (aliasMd || []).filter(m => !seen.has(m.id));
@@ -1538,12 +1539,14 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
             const extraLeague = (aliasCd || []).filter(c => c.type === "league").length;
             const extraBanquet = (aliasCd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).length;
             const extraDivision = (aliasCd || []).filter(c => c.type === "division").length;
+            const extraPlayoffs = (aliasPa || []).length;
             return {
               ...prev,
               _allTeamIds: [selectedId, ...aliasIds],
               league_titles: (prev.league_titles || 0) + extraLeague,
               banquet_count: (prev.banquet_count || 0) + extraBanquet,
               division_titles: (prev.division_titles || 0) + extraDivision,
+              playoff_appearances: (prev.playoff_appearances || 0) + extraPlayoffs,
             };
           });
         });
@@ -1990,9 +1993,13 @@ function HallOfFamePage({ seasons, goPage }) {
   const TEAM_ALIASES = {
     "The Tanglorious Bastards": 'Shuffle-"Bored to Death"',
     "Tanglorious Basterds": 'Shuffle-"Bored to Death"',
+    "There Will Be Biscuits": "The Philly Specials",
+    "Chicken In A Biscuit": "Kitchensurfing",
   };
   const ALIAS_LABELS = {
     'Shuffle-"Bored to Death"': "formerly Tanglorious Basterds",
+    "The Philly Specials": "formerly There Will Be Biscuits",
+    "Kitchensurfing": "formerly Chicken In A Biscuit",
   };
 
   // Playoff leaderboard — merge playoff_appearances + championships (all banquet/finalist/champ = playoff appearance)
