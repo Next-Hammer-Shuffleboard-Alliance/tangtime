@@ -1487,8 +1487,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       q("teams", `id=eq.${selectedId}`),
       q("division_standings", `team_id=eq.${selectedId}&order=season_name.desc`),
       q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=500`),
-      q("championships", `team_id=eq.${selectedId}&select=type`),
-      q("playoff_appearances", `team_id=eq.${selectedId}&select=team_id`),
+      q("championships", `team_id=eq.${selectedId}&select=type,season_id`),
+      q("playoff_appearances", `team_id=eq.${selectedId}&select=season_id`),
     ]).then(([td, sd, md, cd, pad]) => {
       const teamsRow = td?.[0];
       const hasTeamsData = teamsRow && (teamsRow.all_time_wins || 0) > 0;
@@ -1499,6 +1499,11 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       const matchLosses = completed.filter(m => m.winner_id && m.winner_id !== selectedId && (m.team_a_id === selectedId || m.team_b_id === selectedId)).length;
       const seasonNames = new Set((sd || []).map(s => s.season_name));
 
+      // Merge playoff_appearances + banquet/finalist/league championships, deduped by season
+      const playoffSeasonIds = new Set((pad || []).map(p => p.season_id));
+      (cd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).forEach(c => playoffSeasonIds.add(c.season_id));
+      const totalPlayoffs = playoffSeasonIds.size;
+
       setTeamDetail({
         id: selectedId,
         name: teamsRow?.name || sd?.[0]?.team_name || "Unknown",
@@ -1507,7 +1512,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         elo_rating: teamsRow?.recrec_elo || null,
         championships: teamsRow?.championship_count || 0,
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
-        playoff_appearances: (pad || []).length,
+        playoff_appearances: totalPlayoffs,
         league_titles: (cd || []).filter(c => c.type === "league").length,
         banquet_count: (cd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).length,
         division_titles: (cd || []).filter(c => c.type === "division").length,
@@ -1527,7 +1532,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         Promise.all([
           q("recent_matches", `or=(${orMatch})&order=scheduled_date.desc&limit=500`),
           q("championships", `or=(${orChamps})&select=type`),
-          q("playoff_appearances", `team_id=in.(${aliasIds.join(",")})&select=team_id`),
+          q("playoff_appearances", `team_id=in.(${aliasIds.join(",")})&select=season_id`),
         ]).then(([aliasMd, aliasCd, aliasPa]) => {
           setTeamMatches(prev => {
             const seen = new Set(prev.map(m => m.id));
@@ -1540,7 +1545,10 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
             const extraLeague = (aliasCd || []).filter(c => c.type === "league").length;
             const extraBanquet = (aliasCd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).length;
             const extraDivision = (aliasCd || []).filter(c => c.type === "division").length;
-            const extraPlayoffs = (aliasPa || []).length;
+            // Merge alias playoff seasons deduped
+            const aliasPlayoffSeasons = new Set((aliasPa || []).map(p => p.season_id));
+            (aliasCd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).forEach(c => aliasPlayoffSeasons.add(c.season_id));
+            const extraPlayoffs = aliasPlayoffSeasons.size;
             return {
               ...prev,
               _allTeamIds: [selectedId, ...aliasIds],
