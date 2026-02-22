@@ -2014,7 +2014,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   const filtered = champs.filter(c => {
     if (tab === "league") return c.type === "league";
     if (tab === "banquet") return ["league", "finalist", "banquet"].includes(c.type);
-    if (tab === "division") return c.type === "league" && c.divisions;
+    if (tab === "division") return c.type === "division";
     return true;
   }).sort((a, b) => {
     const da = a.seasons?.start_date || "0000";
