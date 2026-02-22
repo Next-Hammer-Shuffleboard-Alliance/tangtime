@@ -1516,20 +1516,36 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       setTeamMatches(md || []);
       setDetailLoading(false);
 
-      // Non-blocking: fetch alias teams and their matches
+      // Non-blocking: fetch alias teams and their matches + championships
       q("teams", `primary_team_id=eq.${selectedId}&select=id,name`).then(aliasTeams => {
         const aliases = (aliasTeams || []).filter(a => a.id !== selectedId);
         if (!aliases.length) return;
         const aliasIds = aliases.map(a => a.id);
         const orMatch = aliasIds.map(id => `team_a_id.eq.${id},team_b_id.eq.${id}`).join(",");
-        q("recent_matches", `or=(${orMatch})&order=scheduled_date.desc&limit=500`).then(aliasMd => {
+        const orChamps = aliasIds.map(id => `team_id.eq.${id}`).join(",");
+        Promise.all([
+          q("recent_matches", `or=(${orMatch})&order=scheduled_date.desc&limit=500`),
+          q("championships", `or=(${orChamps})&select=type`),
+        ]).then(([aliasMd, aliasCd]) => {
           setTeamMatches(prev => {
             const seen = new Set(prev.map(m => m.id));
             const newMatches = (aliasMd || []).filter(m => !seen.has(m.id));
             if (!newMatches.length) return prev;
             return [...prev, ...newMatches].sort((a, b) => (b.scheduled_date || "").localeCompare(a.scheduled_date || ""));
           });
-          setTeamDetail(prev => prev ? { ...prev, _allTeamIds: [selectedId, ...aliasIds] } : prev);
+          setTeamDetail(prev => {
+            if (!prev) return prev;
+            const extraLeague = (aliasCd || []).filter(c => c.type === "league").length;
+            const extraBanquet = (aliasCd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).length;
+            const extraDivision = (aliasCd || []).filter(c => c.type === "division").length;
+            return {
+              ...prev,
+              _allTeamIds: [selectedId, ...aliasIds],
+              league_titles: (prev.league_titles || 0) + extraLeague,
+              banquet_count: (prev.banquet_count || 0) + extraBanquet,
+              division_titles: (prev.division_titles || 0) + extraDivision,
+            };
+          });
         });
       });
     });
