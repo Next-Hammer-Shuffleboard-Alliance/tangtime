@@ -891,8 +891,16 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
 
   const divisionWinners = useMemo(() => {
     if (!isPast) return [];
-    // Use leaders (rank 1 per division from standings) for division champions display
-    return leaders.filter(l => l.calculated_rank === 1 || l.division_rank === 1);
+    const dayOrd = { monday: 0, tuesday: 1, wednesday: 2 };
+    const lvlOrd = { pilot: 0, cherry: 1, hammer: 2, party: 3 };
+    return leaders
+      .filter(l => l.calculated_rank === 1 || l.division_rank === 1)
+      .sort((a, b) => {
+        const dn = n => { const p = (n||'').toLowerCase().split(' '); return [dayOrd[p[0]]??9, lvlOrd[p[1]]??9]; };
+        const [ad, al] = dn(a.division_name);
+        const [bd, bl] = dn(b.division_name);
+        return ad !== bd ? ad - bd : al - bl;
+      });
   }, [isPast, leaders]);
 
   if (loading) return <Loader />;
