@@ -661,8 +661,8 @@ function DivisionPills({ divisions, selected, onSelect }) {
                   whiteSpace: "nowrap", transition: "all 0.15s",
                 }}>
                   {(() => {
-                    const dupes = divs.filter(x => x.level === d.level).length > 1;
-                    const label = dupes ? (d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim() || cap(d.level)) : cap(d.level);
+                    const nameLabel = d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim();
+                    const label = (nameLabel && nameLabel.toLowerCase() !== d.level) ? nameLabel : cap(d.level);
                     return <>{levelEmoji(d.level)} {label}</>;
                   })()}
                 </button>
@@ -890,7 +890,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
 
   const divisionWinners = useMemo(() => {
     if (!isPast || !champs?.length) return [];
-    return champs.filter(c => c.seasons?.name === activeSeason?.name && c.type === "division");
+    return champs.filter(c => c.seasons?.name === activeSeason?.name && c.type === "league" && c.divisions);
   }, [isPast, champs, activeSeason]);
 
   if (loading) return <Loader />;
@@ -1181,8 +1181,8 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
         {dayDivisions.sort((a, b) => (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9)).map(d => {
           const active = divId === d.id;
-          const dupes = dayDivisions.filter(x => x.level === d.level).length > 1;
-          const label = dupes ? (d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim() || cap(d.level)) : cap(d.level);
+          const nameLabel = d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim();
+          const label = (nameLabel && nameLabel.toLowerCase() !== d.level) ? nameLabel : cap(d.level);
           return (
             <button key={d.id} onClick={() => setDivId(d.id)} style={{
               background: active ? C.amber : C.surface, color: active ? C.bg : C.muted,
