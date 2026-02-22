@@ -893,15 +893,21 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     if (!isPast) return [];
     const dayOrd = { monday: 0, tuesday: 1, wednesday: 2 };
     const lvlOrd = { pilot: 0, cherry: 1, hammer: 2, party: 3 };
-    return leaders
-      .filter(l => l.calculated_rank === 1 || l.division_rank === 1)
+    const seasonDivs = divisions.filter(d => d.level !== 'party' || d.team_seasons?.length > 0);
+    return seasonDivs
+      .map(d => {
+        const champ = champs?.find(c => c.type === 'division' && c.divisions?.name === d.name && c.seasons?.name === activeSeason?.name);
+        return champ
+          ? { ...champ, division_name: d.name, _incomplete: false }
+          : { division_name: d.name, day_of_week: d.day_of_week, level: d.level, _incomplete: true };
+      })
       .sort((a, b) => {
         const dn = n => { const p = (n||'').toLowerCase().split(' '); return [dayOrd[p[0]]??9, lvlOrd[p[1]]??9]; };
         const [ad, al] = dn(a.division_name);
         const [bd, bl] = dn(b.division_name);
         return ad !== bd ? ad - bd : al - bl;
       });
-  }, [isPast, leaders]);
+  }, [isPast, divisions, champs, activeSeason]);
 
   if (loading) return <Loader />;
 
@@ -972,18 +978,21 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         <div>
           <SectionTitle right={activeSeason?.name}>Division Champions</SectionTitle>
           {divisionWinners.map((dw, i) => (
-            <Card key={i} onClick={() => goPage("teams", { teamId: dw.team_id })}
-              style={{ padding: "14px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+            <Card key={i} onClick={dw._incomplete ? undefined : () => goPage("teams", { teamId: dw.team_id })}
+              style={{ padding: "14px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: dw._incomplete ? "default" : "pointer", opacity: dw._incomplete ? 0.6 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <TeamAvatar name={dw.teams?.name || dw.team_name || "?"} size={36} />
+                {!dw._incomplete && <TeamAvatar name={dw.teams?.name || dw.team_name || "?"} size={36} />}
+                {dw._incomplete && <div style={{ width: 36, height: 36, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, flexShrink: 0 }} />}
                 <div>
-                  <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: C.text }}>{dw.teams?.name || dw.team_name}</div>
+                  <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: dw._incomplete ? C.muted : C.text }}>
+                    {dw._incomplete ? "Data incomplete" : (dw.teams?.name || dw.team_name)}
+                  </div>
                   <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
                     {dw.divisions ? `${cap(dw.divisions.day_of_week)} ${cap(dw.divisions.level)}` : (dw.division_name || "")}
                   </div>
                 </div>
               </div>
-              <Badge color={C.amber}>🥇</Badge>
+              {!dw._incomplete && <Badge color={C.amber}>🥇</Badge>}
             </Card>
           ))}
         </div>
@@ -2014,7 +2023,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   const filtered = champs.filter(c => {
     if (tab === "league") return c.type === "league";
     if (tab === "banquet") return ["league", "finalist", "banquet"].includes(c.type);
-    if (tab === "division") return c.type === "division";
+    if (tab === "division") return c.type === "league" && c.divisions;
     return true;
   }).sort((a, b) => {
     const da = a.seasons?.start_date || "0000";
