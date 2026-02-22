@@ -1100,7 +1100,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
         setDivId(divisions[0].id);
       }
     }
-  }, [divisions]);
+  }, [divisions, days]);
   useEffect(() => {
     if (!divId) return;
     setLoading(true);
@@ -1325,14 +1325,17 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
   }, [selectedDay, dayDivisions.length]);
 
   useEffect(() => {
-    if (divisions?.length && !divId) {
-      setSelectedDay(divisions[0].day_of_week);
-      setDivId(divisions[0].id);
+    if (divisions?.length) {
+      const firstDay = divisions[0].day_of_week;
+      if (!days.includes(selectedDay)) setSelectedDay(firstDay);
+      if (!divId) {
+        setSelectedDay(firstDay);
+        setDivId(divisions[0].id);
+      }
     }
-    // Reset week filter when season changes
     setWeekFilter(null);
     setDataCurrentWeek(null);
-  }, [divisions]);
+  }, [divisions, days]);
 
   useEffect(() => {
     if (!divId || !activeSeason) return;
