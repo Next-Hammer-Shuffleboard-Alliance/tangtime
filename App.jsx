@@ -1100,10 +1100,12 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
   useEffect(() => {
     if (!divId) return;
     setLoading(true);
+    const selDiv = divisions?.find(d => d.id === divId);
+    const seasonIdForPlayoffs = selDiv?.season_id || activeSeason?.id;
     Promise.all([
       q("division_standings", `division_id=eq.${divId}&order=calculated_rank`),
       q("matches", `division_id=eq.${divId}&status=eq.completed&winner_id=not.is.null&order=scheduled_date.desc,scheduled_time.desc`),
-      activeSeason?.id ? q("playoff_appearances", `season_id=eq.${activeSeason.id}`) : Promise.resolve([]),
+      seasonIdForPlayoffs ? q("playoff_appearances", `season_id=eq.${seasonIdForPlayoffs}`) : Promise.resolve([]),
     ]).then(([d, matches, playoffData]) => {
       const playoffMap = {};
       (playoffData || []).forEach(p => { playoffMap[p.team_id] = p.round_reached; });
@@ -2657,7 +2659,7 @@ function AdminApp({ user, myRole }) {
       const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
-      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,team_seasons(team_id)`);
+      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`);
       const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
       setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
       if (filtered.length) setDivisionId(filtered[0].id);
@@ -3533,7 +3535,7 @@ function MainApp() {
 
   useEffect(() => {
     if (!selectedSeason) return;
-    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,team_seasons(team_id)`).then(d => {
+    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
   }, [selectedSeason]);
