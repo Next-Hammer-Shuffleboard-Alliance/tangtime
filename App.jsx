@@ -1487,7 +1487,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       q("teams", `id=eq.${selectedId}`),
       q("division_standings", `team_id=eq.${selectedId}&order=season_name.desc`),
       q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=500`),
-    ]).then(([td, sd, md]) => {
+      q("championships", `team_id=eq.${selectedId}&select=type`),
+    ]).then(([td, sd, md, cd]) => {
       const teamsRow = td?.[0];
       const hasTeamsData = teamsRow && (teamsRow.all_time_wins || 0) > 0;
 
@@ -1506,6 +1507,9 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         championships: teamsRow?.championship_count || 0,
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
         playoff_appearances: teamsRow?.playoff_appearances || 0,
+        league_titles: (cd || []).filter(c => c.type === "league").length,
+        banquet_count: (cd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).length,
+        division_titles: (cd || []).filter(c => c.type === "division").length,
         _standings: sd || [],
         _allTeamIds: [selectedId],
       });
@@ -1600,7 +1604,6 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               ["Wins", t.all_time_wins || 0, C.green],
               ["Losses", t.all_time_losses || 0, C.red],
               ["Win %", `${winPct}%`, C.text],
-              ["Playoffs*", t.playoff_appearances || 0, C.amber],
             ].map(([l, v, c]) => (
               <div key={l} style={{ textAlign: "center", minWidth: 48 }}>
                 <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color: c }}>{v}</div>
@@ -1608,7 +1611,26 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               </div>
             ))}
           </div>
-          <div style={{ fontFamily: F.b, fontSize: 10, color: C.dim, textAlign: "center", marginTop: 10 }}>*Playoff data is currently incomplete</div>
+          {(t.playoff_appearances > 0 || t.division_titles > 0 || t.banquet_count > 0 || t.league_titles > 0) && (
+            <>
+              <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0 12px" }} />
+              <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+                {[
+                  ...(t.playoff_appearances > 0 ? [["🏅", t.playoff_appearances, "Playoffs*", C.muted]] : []),
+                  ...(t.division_titles > 0 ? [["🥇", t.division_titles, "Division*", C.blue]] : []),
+                  ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber]] : []),
+                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League*", "#fbbf24"]] : []),
+                ].map(([icon, val, label, color]) => (
+                  <div key={label} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 16px", minWidth: 72 }}>
+                    <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+                    <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color }}>{val}</div>
+                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div style={{ fontFamily: F.b, fontSize: 10, color: C.dim, textAlign: "center", marginTop: 10 }}>*Data is currently incomplete</div>
         </Card>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
