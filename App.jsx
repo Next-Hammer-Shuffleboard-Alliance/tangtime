@@ -631,7 +631,7 @@ function TeamLink({ name, teamId, goPage, style }) {
 // ─── Division Pills ───
 function DivisionPills({ divisions, selected, onSelect }) {
   const grouped = {};
-  const sorted = [...(divisions || [])].filter(d => d.level !== "party").sort((a, b) =>
+  const sorted = [...(divisions || [])].filter(d => d.level !== "party" || d.has_data).sort((a, b) =>
     (dayOrder[a.day_of_week] ?? 9) - (dayOrder[b.day_of_week] ?? 9) ||
     (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9)
   );
@@ -2657,9 +2657,9 @@ function AdminApp({ user, myRole }) {
       const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
-      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level`);
-      const filtered = (d || []).filter(x => x.level !== "party");
-      setDivisions(filtered);
+      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,team_seasons(team_id)`);
+      const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
+      setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
       if (filtered.length) setDivisionId(filtered[0].id);
     })();
   }, []);
@@ -3533,8 +3533,8 @@ function MainApp() {
 
   useEffect(() => {
     if (!selectedSeason) return;
-    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level`).then(d => {
-      setDivisions((d || []).filter(div => div.level !== "party"));
+    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,team_seasons(team_id)`).then(d => {
+      setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
   }, [selectedSeason]);
 
