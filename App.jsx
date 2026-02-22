@@ -1488,7 +1488,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       q("division_standings", `team_id=eq.${selectedId}&order=season_name.desc`),
       q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=500`),
       q("championships", `team_id=eq.${selectedId}&select=type`),
-    ]).then(([td, sd, md, cd]) => {
+      q("playoff_appearances", `team_id=eq.${selectedId}&select=team_id`),
+    ]).then(([td, sd, md, cd, pad]) => {
       const teamsRow = td?.[0];
       const hasTeamsData = teamsRow && (teamsRow.all_time_wins || 0) > 0;
 
@@ -1506,7 +1507,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         elo_rating: teamsRow?.recrec_elo || null,
         championships: teamsRow?.championship_count || 0,
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
-        playoff_appearances: teamsRow?.playoff_appearances || 0,
+        playoff_appearances: (pad || []).length,
         league_titles: (cd || []).filter(c => c.type === "league").length,
         banquet_count: (cd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).length,
         division_titles: (cd || []).filter(c => c.type === "division").length,
