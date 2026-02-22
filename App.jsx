@@ -1134,7 +1134,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       setStandings(enriched);
       setLoading(false);
     });
-  }, [divId]);
+  }, [divId, divisions]);
 
   const rows = useMemo(() => {
     const ranked = computeRanks(standings);
