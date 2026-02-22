@@ -1092,9 +1092,13 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
   }, [selectedDay, dayDivisions.length]);
 
   useEffect(() => {
-    if (divisions?.length && !divId) {
-      setSelectedDay(divisions[0].day_of_week);
-      setDivId(divisions[0].id);
+    if (divisions?.length) {
+      const firstDay = divisions[0].day_of_week;
+      if (!days.includes(selectedDay)) setSelectedDay(firstDay);
+      if (!divId) {
+        setSelectedDay(firstDay);
+        setDivId(divisions[0].id);
+      }
     }
   }, [divisions]);
   useEffect(() => {
