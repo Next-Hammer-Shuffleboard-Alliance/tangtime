@@ -1616,10 +1616,10 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0 12px" }} />
               <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
                 {[
+                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League*", "#fbbf24"]] : []),
+                  ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber]] : []),
                   ...(t.playoff_appearances > 0 ? [["🏅", t.playoff_appearances, "Playoffs*", C.muted]] : []),
                   ...(t.division_titles > 0 ? [["🥇", t.division_titles, "Division*", C.blue]] : []),
-                  ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber]] : []),
-                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League*", "#fbbf24"]] : []),
                 ].map(([icon, val, label, color]) => (
                   <div key={label} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 16px", minWidth: 72 }}>
                     <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
