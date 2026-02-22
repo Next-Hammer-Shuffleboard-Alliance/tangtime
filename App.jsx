@@ -660,7 +660,11 @@ function DivisionPills({ divisions, selected, onSelect }) {
                   fontFamily: F.m, fontSize: 11, fontWeight: active ? 700 : 500,
                   whiteSpace: "nowrap", transition: "all 0.15s",
                 }}>
-                  {levelEmoji(d.level)} {cap(d.level)}
+                  {(() => {
+                    const dupes = divs.filter(x => x.level === d.level).length > 1;
+                    const label = dupes ? (d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim() || cap(d.level)) : cap(d.level);
+                    return <>{levelEmoji(d.level)} {label}</>;
+                  })()}
                 </button>
               );
             })}
@@ -1177,6 +1181,8 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
         {dayDivisions.sort((a, b) => (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9)).map(d => {
           const active = divId === d.id;
+          const dupes = dayDivisions.filter(x => x.level === d.level).length > 1;
+          const label = dupes ? (d.name.replace(/^(monday|tuesday|wednesday)\s+/i, '').trim() || cap(d.level)) : cap(d.level);
           return (
             <button key={d.id} onClick={() => setDivId(d.id)} style={{
               background: active ? C.amber : C.surface, color: active ? C.bg : C.muted,
@@ -1185,7 +1191,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
               fontFamily: F.m, fontSize: 11, fontWeight: active ? 700 : 500,
               whiteSpace: "nowrap", transition: "all 0.15s",
             }}>
-              {levelEmoji(d.level)} {cap(d.level)}
+              {levelEmoji(d.level)} {label}
             </button>
           );
         })}
