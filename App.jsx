@@ -1624,7 +1624,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           </div>
           <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
             <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>{t.name}</h3>
-            {isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆{(t.championships || t.championship_count) > 1 ? ` x${t.championships || t.championship_count}` : ""}</span>}
+            {isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default" }}>🏆</span>}
           </div>
           <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{(t.elo_rating || t.recrec_elo) ? `ELO ${t.elo_rating || t.recrec_elo} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
