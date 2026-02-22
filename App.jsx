@@ -2010,7 +2010,7 @@ function HallOfFamePage({ seasons, goPage }) {
 
   const dataNote = tab === "banquet" ? "Banquet data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
     : tab === "playoffs" ? "Playoff data available for Winter 2023 – Winter 2025. Earlier seasons coming soon."
-    : tab === "division" ? "Division champion data coming soon." : null;
+    : tab === "division" ? "Division champion data is incomplete. Help us fill in the gaps!" : null;
 
   return (
     <div>
@@ -2159,7 +2159,7 @@ function HallOfFamePage({ seasons, goPage }) {
               bySeason[sn].teams.push(c);
             });
             const dayOrder = { monday: 0, tuesday: 1, wednesday: 2, thursday: 3 };
-            const levelOrder = { pilot: 0, cherry: 1, hammer: 2 };
+            const levelOrder = { pilot: 0, cherry: 1, hammer: 2, party: 3 };
             return Object.values(bySeason)
               .sort((a, b) => b.start_date.localeCompare(a.start_date))
               .map(season => {
@@ -2169,7 +2169,8 @@ function HallOfFamePage({ seasons, goPage }) {
                   if (da !== db) return da - db;
                   return (levelOrder[a.divisions?.level] ?? 9) - (levelOrder[b.divisions?.level] ?? 9);
                 });
-                const isComplete = sorted.length >= 6;
+                const uniqueDivisions = new Set(sorted.map(c => c.division_id)).size;
+                const isComplete = sorted.length >= uniqueDivisions && sorted.length > 0;
                 return (
                   <Card key={season.name} style={{ marginBottom: 10, padding: "14px 18px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
