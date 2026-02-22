@@ -1531,7 +1531,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         const orChamps = aliasIds.map(id => `team_id.eq.${id}`).join(",");
         Promise.all([
           q("recent_matches", `or=(${orMatch})&order=scheduled_date.desc&limit=500`),
-          q("championships", `or=(${orChamps})&select=type`),
+          q("championships", `or=(${orChamps})&select=type,season_id`),
           q("playoff_appearances", `team_id=in.(${aliasIds.join(",")})&select=season_id`),
         ]).then(([aliasMd, aliasCd, aliasPa]) => {
           setTeamMatches(prev => {
@@ -1644,7 +1644,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0 12px" }} />
               <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
                 {[
-                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League*", "#fbbf24", "league"]] : []),
+                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League", "#fbbf24", "league"]] : []),
                   ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber, "banquet"]] : []),
                   ...(t.playoff_appearances > 0 ? [["🏅", t.playoff_appearances, "Playoffs*", C.muted, "playoffs"]] : []),
                   ...(t.division_titles > 0 ? [["🥇", t.division_titles, "Division*", C.blue, "division"]] : []),
