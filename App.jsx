@@ -151,7 +151,7 @@ const levelEmoji = (l) => {
 };
 
 const levelOrder = { pilot: 0, cherry: 1, hammer: 2 };
-const dayOrder = { monday: 0, tuesday: 1 };
+const dayOrder = { monday: 0, tuesday: 1, wednesday: 2 };
 
 function hashStr(s) {
   let h = 0;
