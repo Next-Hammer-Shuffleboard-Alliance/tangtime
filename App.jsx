@@ -1636,12 +1636,12 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
               <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0 12px" }} />
               <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
                 {[
-                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League*", "#fbbf24"]] : []),
-                  ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber]] : []),
-                  ...(t.playoff_appearances > 0 ? [["🏅", t.playoff_appearances, "Playoffs*", C.muted]] : []),
-                  ...(t.division_titles > 0 ? [["🥇", t.division_titles, "Division*", C.blue]] : []),
-                ].map(([icon, val, label, color]) => (
-                  <div key={label} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 16px", minWidth: 72 }}>
+                  ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League*", "#fbbf24", "league"]] : []),
+                  ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber, "banquet"]] : []),
+                  ...(t.playoff_appearances > 0 ? [["🏅", t.playoff_appearances, "Playoffs*", C.muted, "playoffs"]] : []),
+                  ...(t.division_titles > 0 ? [["🥇", t.division_titles, "Division*", C.blue, "division"]] : []),
+                ].map(([icon, val, label, color, histTab]) => (
+                  <div key={label} onClick={() => goPage("fame", { tab: histTab })} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 16px", minWidth: 72, cursor: "pointer" }}>
                     <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
                     <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color }}>{val}</div>
                     <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
@@ -1960,11 +1960,11 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 }
 
 // ─── HALL OF FAME ───
-function HallOfFamePage({ seasons, goPage }) {
+function HallOfFamePage({ seasons, goPage, initialTab }) {
   const [champs, setChamps] = useState([]);
   const [playoffData, setPlayoffData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("league");
+  const [tab, setTab] = useState(initialTab || "league");
 
   useEffect(() => {
     Promise.all([
@@ -3547,7 +3547,7 @@ function MainApp() {
       case "teams":
         return <TeamsPage goPage={goPage} initialTeamId={pageData.teamId} activeSeason={selectedSeason} />;
       case "fame":
-        return <HallOfFamePage seasons={seasons} goPage={goPage} />;
+        return <HallOfFamePage seasons={seasons} goPage={goPage} initialTab={pageData.tab} />;
       default:
         return null;
     }
