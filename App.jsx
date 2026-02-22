@@ -1990,13 +1990,9 @@ function HallOfFamePage({ seasons, goPage }) {
   const TEAM_ALIASES = {
     "The Tanglorious Bastards": 'Shuffle-"Bored to Death"',
     "Tanglorious Basterds": 'Shuffle-"Bored to Death"',
-    "There Will Be Biscuits": "The Philly Specials",
-    "Chicken In A Biscuit": "Kitchensurfing",
   };
   const ALIAS_LABELS = {
     'Shuffle-"Bored to Death"': "formerly Tanglorious Basterds",
-    "The Philly Specials": "formerly There Will Be Biscuits",
-    "Kitchensurfing": "formerly Chicken In A Biscuit",
   };
 
   // Playoff leaderboard — merge playoff_appearances + championships (all banquet/finalist/champ = playoff appearance)
