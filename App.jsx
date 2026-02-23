@@ -2067,7 +2067,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   });
   const ALIAS_LABELS = {};
   Object.entries(aliasNamesMap).forEach(([primary, names]) => {
-    ALIAS_LABELS[primary] = `formerly ${names.join(", ")}`;
+    ALIAS_LABELS[primary] = names.length === 1 ? `formerly ${names[0]}` : `formerly ${names[0]} + ${names.length - 1} other${names.length > 2 ? "s" : ""}`;
   });
 
   // Playoff leaderboard — merge playoff_appearances + championships (all banquet/finalist/champ = playoff appearance)
