@@ -1684,7 +1684,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                   ...(t.playoff_appearances > 0 ? [["🏅", t.playoff_appearances, "Playoffs*", C.muted, "playoffs"]] : []),
                   ...(t.division_titles > 0 ? [["🥇", t.division_titles, "Division*", C.blue, "division"]] : []),
                 ].map(([icon, val, label, color, histTab]) => (
-                  <div key={label} onClick={() => goPage("fame", { tab: histTab })} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 16px", minWidth: 72, cursor: "pointer" }}>
+                  <div key={label} onClick={() => goPage("fame", { tab: histTab })} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 8px", flex: 1, minWidth: 0, cursor: "pointer" }}>
                     <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
                     <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color }}>{val}</div>
                     <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
