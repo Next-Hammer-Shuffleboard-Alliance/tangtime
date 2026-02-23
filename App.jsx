@@ -1493,7 +1493,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     if (!activeSeason) return;
     // Try loading from teams table first, fallback to all standings
     Promise.all([
-      q("teams", "order=recrec_elo.desc&limit=500"),
+      q("teams", "primary_team_id=is.null&order=recrec_elo.desc&limit=500"),
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=calculated_rank`),
     ]).then(([teamsData, standingsData]) => {
       const hasTeamsData = teamsData?.length && teamsData.some(t => (t.all_time_wins || 0) > 0);
