@@ -2020,6 +2020,8 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   const [allDivisions, setAllDivisions] = useState([]);
   const [showAllLB, setShowAllLB] = useState(false);
 
+  const [aliasTeams, setAliasTeams] = useState([]);
+
   useEffect(() => { setShowAllLB(false); }, [tab]);
 
   useEffect(() => {
@@ -2027,10 +2029,12 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
       q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name,start_date),divisions(name,day_of_week,level)&order=season_id.desc"),
       q("playoff_appearances", "select=*,teams:team_id(name),seasons:season_id(name,start_date)&order=season_id.desc"),
       q("divisions", "select=id,name,day_of_week,level,season_id,seasons(name,start_date)&level=neq.party&order=season_id.desc,day_of_week,level"),
-    ]).then(([cd, pd, dd]) => {
+      q("teams", "select=id,name,primary_team_id"),
+    ]).then(([cd, pd, dd, at]) => {
       setChamps(cd || []);
       setPlayoffData(pd || []);
       setAllDivisions(dd || []);
+      setAliasTeams(at || []);
       setLoading(false);
     });
   }, []);
@@ -2048,28 +2052,33 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
     return (b.seasons?.name || "").localeCompare(a.seasons?.name || "");
   });
 
-  // Team alias map: old name → current name
-  const TEAM_ALIASES = {
-    "The Tanglorious Bastards": 'Shuffle-"Bored to Death"',
-    "Tanglorious Basterds": 'Shuffle-"Bored to Death"',
-    "There Will Be Biscuits": "The Philly Specials",
-    "Chicken In A Biscuit": "Kitchensurfing",
-  };
-  const ALIAS_LABELS = {
-    'Shuffle-"Bored to Death"': "formerly Tanglorious Basterds",
-    "The Philly Specials": "formerly There Will Be Biscuits",
-    "Kitchensurfing": "formerly Chicken In A Biscuit",
-  };
+  // Team alias map: old name → current name (built from DB)
+  const teamNameById = {};
+  aliasTeams.forEach(t => { teamNameById[t.id] = t.name; });
+  const TEAM_ALIASES = {};
+  const aliasNamesMap = {}; // primary name → [alias names]
+  aliasTeams.filter(t => t.primary_team_id).forEach(at => {
+    const primaryName = teamNameById[at.primary_team_id];
+    if (primaryName && at.name !== primaryName) {
+      TEAM_ALIASES[at.name] = primaryName;
+      if (!aliasNamesMap[primaryName]) aliasNamesMap[primaryName] = [];
+      aliasNamesMap[primaryName].push(at.name);
+    }
+  });
+  const ALIAS_LABELS = {};
+  Object.entries(aliasNamesMap).forEach(([primary, names]) => {
+    ALIAS_LABELS[primary] = `formerly ${names.join(", ")}`;
+  });
 
   // Playoff leaderboard — merge playoff_appearances + championships (all banquet/finalist/champ = playoff appearance)
   const playoffLB = {};
   const playoffSeenKey = new Set(); // dedupe team+season
 
   const addToPlayoffLB = (rawName, teamId, seasonName, seasonDate) => {
-    const key = `${teamId}__${seasonName}`;
+    const n = TEAM_ALIASES[rawName] || rawName;
+    const key = `${n}__${seasonName}`;
     if (playoffSeenKey.has(key)) return;
     playoffSeenKey.add(key);
-    const n = TEAM_ALIASES[rawName] || rawName;
     if (!playoffLB[n]) playoffLB[n] = { name: n, count: 0, teamId, alias: ALIAS_LABELS[n] || null };
     playoffLB[n].count++;
     if (!TEAM_ALIASES[rawName]) playoffLB[n].teamId = teamId;
