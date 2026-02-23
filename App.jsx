@@ -2106,7 +2106,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Banquet", round_2: "Round 2", round_1: "Round 1" };
 
   const dataNote = tab === "banquet" ? "Banquet data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
-    : tab === "playoffs" ? "Playoff data available for Winter 2023 – Winter 2025. Earlier seasons coming soon."
+    : tab === "playoffs" ? "Playoffs data is incomplete. Help us fill in the gaps!"
     : tab === "division" ? "Division champion data is incomplete. Help us fill in the gaps!" : null;
 
   return (
