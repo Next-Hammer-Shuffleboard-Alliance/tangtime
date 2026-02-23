@@ -2018,6 +2018,9 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(initialTab || "league");
   const [allDivisions, setAllDivisions] = useState([]);
+  const [showAllLB, setShowAllLB] = useState(false);
+
+  useEffect(() => { setShowAllLB(false); }, [tab]);
 
   useEffect(() => {
     Promise.all([
@@ -2146,11 +2149,11 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
           <>
             <SectionTitle right="All-time">Playoff Appearances</SectionTitle>
             <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
-              {sortedPlayoffLB.slice(0, 20).map((t, i) => (
+              {sortedPlayoffLB.slice(0, showAllLB ? sortedPlayoffLB.length : 15).map((t, i, arr) => (
                 <div key={t.name} onClick={() => goPage("teams", { teamId: t.teamId })} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   padding: "13px 18px", cursor: "pointer",
-                  borderBottom: i < Math.min(sortedPlayoffLB.length, 20) - 1 ? `1px solid ${C.border}` : "none",
+                  borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none",
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
                     <span style={{ fontFamily: F.m, fontSize: 14, fontWeight: 800, width: 24, flexShrink: 0, color: C.muted }}>{i + 1}</span>
@@ -2163,6 +2166,9 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
                   <Badge color={C.amber} style={{ flexShrink: 0, marginLeft: 8 }}>🏅 {t.count}</Badge>
                 </div>
               ))}
+              {!showAllLB && sortedPlayoffLB.length > 15 && (
+                <button onClick={() => setShowAllLB(true)} style={{ width: "100%", padding: "12px 0", border: "none", borderTop: `1px solid ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Show all ({sortedPlayoffLB.length})</button>
+              )}
             </Card>
           </>
         )
@@ -2180,11 +2186,11 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
             <>
               <SectionTitle right="All-time">{tabLabel}</SectionTitle>
               <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
-                {sortedLB.slice(0, 15).map((t, i) => (
+                {sortedLB.slice(0, showAllLB ? sortedLB.length : 15).map((t, i, arr) => (
                   <div key={t.name} onClick={() => goPage("teams", { teamId: t.teamId })} style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                     padding: "13px 18px", cursor: "pointer",
-                    borderBottom: i < Math.min(sortedLB.length, 15) - 1 ? `1px solid ${C.border}` : "none",
+                    borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : "none",
                     background: "transparent",
                   }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
@@ -2200,6 +2206,9 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
                     </Badge>
                   </div>
                 ))}
+                {!showAllLB && sortedLB.length > 15 && (
+                  <button onClick={() => setShowAllLB(true)} style={{ width: "100%", padding: "12px 0", border: "none", borderTop: `1px solid ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Show all ({sortedLB.length})</button>
+                )}
               </Card>
             </>
           )}
