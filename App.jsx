@@ -718,6 +718,7 @@ function MatchRow({ m, goPage, teamRecords, h2h }) {
   const aWon = m.winner_id === m.team_a_id;
   const bWon = m.winner_id === m.team_b_id;
   const done = m.status === "completed" && m.winner_id;
+  const postponed = m.status === "postponed";
   const isOT = m.went_to_ot;
   const recA = teamRecords?.[m.team_a_id];
   const recB = teamRecords?.[m.team_b_id];
@@ -745,7 +746,9 @@ function MatchRow({ m, goPage, teamRecords, h2h }) {
               {bWon ? <Badge color={C.green} style={{ fontSize: 8, padding: "2px 5px" }}>W</Badge> :
                <Badge color={C.red} style={{ fontSize: 8, padding: "2px 5px" }}>L</Badge>}
               {isOT && <Badge color={C.amber} style={{ fontSize: 8, padding: "2px 4px" }}>OT</Badge>}
-            </>) : (
+            </>) : postponed ? (
+              <Badge color={C.amber} style={{ fontSize: 8, padding: "2px 6px" }}>PPD</Badge>
+            ) : (
               <span style={{ fontFamily: F.m, fontSize: 11, color: C.amber, fontWeight: 700 }}>VS</span>
             )}
           </div>
@@ -2847,7 +2850,7 @@ function AdminApp({ user, myRole }) {
                   <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{fmtDate(m.scheduled_date)}{m.court ? ` · Court ${m.court}` : ""}</span>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     {m.status === "completed" && m.went_to_ot && <Badge color={C.amber} style={{ fontSize: 9, padding: "1px 6px" }}>OT</Badge>}
-                    <Badge color={m.status === "completed" ? C.green : C.muted} style={{ fontSize: 9, padding: "1px 6px" }}>{m.status === "completed" ? "✓ Done" : "⋯ Pending"}</Badge>
+                    <Badge color={m.status === "completed" ? C.green : m.status === "postponed" ? C.amber : C.muted} style={{ fontSize: 9, padding: "1px 6px" }}>{m.status === "completed" ? "✓ Done" : m.status === "postponed" ? "PPD" : "⋯ Pending"}</Badge>
                     <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>Edit →</span>
                   </div>
                 </div>
