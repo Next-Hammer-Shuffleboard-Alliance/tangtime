@@ -184,8 +184,8 @@ function computeRanks(standings) {
 function getSeasonProgress(season) {
   if (!season) return { label: "", status: "active", week: null };
   const now = new Date();
-  const start = new Date(season.start_date + "T12:00:00");
-  const end = new Date(season.end_date + "T12:00:00");
+  const start = new Date(season.start_date + "T00:00:00");
+  const end = new Date(season.end_date + "T23:59:59");
   if (now < start) return { label: "Starting Soon", status: "upcoming", week: null };
   if (now > end || !season.is_active) return { label: "Completed", status: "completed", week: null };
   const week = Math.min(Math.max(Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
