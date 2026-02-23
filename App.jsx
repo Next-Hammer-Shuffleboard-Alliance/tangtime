@@ -1063,8 +1063,10 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
                       }} />
                   </div>
                 </div>
-                <div style={{ textAlign: "center", marginTop: 6 }}>
+                <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 6 }}>
                   <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{fmtDate(m.scheduled_date)}</span>
+                  {m.scheduled_time && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>{fmtTime(m.scheduled_time)}</span>}
+                  {m.court && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Court {String(m.court).replace(/^Court\s*/i, "").replace(/^0+/, "") || m.court}</span>}
                 </div>
               </Card>
             );
