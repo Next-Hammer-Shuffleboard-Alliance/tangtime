@@ -2008,14 +2008,17 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
   const [playoffData, setPlayoffData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(initialTab || "league");
+  const [allDivisions, setAllDivisions] = useState([]);
 
   useEffect(() => {
     Promise.all([
       q("championships", "select=*,teams!championships_team_id_fkey(name),seasons(name,start_date),divisions(name,day_of_week,level)&order=season_id.desc"),
       q("playoff_appearances", "select=*,teams:team_id(name),seasons:season_id(name,start_date)&order=season_id.desc"),
-    ]).then(([cd, pd]) => {
+      q("divisions", "select=id,name,day_of_week,level,season_id,seasons(name,start_date)&level=neq.party&order=season_id.desc,day_of_week,level"),
+    ]).then(([cd, pd, dd]) => {
       setChamps(cd || []);
       setPlayoffData(pd || []);
+      setAllDivisions(dd || []);
       setLoading(false);
     });
   }, []);
@@ -2235,47 +2238,59 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
                 );
               });
           })() : tab === "division" ? (() => {
-            // Group division winners by season
-            const bySeason = {};
-            filtered.forEach(c => {
-              const sn = c.seasons?.name || "?";
-              const sd = c.seasons?.start_date || "0000";
-              if (!bySeason[sn]) bySeason[sn] = { name: sn, start_date: sd, teams: [] };
-              bySeason[sn].teams.push(c);
-            });
             const dayOrder = { monday: 0, tuesday: 1, wednesday: 2, thursday: 3 };
             const levelOrder = { pilot: 0, cherry: 1, hammer: 2, party: 3 };
+            // Build winner map: division_id → champ entry (dedupe by division_id)
+            const winnerMap = {};
+            filtered.forEach(c => {
+              if (!c.division_id) return;
+              if (!winnerMap[c.division_id]) winnerMap[c.division_id] = c;
+            });
+            // Group all divisions by season
+            const bySeason = {};
+            allDivisions.forEach(d => {
+              const sn = d.seasons?.name || "?";
+              const sd = d.seasons?.start_date || "0000";
+              if (!bySeason[sn]) bySeason[sn] = { name: sn, start_date: sd, divs: [] };
+              bySeason[sn].divs.push(d);
+            });
             return Object.values(bySeason)
               .sort((a, b) => b.start_date.localeCompare(a.start_date))
               .map(season => {
-                const sorted = [...season.teams].sort((a, b) => {
-                  const da = dayOrder[a.divisions?.day_of_week] ?? 9;
-                  const db = dayOrder[b.divisions?.day_of_week] ?? 9;
+                const sorted = [...season.divs].sort((a, b) => {
+                  const da = dayOrder[a.day_of_week] ?? 9;
+                  const db = dayOrder[b.day_of_week] ?? 9;
                   if (da !== db) return da - db;
-                  return (levelOrder[a.divisions?.level] ?? 9) - (levelOrder[b.divisions?.level] ?? 9);
+                  return (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9);
                 });
-                const uniqueDivisions = new Set(sorted.map(c => c.division_id)).size;
-                const isComplete = sorted.length >= uniqueDivisions && sorted.length > 0;
+                const hasAny = sorted.some(d => winnerMap[d.id]);
+                if (!hasAny) return null; // skip seasons with zero data
+                const allComplete = sorted.every(d => winnerMap[d.id]);
                 return (
                   <Card key={season.name} style={{ marginBottom: 10, padding: "14px 18px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                       <span style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700, color: C.text }}>{season.name}</span>
-                      {!isComplete && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>partial data</span>}
+                      {!allComplete && <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>partial data</span>}
                     </div>
-                    {sorted.map(c => (
-                      <div key={c.id} onClick={() => goPage("teams", { teamId: c.team_id })}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
-                        <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>🥇</span>
-                        <TeamAvatar name={c.teams?.name || "?"} size={22} />
-                        <span style={{ fontFamily: F.b, fontSize: 13, color: C.text, flex: 1 }}>{c.teams?.name}</span>
-                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
-                          {c.divisions ? `${cap(c.divisions.day_of_week)} ${cap(c.divisions.level)}` : "—"}
-                        </span>
-                      </div>
-                    ))}
+                    {sorted.map(d => {
+                      const c = winnerMap[d.id];
+                      return (
+                        <div key={d.id} onClick={c ? () => goPage("teams", { teamId: c.team_id }) : undefined}
+                          style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${C.border}`, cursor: c ? "pointer" : "default", opacity: c ? 1 : 0.5 }}>
+                          <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>{c ? "🥇" : "—"}</span>
+                          {c ? <TeamAvatar name={c.teams?.name || "?"} size={22} /> : <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}` }} />}
+                          <span style={{ fontFamily: F.b, fontSize: 13, color: c ? C.text : C.muted, flex: 1 }}>
+                            {c ? c.teams?.name : "Data incomplete"}
+                          </span>
+                          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                            {cap(d.day_of_week)} {cap(d.level)}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </Card>
                 );
-              });
+              }).filter(Boolean);
           })() : filtered.map((c, i) => (
             <Card key={c.id || i} onClick={() => goPage("teams", { teamId: c.team_id })}
               style={{ padding: "12px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
