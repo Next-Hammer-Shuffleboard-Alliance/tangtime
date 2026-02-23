@@ -1676,7 +1676,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           {(t.playoff_appearances > 0 || t.division_titles > 0 || t.banquet_count > 0 || t.league_titles > 0) && (
             <>
               <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0 12px" }} />
-              <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
                 {[
                   ...(t.league_titles > 0 ? [["🏆", t.league_titles, "League", "#fbbf24", "league"]] : []),
                   ...(t.banquet_count > 0 ? [["🎖️", t.banquet_count, "Banquet*", C.amber, "banquet"]] : []),
@@ -1686,7 +1686,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
                   <div key={label} onClick={() => goPage("fame", { tab: histTab })} style={{ textAlign: "center", background: C.surface, borderRadius: 10, padding: "10px 8px", flex: 1, minWidth: 0, cursor: "pointer" }}>
                     <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
                     <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 700, color }}>{val}</div>
-                    <div style={{ fontFamily: F.m, fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+                    <div style={{ fontFamily: F.m, fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
                   </div>
                 ))}
               </div>
