@@ -854,7 +854,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     const ids = divisions.map(d => d.id);
     Promise.all([
       q("division_standings", `season_name=eq.${encodeURIComponent(activeSeason.name)}&order=division_name,calculated_rank&limit=200`),
-      q("recent_matches", `division_id=in.(${ids.join(",")})&status=eq.completed&order=scheduled_date.desc&limit=20`),
+      q("recent_matches", `division_id=in.(${ids.join(",")})&status=in.(completed,postponed)&order=scheduled_date.desc&limit=20`),
       q("teams", "order=championship_count.desc,recrec_elo.desc&limit=10"),
     ]).then(([st, rc, tm]) => {
       setAllStandings(st || []);
@@ -1036,6 +1036,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
             const aWon = m.winner_id === m.team_a_id;
             const bWon = m.winner_id === m.team_b_id;
             const isOT = m.went_to_ot;
+            const ppd = m.status === "postponed";
             return (
               <Card key={m.id || i} style={{ padding: "12px 18px", marginBottom: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1043,25 +1044,29 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
                     <TeamLink name={m.team_a_name} teamId={m.team_a_id} goPage={goPage}
                       style={{
                         fontFamily: F.b, fontSize: 14,
-                        fontWeight: aWon ? 700 : 400,
-                        color: aWon ? C.text : C.muted,
+                        fontWeight: ppd ? 400 : aWon ? 700 : 400,
+                        color: ppd ? C.text : aWon ? C.text : C.muted,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
                       }} />
                   </div>
                   <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    {aWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
-                     bWon ? <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge> : null}
-                    <span style={{ color: C.dim, fontSize: 11 }}>vs</span>
-                    {bWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
-                     aWon ? <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge> : null}
-                    {isOT && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 5px" }}>OT</Badge>}
+                    {ppd ? (
+                      <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 6px" }}>PPD</Badge>
+                    ) : (<>
+                      {aWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
+                       bWon ? <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge> : null}
+                      <span style={{ color: C.dim, fontSize: 11 }}>vs</span>
+                      {bWon ? <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>W</Badge> :
+                       aWon ? <Badge color={C.red} style={{ fontSize: 9, padding: "2px 6px" }}>L</Badge> : null}
+                      {isOT && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 5px" }}>OT</Badge>}
+                    </>)}
                   </div>
                   <div style={{ flex: 1, minWidth: 0, textAlign: "right" }}>
                     <TeamLink name={m.team_b_name} teamId={m.team_b_id} goPage={goPage}
                       style={{
                         fontFamily: F.b, fontSize: 14,
-                        fontWeight: bWon ? 700 : 400,
-                        color: bWon ? C.text : C.muted,
+                        fontWeight: ppd ? 400 : bWon ? 700 : 400,
+                        color: ppd ? C.text : bWon ? C.text : C.muted,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block",
                       }} />
                   </div>
