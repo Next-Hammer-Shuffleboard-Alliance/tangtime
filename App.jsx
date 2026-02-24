@@ -917,9 +917,18 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     if (!isPast || !champs?.length) return [];
     const seasonChamps = champs.filter(c => c.seasons?.name === activeSeason?.name);
     const typeOrder = { league: 0, finalist: 1, banquet: 2 };
-    return seasonChamps
+    const found = seasonChamps
       .filter(c => c.type === "league" || c.type === "finalist" || c.type === "banquet")
       .sort((a, b) => (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9));
+    // Final 4 = 1 league + 1 finalist + 2 banquet. Fill missing slots.
+    const hasLeague = found.some(c => c.type === "league");
+    const hasFinalist = found.some(c => c.type === "finalist");
+    const banquetCount = found.filter(c => c.type === "banquet").length;
+    const result = [...found];
+    if (!hasLeague) result.unshift({ _incomplete: true, type: "league" });
+    if (!hasFinalist) result.splice(hasLeague ? 1 : 1, 0, { _incomplete: true, type: "finalist" });
+    for (let i = banquetCount; i < 2; i++) result.push({ _incomplete: true, type: "banquet" });
+    return result;
   }, [isPast, champs, activeSeason]);
 
   if (loading) return <Loader />;
@@ -988,24 +997,26 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
       )}
 
       {/* PAST SEASON: Banquet Final 4 */}
-      {isPast && banquetTeams.length > 0 && (
+      {isPast && banquetTeams.some(bt => !bt._incomplete) && (
         <div>
           <SectionTitle right="Final 4">Banquet</SectionTitle>
           {banquetTeams.map((bt, i) => {
             const badgeLabel = bt.type === "league" ? "🏆 Champion" : bt.type === "finalist" ? "🥈 Finalist" : "🏅 Semifinal";
             const badgeColor = bt.type === "league" ? C.amber : bt.type === "finalist" ? "#c0c0c0" : "#cd7f32";
             return (
-              <Card key={bt.id || i} onClick={() => goPage("teams", { teamId: bt.team_id })}
-                style={{ padding: "12px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+              <Card key={bt.id || `inc-${i}`} onClick={bt._incomplete ? undefined : () => goPage("teams", { teamId: bt.team_id })}
+                style={{ padding: "12px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: bt._incomplete ? "default" : "pointer", opacity: bt._incomplete ? 0.6 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <TeamAvatar name={bt.teams?.name || "?"} size={36} />
+                  {bt._incomplete
+                    ? <div style={{ width: 36, height: 36, borderRadius: "50%", background: C.surface, border: `1px solid ${C.border}`, flexShrink: 0 }} />
+                    : <TeamAvatar name={bt.teams?.name || "?"} size={36} />}
                   <div>
-                    <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: bt.type === "league" ? C.amber : C.text }}>
-                      {bt.teams?.name}
+                    <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: bt._incomplete ? C.muted : bt.type === "league" ? C.amber : C.text }}>
+                      {bt._incomplete ? "Data incomplete" : bt.teams?.name}
                     </div>
                   </div>
                 </div>
-                <Badge color={badgeColor}>{badgeLabel}</Badge>
+                <Badge color={bt._incomplete ? C.muted : badgeColor}>{badgeLabel}</Badge>
               </Card>
             );
           })}
