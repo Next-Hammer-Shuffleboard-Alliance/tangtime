@@ -2716,7 +2716,10 @@ function AdminApp({ user, myRole }) {
   const [tab, setTab] = useState("requests");
   const [divisionId, setDivisionId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
+  const [seasonData, setSeasonData] = useState(null);
   const [divisions, setDivisions] = useState([]);
+  const [selectedDay, setSelectedDay] = useState("monday");
+  const [weekFilter, setWeekFilter] = useState(null);
   const [matches, setMatches] = useState([]);
   const [captains, setCaptains] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -2731,24 +2734,58 @@ function AdminApp({ user, myRole }) {
   // Load season + divisions once on mount
   useEffect(() => {
     (async () => {
-      const seasons = await q("seasons", "is_active=eq.true&select=id&limit=1");
+      const seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date&limit=1");
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
+      setSeasonData(seasons[0]);
       const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`);
       const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
       setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
-      if (filtered.length) setDivisionId(filtered[0].id);
     })();
   }, []);
+
+  // Compute days and day-filtered divisions
+  const days = useMemo(() => {
+    const d = [...new Set(divisions.map(div => div.day_of_week))];
+    return d.sort((a, b) => (dayOrder[a] ?? 9) - (dayOrder[b] ?? 9));
+  }, [divisions]);
+
+  const dayDivisions = useMemo(() => {
+    return divisions.filter(d => d.day_of_week === selectedDay)
+      .sort((a, b) => (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9));
+  }, [divisions, selectedDay]);
+
+  // Auto-select first division when day changes
+  useEffect(() => {
+    if (dayDivisions.length) setDivisionId(dayDivisions[0].id);
+  }, [selectedDay, dayDivisions.length]);
+
+  // Auto-select first day on load
+  useEffect(() => {
+    if (days.length && !days.includes(selectedDay)) setSelectedDay(days[0]);
+  }, [days]);
 
   // Load matches when divisionId changes (only if on matches tab)
   useEffect(() => {
     if (!divisionId) return;
     if (tab !== "matches") return;
     setLoadingMatches(true);
-    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
-        setMatches((data || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—" })));
+        const withWeeks = (data || []).map(m => ({
+          ...m,
+          team_a_name: m.team_a?.name || "—",
+          team_b_name: m.team_b?.name || "—",
+          _week: getWeekNum(m.scheduled_date, seasonData?.start_date),
+        }));
+        setMatches(withWeeks);
+        // Auto-set week filter to current week
+        if (weekFilter === null && seasonData) {
+          const completedWeeks = withWeeks.filter(m => m.status === "completed").map(m => m._week);
+          const maxCompleted = completedWeeks.length ? Math.max(...completedWeeks) : 0;
+          const nextWeek = Math.min(maxCompleted + 1, 8);
+          setWeekFilter(nextWeek > 0 ? nextWeek : 1);
+        }
         setLoadingMatches(false);
       }).catch(e => { setError(e.message); setLoadingMatches(false); });
   }, [divisionId]);
@@ -2757,9 +2794,15 @@ function AdminApp({ user, myRole }) {
   useEffect(() => {
     if (tab !== "matches" || !divisionId) return;
     setLoadingMatches(true);
-    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date.desc&limit=80&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
-        setMatches((data || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—" })));
+        const withWeeks = (data || []).map(m => ({
+          ...m,
+          team_a_name: m.team_a?.name || "—",
+          team_b_name: m.team_b?.name || "—",
+          _week: getWeekNum(m.scheduled_date, seasonData?.start_date),
+        }));
+        setMatches(withWeeks);
         setLoadingMatches(false);
       }).catch(e => { setError(e.message); setLoadingMatches(false); });
   }, [tab]);
@@ -2819,7 +2862,20 @@ function AdminApp({ user, myRole }) {
     } catch (e) { setError(e.message); }
   };
 
-  const visibleMatches = matches.filter(m => filter === "all" ? true : filter === "pending" ? m.status !== "completed" : m.status === "completed");
+  const currentWeek = useMemo(() => {
+    const completedWeeks = matches.filter(m => m.status === "completed").map(m => m._week);
+    const maxCompleted = completedWeeks.length ? Math.max(...completedWeeks) : 0;
+    return Math.min(maxCompleted + 1, 8) || 1;
+  }, [matches]);
+
+  const visibleMatches = matches
+    .filter(m => weekFilter ? m._week === weekFilter : true)
+    .filter(m => filter === "all" ? true : filter === "pending" ? m.status !== "completed" : m.status === "completed")
+    .sort((a, b) => {
+      // Completed: most recent first. Pending/All: soonest first.
+      if (filter === "completed") return b.scheduled_date.localeCompare(a.scheduled_date) || (b.scheduled_time || "").localeCompare(a.scheduled_time || "");
+      return a.scheduled_date.localeCompare(b.scheduled_date) || (a.scheduled_time || "").localeCompare(b.scheduled_time || "");
+    });
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
@@ -2852,15 +2908,41 @@ function AdminApp({ user, myRole }) {
 
         {tab === "matches" && (
           <>
-            <div style={{ overflowX: "auto", margin: "0 -16px 14px", padding: "0 16px" }}>
-              <div style={{ display: "flex", gap: 6, minWidth: "max-content" }}>
-                {divisions.map(d => (
-                  <button key={d.id} onClick={() => setDivisionId(d.id)} style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${divisionId === d.id ? C.amber : C.border}`, background: divisionId === d.id ? C.amber : C.surface, color: divisionId === d.id ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    {levelEmoji(d.level)} {d.name}
-                  </button>
+            {/* Day toggle */}
+            {days.length > 1 && (
+              <div style={{ display: "flex", gap: 4, marginBottom: 10, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+                {days.map(day => (
+                  <button key={day} onClick={() => { setSelectedDay(day); setWeekFilter(null); }} style={{
+                    flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
+                    background: selectedDay === day ? C.amber : "transparent",
+                    color: selectedDay === day ? C.bg : C.muted,
+                    fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+                  }}>{cap(day)}</button>
                 ))}
               </div>
+            )}
+            {/* Level pills */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+              {dayDivisions.map(d => {
+                const active = divisionId === d.id;
+                return (
+                  <button key={d.id} onClick={() => { setDivisionId(d.id); if (weekFilter === null) setWeekFilter(currentWeek); }} style={{
+                    background: active ? C.amber : C.surface, color: active ? C.bg : C.muted,
+                    border: `1px solid ${active ? C.amber : C.border}`,
+                    borderRadius: 8, padding: "7px 14px", cursor: "pointer",
+                    fontFamily: F.m, fontSize: 11, fontWeight: active ? 700 : 500,
+                    whiteSpace: "nowrap", transition: "all 0.15s",
+                  }}>
+                    {levelEmoji(d.level)} {cap(d.level)}
+                  </button>
+                );
+              })}
             </div>
+            {/* Week pills */}
+            <div style={{ marginBottom: 10 }}>
+              <WeekPills selected={weekFilter} onSelect={setWeekFilter} currentWeek={currentWeek} />
+            </div>
+            {/* Status filter */}
             <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
               {[["all", "All"], ["pending", "Pending"], ["completed", "Completed"]].map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${filter === k ? C.amber : C.border}`, background: filter === k ? C.amberGlow : "transparent", color: filter === k ? C.amber : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: filter === k ? 700 : 500, cursor: "pointer" }}>{l}</button>
