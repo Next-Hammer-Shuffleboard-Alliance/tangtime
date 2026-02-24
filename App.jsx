@@ -912,6 +912,16 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
       });
   }, [isPast, divisions, champs, activeSeason]);
 
+  // Get banquet Final 4 for past seasons
+  const banquetTeams = useMemo(() => {
+    if (!isPast || !champs?.length) return [];
+    const seasonChamps = champs.filter(c => c.seasons?.name === activeSeason?.name);
+    const typeOrder = { league: 0, finalist: 1, banquet: 2 };
+    return seasonChamps
+      .filter(c => c.type === "league" || c.type === "finalist" || c.type === "banquet")
+      .sort((a, b) => (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9));
+  }, [isPast, champs, activeSeason]);
+
   if (loading) return <Loader />;
 
   return (
@@ -977,6 +987,31 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         </div>
       )}
 
+      {/* PAST SEASON: Banquet Final 4 */}
+      {isPast && banquetTeams.length > 0 && (
+        <div>
+          <SectionTitle right="Final 4">Banquet</SectionTitle>
+          {banquetTeams.map((bt, i) => {
+            const badgeLabel = bt.type === "league" ? "🏆 Champion" : bt.type === "finalist" ? "🥈 Finalist" : "🏅 Semifinal";
+            const badgeColor = bt.type === "league" ? C.amber : bt.type === "finalist" ? "#c0c0c0" : "#cd7f32";
+            return (
+              <Card key={bt.id || i} onClick={() => goPage("teams", { teamId: bt.team_id })}
+                style={{ padding: "12px 18px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <TeamAvatar name={bt.teams?.name || "?"} size={36} />
+                  <div>
+                    <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 600, color: bt.type === "league" ? C.amber : C.text }}>
+                      {bt.teams?.name}
+                    </div>
+                  </div>
+                </div>
+                <Badge color={badgeColor}>{badgeLabel}</Badge>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
       {isPast && divisionWinners.length > 0 && (
         <div>
           <SectionTitle right={activeSeason?.name}>Division Champions</SectionTitle>
@@ -1028,8 +1063,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         </div>
       )}
 
-      {/* Recent Results */}
-      {recent.length > 0 && (
+      {/* Recent Results — current season only */}
+      {!isPast && recent.length > 0 && (
         <div>
           <SectionTitle right="Latest">Recent Results</SectionTitle>
           {recent.slice(0, 6).map((m, i) => {
