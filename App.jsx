@@ -185,10 +185,18 @@ function getSeasonProgress(season) {
   if (!season) return { label: "", status: "active", week: null };
   const now = new Date();
   const start = new Date(season.start_date + "T00:00:00");
-  const end = new Date(season.end_date + "T23:59:59");
   if (now < start) return { label: "Starting Soon", status: "upcoming", week: null };
-  if (now > end || !season.is_active) return { label: "Completed", status: "completed", week: null };
-  const week = Math.min(Math.max(Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
+  if (!season.is_active) return { label: "Completed", status: "completed", week: null };
+  const rawWeek = Math.max(Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000)) + 1, 1);
+  // Monday of week 9+ → Completed
+  if (rawWeek >= 9) return { label: "Completed", status: "completed", week: null };
+  // Wednesday of week 8+ → Postseason (Tue night matches are done)
+  if (rawWeek === 8) {
+    const week8Monday = new Date(start.getTime() + 7 * 7 * 24 * 60 * 60 * 1000);
+    const week8Wednesday = new Date(week8Monday.getTime() + 2 * 24 * 60 * 60 * 1000);
+    if (now >= week8Wednesday) return { label: "🏆 Postseason", status: "postseason", week: 8 };
+  }
+  const week = Math.min(rawWeek, 8);
   return { label: `Week ${week} of 8`, status: "active", week };
 }
 
@@ -836,6 +844,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
 
   const progress = getSeasonProgress(activeSeason);
   const isPast = progress.status === "completed";
+  const isPostseason = progress.status === "postseason";
 
   // Compute actual current week from data
   const dataWeek = useMemo(() => {
@@ -846,7 +855,7 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
     const dataW = maxGames > 0 ? Math.min(maxGames, 8) : 0;
     return Math.max(dataW, progress.week || 0) || null;
   }, [allStandings, progress.week, isPast]);
-  const progressLabel = isPast ? "Completed" : (dataWeek ? `Week ${dataWeek} of 8` : progress.label);
+  const progressLabel = isPast ? "Completed" : isPostseason ? "🏆 Postseason" : (dataWeek ? `Week ${dataWeek} of 8` : progress.label);
 
   useEffect(() => {
     if (!activeSeason || !divisions?.length) return;
@@ -949,10 +958,10 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
             {activeSeason?.name || "Current Season"}
           </h2>
           <Badge
-            color={progress.status === "completed" ? C.muted : progress.status === "upcoming" ? C.blue : C.green}
+            color={progress.status === "completed" ? C.muted : progress.status === "postseason" ? C.amber : progress.status === "upcoming" ? C.blue : C.green}
             style={{ flexShrink: 0 }}
           >
-            {progress.status === "completed" ? "✓" : progress.status === "upcoming" ? "◷" : "●"} {progressLabel}
+            {progress.status === "completed" ? "✓" : progress.status === "postseason" ? "" : progress.status === "upcoming" ? "◷" : "●"} {progressLabel}
           </Badge>
         </div>
         <p style={{ fontFamily: F.b, fontSize: 13, color: C.muted, margin: "0 0 18px" }}>Royal Palms Brooklyn</p>
