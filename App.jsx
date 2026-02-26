@@ -6397,6 +6397,7 @@ function MainApp() {
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [divisions, setDivisions] = useState([]);
   const [champs, setChamps] = useState([]);
+  const [hasPlayoffData, setHasPlayoffData] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const mainRef = useRef(null);
 
@@ -6425,6 +6426,9 @@ function MainApp() {
     if (!selectedSeason) return;
     q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
+    });
+    q("playoff_appearances", `season_id=eq.${selectedSeason.id}&select=team_id&limit=1`).then(pa => {
+      setHasPlayoffData(pa?.length > 0);
     });
   }, [selectedSeason]);
 
@@ -6495,7 +6499,7 @@ function MainApp() {
       }}>
         {(() => {
           const sp = getSeasonProgress(selectedSeason);
-          const showPlayoffs = sp.status === "postseason" || sp.status === "completed";
+          const showPlayoffs = sp.status === "postseason" || sp.status === "completed" || hasPlayoffData;
           return [
             ["home", "⌂", "Home"],
             ["standings", "☰", "Standings"],
