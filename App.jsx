@@ -4207,28 +4207,36 @@ function AdminApp({ user, myRole }) {
                           <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim, marginBottom: 10 }}>No divisions yet</div>
                         ) : allDivisions.map(d => {
                           const editInputStyle = { padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.m, fontSize: 11, outline: "none", width: "100%" };
+                          const readOnly = isPast || isActive;
                           return (
                           <Card key={d.id} style={{ padding: "12px 14px", marginBottom: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: readOnly ? 0 : 8 }}>
                               <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
                                 {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
                               </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <button onClick={(e) => { e.stopPropagation(); toggleRegistration(d.id, d.registration_open); }}
-                                  style={{
-                                    padding: "5px 10px", borderRadius: 6, border: "none",
-                                    background: d.registration_open ? C.green : `${C.dim}30`,
-                                    color: d.registration_open ? "#fff" : C.muted,
-                                    fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
-                                  }}>
-                                  {d.registration_open ? "✓ Reg Open" : "Reg Closed"}
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); deleteDiv(d.id, d.name); }}
-                                  style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                                  ✕
-                                </button>
-                              </div>
+                              {readOnly ? (
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                                  {d.time_slot || ""}{d.time_slot ? " · " : ""}${((d.price_cents || 65000) / 100).toFixed(0)} · {d.max_teams || 16} teams
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <button onClick={(e) => { e.stopPropagation(); toggleRegistration(d.id, d.registration_open); }}
+                                    style={{
+                                      padding: "5px 10px", borderRadius: 6, border: "none",
+                                      background: d.registration_open ? C.green : `${C.dim}30`,
+                                      color: d.registration_open ? "#fff" : C.muted,
+                                      fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                                    }}>
+                                    {d.registration_open ? "✓ Reg Open" : "Reg Closed"}
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); deleteDiv(d.id, d.name); }}
+                                    style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                                    ✕
+                                  </button>
+                                </div>
+                              )}
                             </div>
+                            {!readOnly && (
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                               <div>
                                 <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Time</div>
@@ -4249,12 +4257,13 @@ function AdminApp({ user, myRole }) {
                                   style={editInputStyle} />
                               </div>
                             </div>
+                            )}
                           </Card>
                           );
                         })}
 
-                        {/* Add division */}
-                        {!showAddDiv ? (
+                        {/* Add division - only for future seasons */}
+                        {!isPast && !isActive && (!showAddDiv ? (
                           <button onClick={() => setShowAddDiv(true)}
                             style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: `1px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 11, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}>
                             + Add Division
@@ -4325,7 +4334,7 @@ function AdminApp({ user, myRole }) {
                               </button>
                             </div>
                           </Card>
-                        )}
+                        ))}
                       </div>
                     )}
                   </div>
