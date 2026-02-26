@@ -4177,12 +4177,10 @@ function AdminApp({ user, myRole }) {
                             }}>
                             {isActive ? "✓ Active" : "Set Active"}
                           </button>
-                          {!isActive && (
-                            <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
+                          <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
                               style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
                               ✕
                             </button>
-                          )}
                           <span style={{ color: C.dim, fontSize: 16 }}>{isSelected ? "▾" : "▸"}</span>
                         </div>
                       </div>
@@ -4945,6 +4943,9 @@ function RegisterPage() {
   const [newTeamName, setNewTeamName] = useState("");
   const [email, setEmail] = useState("");
   const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [wantRename, setWantRename] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [rosterMembers, setRosterMembers] = useState([{ name: "", email: "" }, { name: "", email: "" }]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -5005,10 +5006,14 @@ function RegisterPage() {
 
   const handleSubmit = async () => {
     setError("");
-    const teamName = teamMode === "new" ? newTeamName.trim() : teams.find(t => t.id === selectedTeamId)?.name;
+    const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
+    const teamName = teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName);
     if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
     if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
     if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+
+    // Validate roster — at least captain email, others optional
+    const validRoster = rosterMembers.filter(m => m.name.trim() || m.email.trim());
 
     const div = divisions.find(d => d.id === selectedDiv);
     if (!div) return;
@@ -5026,10 +5031,19 @@ function RegisterPage() {
           team_id: teamMode === "existing" ? selectedTeamId : null,
           captain_email: email.trim(),
           is_new_team: teamMode === "new",
+          rename_from: (teamMode === "existing" && wantRename && renameName.trim()) ? existingTeamName : null,
+          roster: validRoster,
           amount_cents: div.price_cents || 65000,
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { setError("Server error — please try again or contact league@tangtime.app"); setSubmitting(false); return; }
+      if (!res.ok) {
+        setError(data.error || "Checkout failed");
+        setSubmitting(false);
+        return;
+      }
       if (data.url) {
         window.location.href = data.url;
       } else {
@@ -5165,7 +5179,7 @@ function RegisterPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
               {divisions.map(d => {
                 const sName = getSeasonName(d.season_id);
-                const regCount = regCounts[d.division_id] || 0;
+                const regCount = regCounts[d.id] || 0;
                 const spotsLeft = (d.max_teams || 16) - regCount;
                 const selected = selectedDiv === d.id;
                 return (
@@ -5188,6 +5202,7 @@ function RegisterPage() {
                         <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
                           ${((d.price_cents || 65000) / 100).toFixed(0)}
                         </div>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
                         <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
                           {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
                         </div>
@@ -5209,7 +5224,7 @@ function RegisterPage() {
                 {/* Team Mode Toggle */}
                 <div style={{ display: "flex", gap: 0, marginBottom: 14, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
                   {[["existing", "Returning Team"], ["new", "New Team"]].map(([m, label]) => (
-                    <button key={m} onClick={() => { setTeamMode(m); setError(""); setSelectedTeamId(""); setNewTeamName(""); setTeamSearch(""); }}
+                    <button key={m} onClick={() => { setTeamMode(m); setError(""); setSelectedTeamId(""); setNewTeamName(""); setTeamSearch(""); setWantRename(false); setRenameName(""); }}
                       style={{
                         flex: 1, padding: "10px 0", border: "none", fontFamily: F.b, fontSize: 13, fontWeight: 600,
                         cursor: "pointer", transition: "all 0.15s",
@@ -5254,6 +5269,27 @@ function RegisterPage() {
                       ))}
                     </div>
                   </div>
+                  {selectedTeamId && (
+                    <div style={{ marginTop: -6, marginBottom: 14 }}>
+                      <div onClick={() => { setWantRename(!wantRename); setRenameName(""); }}
+                        style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: "6px 0" }}>
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                          border: `2px solid ${wantRename ? C.amber : C.dim}`,
+                          background: wantRename ? C.amber : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {wantRename && <span style={{ color: C.bg, fontSize: 10, fontWeight: 900 }}>✓</span>}
+                        </div>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Change team name for this season</span>
+                      </div>
+                      {wantRename && (
+                        <input type="text" placeholder="New team name" value={renameName} onChange={e => setRenameName(e.target.value)}
+                          style={{ ...inputStyle, marginTop: 6 }} />
+                      )}
+                    </div>
+                  )}
+                </div>
                 ) : (
                   <div style={{ marginBottom: 14 }}>
                     <input
@@ -5274,6 +5310,44 @@ function RegisterPage() {
                     value={email} onChange={e => setEmail(e.target.value)}
                     style={inputStyle}
                   />
+                </div>
+
+                {/* Roster Members */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                      Team Members <span style={{ textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+                    </div>
+                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                      {rosterMembers.filter(m => m.name.trim()).length} added
+                    </span>
+                  </div>
+                  <div style={{ background: C.surfAlt, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+                    {rosterMembers.map((m, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, padding: "8px 10px", borderBottom: i < rosterMembers.length - 1 ? `1px solid ${C.border}` : "none", alignItems: "center" }}>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim, width: 18, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
+                        <input type="text" placeholder="Name" value={m.name}
+                          onChange={e => setRosterMembers(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", minWidth: 0 }} />
+                        <input type="email" placeholder="Email" value={m.email}
+                          onChange={e => setRosterMembers(prev => prev.map((r, j) => j === i ? { ...r, email: e.target.value } : r))}
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", minWidth: 0 }} />
+                        {rosterMembers.length > 2 && (
+                          <button onClick={() => setRosterMembers(prev => prev.filter((_, j) => j !== i))}
+                            style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: `${C.red}15`, color: C.red, fontSize: 10, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {rosterMembers.length < 10 && (
+                    <button onClick={() => setRosterMembers(prev => [...prev, { name: "", email: "" }])}
+                      style={{ marginTop: 6, padding: "6px 12px", borderRadius: 6, border: `1px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", width: "100%" }}>
+                      + Add Member
+                    </button>
+                  )}
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>
+                    Roster can also be updated later in the Captain Portal
+                  </div>
                 </div>
 
                 {/* Waiver */}
