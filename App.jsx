@@ -1301,20 +1301,21 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             ))}
           </div>
           {rows.map((t, i) => {
-            const useTop5 = !hasPlayoffData;
-            const isTop5 = t.displayRank <= 5;
-            const lastTop5Idx = useTop5 ? rows.reduce((last, r, j) => r.displayRank <= 5 ? j : last, -1) : -1;
+            const playoffSpots = selDiv?.playoff_spots || 5;
+            const useTopN = !hasPlayoffData;
+            const isTopN = t.displayRank <= playoffSpots;
+            const lastTopNIdx = useTopN ? rows.reduce((last, r, j) => r.displayRank <= playoffSpots ? j : last, -1) : -1;
             return (
             <div key={t.team_id || i} onClick={() => goPage("teams", { teamId: t.team_id })} style={{
               display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
               alignItems: "center", padding: "12px 12px", cursor: "pointer",
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
-              background: useTop5 && isTop5 ? C.amberGlow : "transparent", position: "relative",
+              background: useTopN && isTopN ? C.amberGlow : "transparent", position: "relative",
             }}>
-              {useTop5 && i === lastTop5Idx && i < rows.length - 1 && (
+              {useTopN && i === lastTopNIdx && i < rows.length - 1 && (
                 <div style={{ position: "absolute", bottom: 0, left: 14, right: 14, height: 1, background: `repeating-linear-gradient(90deg, ${C.amber}50, ${C.amber}50 4px, transparent 4px, transparent 8px)` }} />
               )}
-              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: useTop5 && isTop5 ? C.amber : C.dim }}>{t.rankLabel}</span>
+              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: useTopN && isTopN ? C.amber : C.dim }}>{t.rankLabel}</span>
               <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.team_name}</span>
                 {t.playoffRound && (
@@ -2767,7 +2768,832 @@ function AdminEditModal({ match, onClose, onSave }) {
   );
 }
 
+// ══════════════════════════════════════
+// ─── ADMIN POSTSEASON TAB ───
+// ══════════════════════════════════════
+
+function AdminPostseasonTab({ seasonId, divisions }) {
+  const [standings, setStandings] = useState({});  // divId -> [{team_id, team_name, wins, losses}]
+  const [existingChamps, setExistingChamps] = useState([]); // championships for this season
+  const [existingPlayoffs, setExistingPlayoffs] = useState([]); // playoff_appearances for this season
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null); // "div-<id>" or "playoff-<id>" while saving
+  const [confirmedDivWinners, setConfirmedDivWinners] = useState({}); // divId -> team_id
+  const [confirmedPlayoffs, setConfirmedPlayoffs] = useState({}); // divId -> [team_ids]
+  const [wildcards, setWildcards] = useState([]); // [team_id, team_id]
+  const [seedLabels, setSeedLabels] = useState({}); // team_id -> "MH1" etc
+  const [expandedDiv, setExpandedDiv] = useState(null);
+  const [playoffSpotsMap, setPlayoffSpotsMap] = useState({}); // divId -> number
+  const [lotteryPool, setLotteryPool] = useState(new Set()); // team_ids in lottery
+  const [lotteryDrawn, setLotteryDrawn] = useState([]); // drawn team_ids
+  const [lotteryAnimating, setLotteryAnimating] = useState(false);
+  const [lotteryMode, setLotteryMode] = useState("pool"); // "pool" | "drawn" | "manual"
+  const [success, setSuccess] = useState(null);
+  const [error, setError] = useState(null);
+  const DEFAULT_PLAYOFF_SPOTS = 5;
+  const getPlayoffSpots = (divId) => playoffSpotsMap[divId] || DEFAULT_PLAYOFF_SPOTS;
+
+  // Generate seed label: MH1 = Monday Hammer 1st, TC3 = Tuesday Cherry 3rd, WC1 = Wildcard 1
+  const makeSeedLabel = (div, seedNum) => {
+    const dayAbbr = { monday: "M", tuesday: "T", wednesday: "W", thursday: "Th", friday: "F", saturday: "Sa", sunday: "Su" };
+    const lvlAbbr = { hammer: "H", cherry: "C", pilot: "P", party: "Pa" };
+    return `${dayAbbr[div.day_of_week] || "?"}${lvlAbbr[div.level] || "?"}${seedNum}`;
+  };
+
+  useEffect(() => {
+    if (!seasonId) return;
+    (async () => {
+      try {
+        // Load playoff_spots from divisions
+        const spotsMap = {};
+        divisions.forEach(d => { if (d.playoff_spots) spotsMap[d.id] = d.playoff_spots; });
+        setPlayoffSpotsMap(spotsMap);
+
+        // Load standings for all divisions
+        const divs = divisions.filter(d => d.has_data);
+        const standingsMap = {};
+        for (const d of divs) {
+          const ts = await q("team_seasons", `division_id=eq.${d.id}&select=team_id,wins,losses,teams(id,name)&order=wins.desc,losses.asc`);
+          standingsMap[d.id] = (ts || []).map((t, i) => ({
+            team_id: t.team_id,
+            team_name: t.teams?.name || "Unknown",
+            wins: t.wins || 0,
+            losses: t.losses || 0,
+            rank: i + 1,
+          }));
+        }
+        setStandings(standingsMap);
+
+        // Load existing championships + playoff_appearances
+        const [champs, playoffs] = await Promise.all([
+          q("championships", `season_id=eq.${seasonId}&select=team_id,type`),
+          q("playoff_appearances", `season_id=eq.${seasonId}&select=team_id,round_reached,seed_label`),
+        ]);
+        setExistingChamps(champs || []);
+        setExistingPlayoffs(playoffs || []);
+
+        // Pre-populate confirmed states from existing data
+        const divWinners = {};
+        (champs || []).filter(c => c.type === "division").forEach(c => {
+          // Find which division this team is in
+          for (const [divId, teams] of Object.entries(standingsMap)) {
+            if (teams.find(t => t.team_id === c.team_id)) {
+              divWinners[divId] = c.team_id;
+              break;
+            }
+          }
+        });
+        setConfirmedDivWinners(divWinners);
+
+        const divPlayoffs = {};
+        const playoffTeamIds = new Set((playoffs || []).map(p => p.team_id));
+        for (const [divId, teams] of Object.entries(standingsMap)) {
+          const qualified = teams.filter(t => playoffTeamIds.has(t.team_id)).map(t => t.team_id);
+          if (qualified.length > 0) divPlayoffs[divId] = qualified;
+        }
+        setConfirmedPlayoffs(divPlayoffs);
+
+        // Check for wildcards (playoff teams not in top 5 of any division)
+        const wcTeams = [];
+        (playoffs || []).forEach(p => {
+          let inTopN = false;
+          for (const [, teams] of Object.entries(standingsMap)) {
+            const idx = teams.findIndex(t => t.team_id === p.team_id);
+            if (idx >= 0 && idx < DEFAULT_PLAYOFF_SPOTS) { inTopN = true; break; }
+          }
+          if (!inTopN) wcTeams.push(p.team_id);
+        });
+        setWildcards(wcTeams);
+
+        // Populate seed labels from existing data
+        const labels = {};
+        (playoffs || []).forEach(p => {
+          if (p.seed_label) labels[p.team_id] = p.seed_label;
+        });
+        setSeedLabels(labels);
+
+      } catch (e) { console.error(e); setError(e.message); }
+      setLoading(false);
+    })();
+  }, [seasonId, divisions.length]);
+
+  const confirmDivisionWinner = async (divId, teamId) => {
+    setSaving(`div-${divId}`);
+    setError(null);
+    try {
+      const div = divisions.find(d => d.id === divId);
+      const label = div ? makeSeedLabel(div, 1) : "?1";
+
+      // Clean slate: remove any existing division championship for this division's teams
+      const divTeamIds = (standings[divId] || []).map(t => t.team_id);
+      for (const tid of divTeamIds) {
+        await qAuth("championships", `team_id=eq.${tid}&season_id=eq.${seasonId}&type=eq.division`, "DELETE").catch(() => {});
+      }
+
+      // Insert new championship
+      await qAuth("championships", "", "POST", {
+        team_id: teamId,
+        season_id: seasonId,
+        type: "division",
+      });
+
+      // Auto-add as playoff team #1 seed — delete existing first to avoid duplicates
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+      await qAuth("playoff_appearances", "", "POST", {
+        team_id: teamId,
+        season_id: seasonId,
+        round_reached: "qualified",
+        seed_label: label,
+      });
+
+      // Update all state at once
+      setConfirmedDivWinners(prev => ({ ...prev, [divId]: teamId }));
+      setConfirmedPlayoffs(prev => ({
+        ...prev,
+        [divId]: [...(prev[divId] || []).filter(id => id !== teamId), teamId],
+      }));
+      setExistingChamps(prev => [
+        ...prev.filter(c => !(c.type === "division" && divTeamIds.includes(c.team_id))),
+        { team_id: teamId, type: "division" },
+      ]);
+      setExistingPlayoffs(prev => [
+        ...prev.filter(p => p.team_id !== teamId),
+        { team_id: teamId, round_reached: "qualified", seed_label: label },
+      ]);
+      setSeedLabels(prev => ({ ...prev, [teamId]: label }));
+      setSuccess(`Division winner confirmed! (${label})`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  const confirmPlayoffTeam = async (divId, teamId) => {
+    setSaving(`playoff-${teamId}`);
+    setError(null);
+    try {
+      const div = divisions.find(d => d.id === divId);
+      const divTeams = standings[divId] || [];
+      const seedNum = divTeams.findIndex(t => t.team_id === teamId) + 1;
+      const label = div ? makeSeedLabel(div, seedNum) : `?${seedNum}`;
+
+      // Delete first to avoid duplicates
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+      await qAuth("playoff_appearances", "", "POST", {
+        team_id: teamId,
+        season_id: seasonId,
+        round_reached: "qualified",
+        seed_label: label,
+      });
+
+      setConfirmedPlayoffs(prev => ({
+        ...prev,
+        [divId]: [...(prev[divId] || []).filter(id => id !== teamId), teamId],
+      }));
+      setExistingPlayoffs(prev => [
+        ...prev.filter(p => p.team_id !== teamId),
+        { team_id: teamId, round_reached: "qualified", seed_label: label },
+      ]);
+      setSeedLabels(prev => ({ ...prev, [teamId]: label }));
+      setSuccess(`Playoff team confirmed! (${label})`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  const removePlayoffTeam = async (divId, teamId) => {
+    setSaving(`playoff-${teamId}`);
+    setError(null);
+    try {
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE");
+
+      // Also remove division championship if this was the winner
+      const winnerDivId = Object.keys(confirmedDivWinners).find(did => confirmedDivWinners[did] === teamId);
+      if (winnerDivId) {
+        await qAuth("championships", `team_id=eq.${teamId}&season_id=eq.${seasonId}&type=eq.division`, "DELETE");
+        setConfirmedDivWinners(prev => { const next = { ...prev }; delete next[winnerDivId]; return next; });
+        setExistingChamps(prev => prev.filter(c => !(c.team_id === teamId && c.type === "division")));
+      }
+
+      setConfirmedPlayoffs(prev => {
+        const next = { ...prev };
+        // Remove from the specific division, or search all divisions
+        if (divId && next[divId]) {
+          next[divId] = next[divId].filter(id => id !== teamId);
+        } else {
+          for (const did of Object.keys(next)) {
+            next[did] = next[did].filter(id => id !== teamId);
+          }
+        }
+        return next;
+      });
+      setExistingPlayoffs(prev => prev.filter(p => p.team_id !== teamId));
+      setSeedLabels(prev => { const next = { ...prev }; delete next[teamId]; return next; });
+      setWildcards(prev => prev.filter(id => id !== teamId));
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  const confirmWildcard = async (teamId) => {
+    setSaving(`wc-${teamId}`);
+    setError(null);
+    try {
+      const label = `WC${wildcards.length + 1}`;
+
+      // Delete-then-insert to avoid duplicates
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+      await qAuth("playoff_appearances", "", "POST", {
+        team_id: teamId,
+        season_id: seasonId,
+        round_reached: "wildcard",
+        seed_label: label,
+      });
+
+      setWildcards(prev => [...prev, teamId]);
+      setExistingPlayoffs(prev => [...prev, { team_id: teamId, round_reached: "wildcard", seed_label: label }]);
+      setSeedLabels(prev => ({ ...prev, [teamId]: label }));
+      setSuccess(`Wildcard team confirmed! (${label})`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  const confirmAllTopN = async (divId) => {
+    const divTeams = standings[divId] || [];
+    const spots = getPlayoffSpots(divId);
+    const topN = divTeams.slice(0, spots);
+    const div = divisions.find(d => d.id === divId);
+    setSaving(`batch-${divId}`);
+    setError(null);
+    try {
+      const newLabels = {};
+      for (let i = 0; i < topN.length; i++) {
+        const t = topN[i];
+        const label = div ? makeSeedLabel(div, i + 1) : `?${i + 1}`;
+        newLabels[t.team_id] = label;
+        // Delete-then-insert to avoid duplicates
+        await qAuth("playoff_appearances", `team_id=eq.${t.team_id}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+        await qAuth("playoff_appearances", "", "POST", {
+          team_id: t.team_id,
+          season_id: seasonId,
+          round_reached: "qualified",
+          seed_label: label,
+        });
+      }
+      setConfirmedPlayoffs(prev => ({
+        ...prev,
+        [divId]: topN.map(t => t.team_id),
+      }));
+      setExistingPlayoffs(prev => {
+        const filtered = prev.filter(p => !topN.find(t => t.team_id === p.team_id));
+        const newEntries = topN.map(t => ({ team_id: t.team_id, round_reached: "qualified", seed_label: newLabels[t.team_id] }));
+        return [...filtered, ...newEntries];
+      });
+      setSeedLabels(prev => ({ ...prev, ...newLabels }));
+      setSuccess(`All top ${spots} confirmed for playoffs!`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  // Get all non-qualifying teams for wildcard picker
+  const allNonQualifying = useMemo(() => {
+    const qualifiedSet = new Set(existingPlayoffs.map(p => p.team_id));
+    const all = [];
+    for (const [, teams] of Object.entries(standings)) {
+      teams.forEach(t => {
+        if (!qualifiedSet.has(t.team_id)) {
+          all.push(t);
+        }
+      });
+    }
+    return all.sort((a, b) => (b.wins - b.losses) - (a.wins - a.losses));
+  }, [standings, existingPlayoffs]);
+
+  const totalConfirmed = existingPlayoffs.length;
+
+  if (loading) return <Loader />;
+
+  const activeDivs = divisions.filter(d => d.has_data).sort((a, b) => {
+    const dayDiff = (dayOrder[a.day_of_week] ?? 9) - (dayOrder[b.day_of_week] ?? 9);
+    if (dayDiff !== 0) return dayDiff;
+    return (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9);
+  });
+
+  return (
+    <div>
+      {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
+      {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span></div>}
+
+      {/* Summary */}
+      <Card style={{ marginBottom: 16, padding: "14px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>Postseason Setup</div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginTop: 2 }}>
+              {Object.keys(confirmedDivWinners).length}/{activeDivs.length} div winners · {totalConfirmed} playoff teams
+            </div>
+          </div>
+          <Badge color={totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? C.green : C.amber}>
+            {totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? "✓ Complete" : "In Progress"}
+          </Badge>
+        </div>
+      </Card>
+
+      {/* Division-by-division */}
+      {activeDivs.map(d => {
+        const divTeams = standings[d.id] || [];
+        const isExpanded = expandedDiv === d.id;
+        const divWinner = confirmedDivWinners[d.id];
+        const divPlayoffTeams = confirmedPlayoffs[d.id] || [];
+        const spots = getPlayoffSpots(d.id);
+
+        // Compute display ranks: within each same-record group, confirmed teams sort first
+        // This handles any combination of ties and manual resolutions
+        const displayRanks = (() => {
+          const confirmedSet = new Set(divPlayoffTeams);
+          // Sort: by record (already sorted), then within same record: confirmed before unconfirmed
+          const sorted = [...divTeams].sort((a, b) => {
+            // Primary: wins desc
+            if (b.wins !== a.wins) return b.wins - a.wins;
+            // Secondary: losses asc
+            if (a.losses !== b.losses) return a.losses - b.losses;
+            // Tertiary: confirmed teams first (winner first, then other confirmed)
+            const aConf = a.team_id === divWinner ? 2 : confirmedSet.has(a.team_id) ? 1 : 0;
+            const bConf = b.team_id === divWinner ? 2 : confirmedSet.has(b.team_id) ? 1 : 0;
+            return bConf - aConf;
+          });
+
+          // Now compute display ranks — only UNCONFIRMED teams with same record are "tied"
+          return sorted.map((t, i) => {
+            const isConfirmed = confirmedSet.has(t.team_id);
+            // Find unconfirmed teams with same record
+            const unconfirmedSameRecord = sorted.filter(x =>
+              x.wins === t.wins && x.losses === t.losses && !confirmedSet.has(x.team_id)
+            );
+            const firstUnconfIdx = sorted.findIndex(x =>
+              x.wins === t.wins && x.losses === t.losses && !confirmedSet.has(x.team_id)
+            );
+
+            let displayRank, tiedCount, tiedRank;
+            if (isConfirmed) {
+              // Confirmed teams get their exact position, no tie marker
+              displayRank = `${i + 1}`;
+              tiedCount = 1;
+              tiedRank = i + 1;
+            } else if (unconfirmedSameRecord.length > 1) {
+              // Multiple unconfirmed with same record = tied
+              const tieStartRank = firstUnconfIdx + 1;
+              displayRank = `T${tieStartRank}`;
+              tiedCount = unconfirmedSameRecord.length;
+              tiedRank = tieStartRank;
+            } else {
+              displayRank = `${i + 1}`;
+              tiedCount = 1;
+              tiedRank = i + 1;
+            }
+
+            return { ...t, displayRank, rawIdx: i, tiedCount, tiedRank };
+          });
+        })();
+
+        // Cutoff tie: check if unconfirmed teams straddle the cutoff
+        const hasCutoffTie = displayRanks.length > spots && (() => {
+          const atCutoff = displayRanks[spots - 1];
+          const belowCutoff = displayRanks[spots];
+          if (!atCutoff || !belowCutoff) return false;
+          // Only a cutoff tie if both are unconfirmed with same record
+          const confirmedSet = new Set(divPlayoffTeams);
+          return !confirmedSet.has(atCutoff.team_id) && !confirmedSet.has(belowCutoff.team_id) &&
+            atCutoff.wins === belowCutoff.wins && atCutoff.losses === belowCutoff.losses;
+        })();
+
+        const tieAt1 = !divWinner && divTeams.length > 1 && divTeams[0].wins === divTeams[1].wins && divTeams[0].losses === divTeams[1].losses;
+
+        return (
+          <Card key={d.id} style={{ marginBottom: 10, padding: 0, overflow: "hidden" }}>
+            {/* Division Header — simplified */}
+            <div
+              onClick={() => setExpandedDiv(isExpanded ? null : d.id)}
+              style={{
+                padding: "12px 16px", cursor: "pointer",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                background: isExpanded ? `${C.amber}08` : "transparent",
+              }}>
+              <div>
+                <span style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700, color: C.text }}>
+                  {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                </span>
+                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                  <Badge color={divPlayoffTeams.length >= spots ? C.green : C.dim} style={{ fontSize: 9 }}>
+                    {divPlayoffTeams.length}/{spots} playoff
+                  </Badge>
+                  {divWinner && <Badge color={C.green} style={{ fontSize: 9 }}>✓ Winner</Badge>}
+                </div>
+              </div>
+              <span style={{ color: C.dim, fontSize: 14, transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+            </div>
+
+            {/* Expanded Standings */}
+            {isExpanded && (
+              <div style={{ padding: "0 16px 16px", borderTop: `1px solid ${C.border}` }}>
+                {/* Playoff spots control */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 8px" }}>
+                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>Standings</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff spots:</span>
+                    {[4, 5, 6, 7].map(n => (
+                      <button key={n} onClick={(e) => {
+                          e.stopPropagation();
+                          setPlayoffSpotsMap(prev => ({ ...prev, [d.id]: n }));
+                          qAuth("divisions", `id=eq.${d.id}`, "PATCH", { playoff_spots: n }).catch(err => console.error("Save playoff_spots:", err));
+                        }}
+                        style={{
+                          width: 24, height: 24, borderRadius: 6, border: "none", cursor: "pointer",
+                          background: spots === n ? C.amber : C.surfAlt,
+                          color: spots === n ? C.bg : C.dim,
+                          fontFamily: F.m, fontSize: 11, fontWeight: 700,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>{n}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Standings */}
+                {(() => {
+                  const topTeams = displayRanks.slice(0, spots);
+                  const bottomTeams = displayRanks.slice(spots);
+                  const renderTeamRow = (t, isAboveCutoff) => {
+                    const isWinner = divWinner === t.team_id;
+                    const isPlayoff = divPlayoffTeams.includes(t.team_id);
+                    const isTiedFor1st = tieAt1 && divTeams[0]?.wins === t.wins && divTeams[0]?.losses === t.losses;
+                    const previewLabel = makeSeedLabel(d, t.rawIdx + 1);
+                    const isTiedAtCutoff = hasCutoffTie && divTeams[spots - 1]?.wins === t.wins && divTeams[spots - 1]?.losses === t.losses;
+
+                    return (
+                      <div key={t.team_id} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 10px", borderRadius: 8, marginBottom: 3,
+                        background: isWinner ? `${C.green}12` : isPlayoff ? `${C.amber}08` : isAboveCutoff ? C.surface : "transparent",
+                        border: `1px solid ${isWinner ? C.green + "30" : isPlayoff ? C.amber + "20" : isTiedAtCutoff && !isAboveCutoff ? C.red + "25" : "transparent"}`,
+                        opacity: !isAboveCutoff && !isPlayoff && !isTiedAtCutoff ? 0.5 : 1,
+                      }}>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: t.displayRank.startsWith("T") ? C.red : C.dim, width: 22, textAlign: "center", fontWeight: t.displayRank.startsWith("T") ? 600 : 400 }}>{t.displayRank}</span>
+                        <TeamAvatar name={t.team_name} size={24} />
+                        <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, fontWeight: isWinner ? 700 : 400, color: isWinner ? C.green : isPlayoff ? C.amber : isAboveCutoff ? C.text : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {t.team_name}
+                        </span>
+                        <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginRight: 2 }}>{t.wins}-{t.losses}</span>
+
+                        {/* Seed preview when not confirmed */}
+                        {!isPlayoff && !isWinner && isAboveCutoff && (
+                          <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, minWidth: 28, textAlign: "center" }}>{previewLabel}</span>
+                        )}
+
+                        {/* Winner buttons */}
+                        {t.rawIdx === 0 && !divWinner && !tieAt1 && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmDivisionWinner(d.id, t.team_id); }}
+                            disabled={saving === `div-${d.id}`}
+                            style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: C.green, color: C.bg, fontFamily: F.m, fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {saving === `div-${d.id}` ? "..." : "👑 Winner"}
+                          </button>
+                        )}
+                        {isTiedFor1st && !divWinner && tieAt1 && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmDivisionWinner(d.id, t.team_id); }}
+                            disabled={saving === `div-${d.id}`}
+                            style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${C.green}50`, background: `${C.green}15`, color: C.green, fontFamily: F.m, fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {saving === `div-${d.id}` ? "..." : "👑 Pick"}
+                          </button>
+                        )}
+
+                        {/* Confirmed badges */}
+                        {isWinner && <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>👑 {seedLabels[t.team_id] || previewLabel}</Badge>}
+                        {isPlayoff && !isWinner && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 6px" }}>{seedLabels[t.team_id] || previewLabel}</Badge>}
+
+                        {/* Add/remove buttons */}
+                        {!isPlayoff && !isWinner && isAboveCutoff && divPlayoffTeams.length < spots && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmPlayoffTeam(d.id, t.team_id); }}
+                            disabled={saving === `playoff-${t.team_id}`}
+                            style={{ padding: "3px 6px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                            {saving === `playoff-${t.team_id}` ? "..." : "+"}
+                          </button>
+                        )}
+                        {!isPlayoff && !isAboveCutoff && isTiedAtCutoff && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmPlayoffTeam(d.id, t.team_id); }}
+                            style={{ padding: "3px 6px", borderRadius: 5, border: `1px solid ${C.red}50`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                            + Tie
+                          </button>
+                        )}
+                        {(isPlayoff || isWinner) && (
+                          <button onClick={(e) => { e.stopPropagation(); removePlayoffTeam(d.id, t.team_id); }}
+                            disabled={saving === `playoff-${t.team_id}`}
+                            style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    );
+                  };
+
+
+                  return (
+                    <>
+                      {topTeams.map((t) => renderTeamRow(t, true))}
+
+                      {/* Cutoff line */}
+                      {bottomTeams.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0", padding: "0 10px" }}>
+                          <div style={{ flex: 1, height: 1, background: C.red + "40" }} />
+                          <span style={{ fontFamily: F.m, fontSize: 9, color: C.red }}>PLAYOFF CUTOFF</span>
+                          <div style={{ flex: 1, height: 1, background: C.red + "40" }} />
+                        </div>
+                      )}
+
+                      {/* Below cutoff */}
+                      {bottomTeams.map((t) => renderTeamRow(t, false))}
+                    </>
+                  );
+                })()}
+
+                {/* Quick actions */}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  {!hasCutoffTie && divPlayoffTeams.length < spots && (
+                    <button onClick={() => confirmAllTopN(d.id)}
+                      disabled={!!saving}
+                      style={{
+                        flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
+                        background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      }}>
+                      {saving === `batch-${d.id}` ? "Confirming..." : `✓ Confirm Top ${spots}`}
+                    </button>
+                  )}
+                  {hasCutoffTie && divPlayoffTeams.length < spots && (
+                    <div style={{ flex: 1, padding: "8px 12px", borderRadius: 8, background: `${C.red}10`, border: `1px solid ${C.red}25` }}>
+                      <span style={{ fontFamily: F.m, fontSize: 11, color: C.red }}>
+                        Cutoff tie — manually confirm teams or adjust playoff spots
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      {/* Wildcard Section */}
+      <div style={{ marginTop: 20 }}>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+          🎲 Wildcard Teams ({wildcards.length}/2)
+        </div>
+
+        {/* Confirmed wildcards */}
+        {wildcards.length > 0 && (
+          <Card style={{ padding: "14px 16px", marginBottom: 10 }}>
+            {wildcards.map(wcId => {
+              let wcTeam = null;
+              for (const [, teams] of Object.entries(standings)) {
+                wcTeam = teams.find(t => t.team_id === wcId);
+                if (wcTeam) break;
+              }
+              return wcTeam ? (
+                <div key={wcId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <TeamAvatar name={wcTeam.team_name} size={24} />
+                  <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, color: C.amber }}>{wcTeam.team_name}</span>
+                  <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{wcTeam.wins}-{wcTeam.losses}</span>
+                  <Badge color={C.amber} style={{ fontSize: 9 }}>{seedLabels[wcId] || "WC"}</Badge>
+                  <button onClick={() => removePlayoffTeam(null, wcId)}
+                    style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                    ✕
+                  </button>
+                </div>
+              ) : null;
+            })}
+          </Card>
+        )}
+
+        {/* Lottery / Manual picker */}
+        {wildcards.length < 2 && (
+          <Card style={{ padding: "14px 16px" }}>
+            {/* Mode tabs */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 14, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` }}>
+              {[["pool", "🎲 Lottery"], ["manual", "✏️ Manual Pick"]].map(([m, label]) => (
+                <button key={m} onClick={() => { setLotteryMode(m); setLotteryDrawn([]); }}
+                  style={{
+                    flex: 1, padding: "9px 0", border: "none", fontFamily: F.m, fontSize: 11, fontWeight: 600,
+                    cursor: "pointer", transition: "all 0.15s",
+                    background: lotteryMode === m ? C.amber : C.surfAlt,
+                    color: lotteryMode === m ? C.bg : C.muted,
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Lottery Mode */}
+            {lotteryMode === "pool" && !lotteryDrawn.length && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontFamily: F.b, fontSize: 12, color: C.muted }}>
+                    Select teams entering the lottery ({lotteryPool.size} teams)
+                  </span>
+                  <button onClick={() => {
+                    if (lotteryPool.size === allNonQualifying.length) {
+                      setLotteryPool(new Set());
+                    } else {
+                      setLotteryPool(new Set(allNonQualifying.map(t => t.team_id)));
+                    }
+                  }}
+                    style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    {lotteryPool.size === allNonQualifying.length ? "Deselect All" : "Select All"}
+                  </button>
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
+                  {allNonQualifying.length === 0 ? (
+                    <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>No eligible teams yet</span>
+                  ) : allNonQualifying.map(t => {
+                    const inPool = lotteryPool.has(t.team_id);
+                    return (
+                      <div key={t.team_id} onClick={() => {
+                        setLotteryPool(prev => {
+                          const next = new Set(prev);
+                          if (next.has(t.team_id)) next.delete(t.team_id);
+                          else next.add(t.team_id);
+                          return next;
+                        });
+                      }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, padding: "7px 8px",
+                          borderBottom: `1px solid ${C.border}`, cursor: "pointer",
+                          background: inPool ? `${C.amber}08` : "transparent",
+                        }}>
+                        <div style={{
+                          width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                          border: `2px solid ${inPool ? C.amber : C.dim}`,
+                          background: inPool ? C.amber : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {inPool && <span style={{ color: C.bg, fontSize: 11, fontWeight: 900 }}>✓</span>}
+                        </div>
+                        <TeamAvatar name={t.team_name} size={22} />
+                        <span style={{ flex: 1, fontFamily: F.b, fontSize: 12, color: inPool ? C.text : C.muted }}>{t.team_name}</span>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{t.wins}-{t.losses}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={async () => {
+                    if (lotteryPool.size < 2) { setError("Need at least 2 teams in the lottery pool"); return; }
+                    setLotteryAnimating(true);
+                    // Shuffle animation: show random names cycling
+                    const poolArr = [...lotteryPool];
+                    const numToDraw = Math.min(2 - wildcards.length, poolArr.length);
+                    // Quick visual shuffle
+                    for (let tick = 0; tick < 12; tick++) {
+                      const shuffled = [...poolArr].sort(() => Math.random() - 0.5);
+                      setLotteryDrawn(shuffled.slice(0, numToDraw));
+                      await new Promise(r => setTimeout(r, 100 + tick * 30));
+                    }
+                    // Final draw
+                    const finalShuffled = [...poolArr].sort(() => Math.random() - 0.5);
+                    setLotteryDrawn(finalShuffled.slice(0, numToDraw));
+                    setLotteryAnimating(false);
+                  }}
+                  disabled={lotteryPool.size < 2 || lotteryAnimating}
+                  style={{
+                    width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
+                    background: lotteryPool.size >= 2 ? C.amber : C.dim,
+                    color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer",
+                    opacity: lotteryPool.size < 2 ? 0.5 : 1,
+                  }}>
+                  {lotteryAnimating ? "🎲 Drawing..." : `🎲 Draw ${Math.min(2 - wildcards.length, lotteryPool.size)} Wildcard${(2 - wildcards.length) > 1 ? "s" : ""}`}
+                </button>
+              </>
+            )}
+
+            {/* Lottery Results */}
+            {lotteryMode === "pool" && lotteryDrawn.length > 0 && !lotteryAnimating && (
+              <div>
+                <div style={{ textAlign: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 28, marginBottom: 4 }}>🎉</div>
+                  <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>Lottery Results</div>
+                </div>
+                {lotteryDrawn.map((tid, i) => {
+                  let team = null;
+                  for (const [, teams] of Object.entries(standings)) {
+                    team = teams.find(t => t.team_id === tid);
+                    if (team) break;
+                  }
+                  return team ? (
+                    <div key={tid} style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+                      background: `${C.amber}10`, border: `1px solid ${C.amber}30`,
+                      borderRadius: 10, marginBottom: 8,
+                    }}>
+                      <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 8px" }}>WC{wildcards.length + i + 1}</Badge>
+                      <TeamAvatar name={team.team_name} size={28} />
+                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>{team.team_name}</span>
+                      <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>{team.wins}-{team.losses}</span>
+                    </div>
+                  ) : null;
+                })}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button onClick={() => setLotteryDrawn([])}
+                    style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    🔄 Redraw
+                  </button>
+                  <button onClick={async () => {
+                    for (const tid of lotteryDrawn) {
+                      await confirmWildcard(tid);
+                    }
+                    setLotteryDrawn([]);
+                    setLotteryPool(new Set());
+                  }}
+                    disabled={!!saving}
+                    style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    ✓ Confirm Wildcards
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Lottery animating state */}
+            {lotteryAnimating && lotteryDrawn.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                {lotteryDrawn.map((tid, i) => {
+                  let team = null;
+                  for (const [, teams] of Object.entries(standings)) {
+                    team = teams.find(t => t.team_id === tid);
+                    if (team) break;
+                  }
+                  return team ? (
+                    <div key={`anim-${i}`} style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                      background: `${C.amber}08`, borderRadius: 10, marginBottom: 6,
+                      transition: "all 0.1s",
+                    }}>
+                      <span style={{ fontSize: 18 }}>🎲</span>
+                      <span style={{ fontFamily: F.b, fontSize: 13, color: C.amber }}>{team.team_name}</span>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            )}
+
+            {/* Manual Mode */}
+            {lotteryMode === "manual" && (
+              <>
+                <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 8 }}>
+                  Manually select wildcard teams:
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                  {allNonQualifying.length === 0 ? (
+                    <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>No eligible teams yet</span>
+                  ) : allNonQualifying.map(t => (
+                    <div key={t.team_id} style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "7px 8px",
+                      borderBottom: `1px solid ${C.border}`, cursor: "pointer",
+                    }}
+                      onClick={() => confirmWildcard(t.team_id)}>
+                      <TeamAvatar name={t.team_name} size={22} />
+                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 12, color: C.muted }}>{t.team_name}</span>
+                      <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{t.wins}-{t.losses}</span>
+                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>+ Add</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </Card>
+        )}
+      </div>
+
+      {/* Total Summary */}
+      <Card style={{ marginTop: 16, padding: "14px 16px", background: `${C.surface}` }}>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
+          Playoff Field Summary
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: F.d, fontSize: 22, fontWeight: 800, color: C.green }}>{Object.keys(confirmedDivWinners).length}</div>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>Div Winners</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: F.d, fontSize: 22, fontWeight: 800, color: C.amber }}>{totalConfirmed - wildcards.length}</div>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>Qualified</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: F.d, fontSize: 22, fontWeight: 800, color: C.blue }}>{wildcards.length}</div>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>Wildcards</div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function AdminApp({ user, myRole }) {
+  const [adminGroup, setAdminGroup] = useState("manage"); // "season" | "manage"
   const [tab, setTab] = useState("requests");
   const [divisionId, setDivisionId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
@@ -2793,7 +3619,7 @@ function AdminApp({ user, myRole }) {
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
       setSeasonData(seasons[0]);
-      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`);
+      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`);
       const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
       setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
     })();
@@ -2953,9 +3779,28 @@ function AdminApp({ user, myRole }) {
       <main style={{ padding: "16px 16px 60px", maxWidth: 520, margin: "0 auto" }}>
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span><button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button></div>}
-        <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Requests"}`], ["matches", "📋 Matches"], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+        <div style={{ display: "flex", gap: 3, marginBottom: 8, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+          {[["season", "🏟️ Season"], ["manage", "⚙️ Manage"]].map(([k, l]) => (
+            <button key={k} onClick={() => { setAdminGroup(k); setTab(k === "season" ? "matches" : "requests"); }} style={{
+              flex: 1, padding: "10px 0", borderRadius: 8, border: "none", cursor: "pointer",
+              background: adminGroup === k ? C.amber : "transparent",
+              color: adminGroup === k ? C.bg : C.muted,
+              fontFamily: F.m, fontSize: 12, fontWeight: 700, transition: "all 0.15s",
+            }}>{l}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 3, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+          {(adminGroup === "season"
+            ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
+            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]]
+          ).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
+              background: tab === k ? `${C.amber}25` : "transparent",
+              color: tab === k ? C.amber : C.muted,
+              fontFamily: F.m, fontSize: 11, fontWeight: tab === k ? 700 : 500, transition: "all 0.15s",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+            }}>
               {k === "captains" ? <><CaptainBadge size={13} /> Captains</> : l}
             </button>
           ))}
@@ -3058,6 +3903,8 @@ function AdminApp({ user, myRole }) {
         )}
 
         {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
+
+        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} />}
 
         {tab === "captains" && (
           <>
@@ -3703,6 +4550,419 @@ function TermsPage() {
 }
 
 // ══════════════════════════════════════
+// ─── REGISTRATION PAGE ───
+// ══════════════════════════════════════
+
+const STRIPE_PK = "pk_test_51T4sEn0ygRD1TJO33l3aJCHDTaixcq1eaaGdUXBtYPpVwt9zNxkErgjkT9et3fPVIkxiGXYnLdJ47KXAdgRIPDzh000QD3Xf9c";
+
+function RegisterPage() {
+  const [divisions, setDivisions] = useState([]);
+  const [seasons, setSeasons] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [regCounts, setRegCounts] = useState({});
+  const [selectedDiv, setSelectedDiv] = useState(null);
+  const [teamMode, setTeamMode] = useState("existing"); // "existing" | "new"
+  const [selectedTeamId, setSelectedTeamId] = useState("");
+  const [newTeamName, setNewTeamName] = useState("");
+  const [email, setEmail] = useState("");
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [teamSearch, setTeamSearch] = useState("");
+
+  // Check URL params for success/cancel
+  const urlParams = new URLSearchParams(window.location.search);
+  const isSuccess = urlParams.get("success") === "true";
+  const sessionId = urlParams.get("session_id");
+  const isCanceled = urlParams.get("canceled") === "true";
+  const [verified, setVerified] = useState(false);
+
+  // Verify payment on success
+  useEffect(() => {
+    if (isSuccess && sessionId && !verified) {
+      fetch("/api/verify-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+        .then(r => r.json())
+        .then(d => { if (d.success) setVerified(true); })
+        .catch(() => {});
+    }
+  }, [isSuccess, sessionId, verified]);
+
+  useEffect(() => {
+    const l = document.createElement("link");
+    l.href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap";
+    l.rel = "stylesheet"; document.head.appendChild(l);
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [divs, seas, tms, regs] = await Promise.all([
+          q("divisions", "registration_open=eq.true&select=id,name,level,day,season_id,price_cents,max_teams,time_slot"),
+          q("seasons", "order=start_date.desc&limit=5"),
+          q("teams", "primary_team_id=is.null&order=name.asc&limit=500&select=id,name"),
+          q("registrations", "payment_status=eq.paid&select=division_id"),
+        ]);
+        setDivisions(divs);
+        setSeasons(seas);
+        setTeams(tms);
+        // Count registrations per division
+        const counts = {};
+        (regs || []).forEach(r => {
+          counts[r.division_id] = (counts[r.division_id] || 0) + 1;
+        });
+        setRegCounts(counts);
+      } catch (e) { console.error(e); }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const getSeasonName = (sid) => seasons.find(s => s.id === sid)?.name || "";
+
+  const handleSubmit = async () => {
+    setError("");
+    const teamName = teamMode === "new" ? newTeamName.trim() : teams.find(t => t.id === selectedTeamId)?.name;
+    if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
+    if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
+    if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+
+    const div = divisions.find(d => d.id === selectedDiv);
+    if (!div) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          division_id: div.id,
+          division_name: `${cap(div.day)} ${cap(div.level)}${div.time_slot ? ` · ${div.time_slot}` : ""}`,
+          season_name: getSeasonName(div.season_id),
+          team_name: teamName,
+          team_id: teamMode === "existing" ? selectedTeamId : null,
+          captain_email: email.trim(),
+          is_new_team: teamMode === "new",
+          amount_cents: div.price_cents || 65000,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.error || "Something went wrong");
+        setSubmitting(false);
+      }
+    } catch (e) {
+      setError(e.message);
+      setSubmitting(false);
+    }
+  };
+
+  const filteredTeams = teamSearch
+    ? teams.filter(t => t.name.toLowerCase().includes(teamSearch.toLowerCase()))
+    : teams;
+
+  const inputStyle = {
+    width: "100%", padding: "12px 14px", borderRadius: 10,
+    border: `1px solid ${C.border}`, background: C.surfAlt,
+    color: C.text, fontFamily: F.b, fontSize: 14, outline: "none",
+    boxSizing: "border-box",
+  };
+
+  const btnStyle = {
+    width: "100%", padding: "14px 0", borderRadius: 12, border: "none",
+    fontFamily: F.b, fontSize: 15, fontWeight: 700, cursor: "pointer",
+    transition: "all 0.2s",
+  };
+
+  // ─── Success Screen ───
+  if (isSuccess) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 420 }}>
+          <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
+          <h1 style={{ fontFamily: F.d, fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
+            You're <span style={{ color: C.green }}>Registered!</span>
+          </h1>
+          <p style={{ color: C.muted, fontSize: 15, lineHeight: 1.6, marginBottom: 24 }}>
+            Payment confirmed. Your team is locked in for the season. We'll send confirmation details to your email.
+          </p>
+          <Card style={{ textAlign: "left", marginBottom: 24 }}>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 6 }}>WHAT'S NEXT</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>1.</span>
+                <span style={{ color: C.muted, fontSize: 14 }}>Check your email for the confirmation receipt</span>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
+                <span style={{ color: C.muted, fontSize: 14 }}>Add your roster in the Captain Portal before Week 1</span>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
+                <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
+              </div>
+            </div>
+          </Card>
+          <a href="/" style={{ ...btnStyle, display: "block", background: C.amber, color: C.bg, textDecoration: "none", textAlign: "center" }}>
+            Go to TangTime
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Canceled Screen ───
+  if (isCanceled) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 420 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>↩️</div>
+          <h1 style={{ fontFamily: F.d, fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Payment Canceled</h1>
+          <p style={{ color: C.muted, fontSize: 14, marginBottom: 24 }}>No worries — your spot hasn't been charged. You can try again anytime.</p>
+          <a href="/register" style={{ ...btnStyle, display: "block", background: C.amber, color: C.bg, textDecoration: "none", textAlign: "center" }}>
+            Back to Registration
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Main Registration Page ───
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b, color: C.text, maxWidth: 520, margin: "0 auto" }}>
+      {/* Header */}
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+        background: `${C.surface}dd`, backdropFilter: "blur(12px)",
+        position: "sticky", top: 0, zIndex: 100,
+      }}>
+        <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+          <Logo size={34} />
+          <div>
+            <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, lineHeight: 1.1 }}>
+              <span style={{ color: C.text }}>Tang</span><span style={{ color: C.amber }}> Time</span>
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase", letterSpacing: 2 }}>
+              Royal Palms BK
+            </div>
+          </div>
+        </a>
+      </header>
+
+      <main style={{ padding: "24px 16px 100px" }}>
+        {/* Title */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <h1 style={{ fontFamily: F.d, fontSize: 26, fontWeight: 800, margin: "0 0 6px" }}>
+            League <span style={{ color: C.amber }}>Registration</span>
+          </h1>
+          <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>
+            Sign up your team for the upcoming season at Royal Palms Brooklyn
+          </p>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 40, color: C.dim }}>Loading divisions...</div>
+        ) : divisions.length === 0 ? (
+          <Card style={{ textAlign: "center", padding: 32 }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+            <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Registration Coming Soon</div>
+            <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>
+              No divisions are currently open for registration. Check back soon or follow Royal Palms for announcements.
+            </p>
+          </Card>
+        ) : (
+          <>
+            {/* Division Cards */}
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+              Open Divisions
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+              {divisions.map(d => {
+                const sName = getSeasonName(d.season_id);
+                const regCount = regCounts[d.division_id] || 0;
+                const spotsLeft = (d.max_teams || 16) - regCount;
+                const selected = selectedDiv === d.id;
+                return (
+                  <Card key={d.id} onClick={() => { setSelectedDiv(selected ? null : d.id); setError(""); }}
+                    style={{
+                      border: `1px solid ${selected ? C.amber : C.border}`,
+                      background: selected ? `${C.amber}08` : C.surface,
+                      cursor: "pointer",
+                    }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
+                          {levelEmoji(d.level)} {cap(d.day)} {cap(d.level)}
+                        </div>
+                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
+                          {sName}{d.time_slot ? ` · ${d.time_slot}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
+                          ${((d.price_cents || 65000) / 100).toFixed(0)}
+                        </div>
+                        <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
+                          {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
+                        </div>
+                      </div>
+                    </div>
+                    {selected && <div style={{ marginTop: 4, fontSize: 10, color: C.amber }}>▼ Complete form below</div>}
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Registration Form */}
+            {selectedDiv && (
+              <div style={{ animation: "fadeIn 0.3s ease" }}>
+                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+                  Team Information
+                </div>
+
+                {/* Team Mode Toggle */}
+                <div style={{ display: "flex", gap: 0, marginBottom: 14, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
+                  {[["existing", "Returning Team"], ["new", "New Team"]].map(([m, label]) => (
+                    <button key={m} onClick={() => { setTeamMode(m); setError(""); setSelectedTeamId(""); setNewTeamName(""); setTeamSearch(""); }}
+                      style={{
+                        flex: 1, padding: "10px 0", border: "none", fontFamily: F.b, fontSize: 13, fontWeight: 600,
+                        cursor: "pointer", transition: "all 0.15s",
+                        background: teamMode === m ? C.amber : C.surfAlt,
+                        color: teamMode === m ? C.bg : C.muted,
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Existing Team Picker */}
+                {teamMode === "existing" ? (
+                  <div style={{ marginBottom: 14 }}>
+                    <input
+                      type="text" placeholder="Search teams..." value={teamSearch}
+                      onChange={e => setTeamSearch(e.target.value)}
+                      style={{ ...inputStyle, marginBottom: 8 }}
+                    />
+                    <div style={{
+                      maxHeight: 200, overflowY: "auto", borderRadius: 10,
+                      border: `1px solid ${C.border}`, background: C.surfAlt,
+                    }}>
+                      {filteredTeams.length === 0 ? (
+                        <div style={{ padding: 14, textAlign: "center", color: C.dim, fontSize: 13 }}>No teams found</div>
+                      ) : filteredTeams.map(t => (
+                        <div key={t.id}
+                          onClick={() => setSelectedTeamId(t.id)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "10px 14px", cursor: "pointer",
+                            background: selectedTeamId === t.id ? `${C.amber}15` : "transparent",
+                            borderBottom: `1px solid ${C.border}`,
+                            transition: "background 0.1s",
+                          }}>
+                          <TeamAvatar name={t.name} size={28} />
+                          <span style={{ fontSize: 13, color: selectedTeamId === t.id ? C.amber : C.text, fontWeight: selectedTeamId === t.id ? 600 : 400 }}>
+                            {t.name}
+                          </span>
+                          {selectedTeamId === t.id && <span style={{ marginLeft: "auto", color: C.amber }}>✓</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 14 }}>
+                    <input
+                      type="text" placeholder="Enter your new team name"
+                      value={newTeamName} onChange={e => setNewTeamName(e.target.value)}
+                      style={inputStyle}
+                    />
+                  </div>
+                )}
+
+                {/* Captain Email */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                    Captain Email
+                  </div>
+                  <input
+                    type="email" placeholder="captain@example.com"
+                    value={email} onChange={e => setEmail(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Waiver */}
+                <div
+                  onClick={() => setWaiverAccepted(!waiverAccepted)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px",
+                    borderRadius: 10, border: `1px solid ${C.border}`, background: C.surfAlt,
+                    cursor: "pointer", marginBottom: 18,
+                  }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 1,
+                    border: `2px solid ${waiverAccepted ? C.amber : C.dim}`,
+                    background: waiverAccepted ? C.amber : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "all 0.15s",
+                  }}>
+                    {waiverAccepted && <span style={{ color: C.bg, fontSize: 13, fontWeight: 900 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+                    I agree to the <a href="/terms" target="_blank" style={{ color: C.amber, textDecoration: "underline" }}>Terms of Service</a> and
+                    acknowledge the league waiver, including assumption of risk and release of liability for shuffleboard activities at Royal Palms Brooklyn.
+                  </span>
+                </div>
+
+                {/* Error */}
+                {error && (
+                  <div style={{ padding: "10px 14px", borderRadius: 8, background: `${C.red}15`, color: C.red, fontSize: 13, marginBottom: 14, fontFamily: F.m }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Submit */}
+                <button onClick={handleSubmit} disabled={submitting}
+                  style={{
+                    ...btnStyle,
+                    background: submitting ? C.dim : C.amber,
+                    color: C.bg,
+                    opacity: submitting ? 0.7 : 1,
+                  }}>
+                  {submitting ? "Redirecting to payment..." : `Register & Pay $${((divisions.find(d => d.id === selectedDiv)?.price_cents || 65000) / 100).toFixed(0)}`}
+                </button>
+
+                <div style={{ textAlign: "center", marginTop: 10 }}>
+                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>🔒 Secure payment via Stripe</span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Footer */}
+        <div style={{ marginTop: 40, paddingTop: 20, borderTop: `1px solid ${C.border}`, textAlign: "center" }}>
+          <p style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>
+            Questions? Email <a href="mailto:league@tangtime.app" style={{ color: C.amber }}>league@tangtime.app</a>
+          </p>
+          <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to TangTime</a>
+        </div>
+      </main>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════
 // ─── MAIN APP ───
 // ══════════════════════════════════════
 
@@ -3710,6 +4970,7 @@ export default function TangTime() {
   const path = window.location.pathname;
   if (path === "/captain") return <AuthWrapper mode="captain" />;
   if (path === "/admin") return <AuthWrapper mode="admin" />;
+  if (path === "/register") return <RegisterPage />;
   if (path === "/terms") return <TermsPage />;
   return <MainApp />;
 }
@@ -3747,7 +5008,7 @@ function MainApp() {
 
   useEffect(() => {
     if (!selectedSeason) return;
-    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`).then(d => {
+    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
   }, [selectedSeason]);
