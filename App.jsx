@@ -3611,6 +3611,22 @@ function AdminApp({ user, myRole }) {
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  // Seasons management state
+  const [allSeasons, setAllSeasons] = useState([]);
+  const [allDivisions, setAllDivisions] = useState([]); // divisions for selected manage-season
+  const [seasonsLoading, setSeasonsLoading] = useState(false);
+  const [selectedManageSeason, setSelectedManageSeason] = useState(null);
+  const [showCreateSeason, setShowCreateSeason] = useState(false);
+  const [newSeasonName, setNewSeasonName] = useState("");
+  const [newSeasonStart, setNewSeasonStart] = useState("");
+  const [newSeasonEnd, setNewSeasonEnd] = useState("");
+  const [showAddDiv, setShowAddDiv] = useState(false);
+  const [newDivDay, setNewDivDay] = useState("monday");
+  const [newDivLevel, setNewDivLevel] = useState("hammer");
+  const [newDivTime, setNewDivTime] = useState("7:00 PM");
+  const [newDivPrice, setNewDivPrice] = useState("650");
+  const [newDivMax, setNewDivMax] = useState("16");
+  const [seasonsSaving, setSeasonsSaving] = useState(false);
 
   // Load season + divisions once on mount
   useEffect(() => {
@@ -3758,6 +3774,89 @@ function AdminApp({ user, myRole }) {
       return a.scheduled_date.localeCompare(b.scheduled_date) || (a.scheduled_time || "").localeCompare(b.scheduled_time || "");
     });
 
+  // ── Season management functions ──
+  const loadAllSeasons = async () => {
+    setSeasonsLoading(true);
+    try {
+      const s = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active");
+      setAllSeasons(s || []);
+    } catch (e) { setError(e.message); }
+    setSeasonsLoading(false);
+  };
+
+  const loadSeasonDivisions = async (sId) => {
+    try {
+      const d = await q("divisions", `season_id=eq.${sId}&order=day_of_week,level&select=id,name,day_of_week,level,time_slot,price_cents,max_teams,registration_open,playoff_spots`);
+      setAllDivisions(d || []);
+    } catch (e) { setError(e.message); }
+  };
+
+  const createSeason = async () => {
+    if (!newSeasonName.trim()) { setError("Season name required"); return; }
+    if (!newSeasonStart) { setError("Start date required"); return; }
+    setSeasonsSaving(true);
+    try {
+      const body = { name: newSeasonName.trim(), start_date: newSeasonStart, is_active: false };
+      if (newSeasonEnd) body.end_date = newSeasonEnd;
+      await qAuth("seasons", "", "POST", body);
+      setSuccess(`Season "${newSeasonName.trim()}" created!`);
+      setNewSeasonName(""); setNewSeasonStart(""); setNewSeasonEnd("");
+      setShowCreateSeason(false);
+      await loadAllSeasons();
+    } catch (e) { setError(e.message); }
+    setSeasonsSaving(false);
+  };
+
+  const createDivision = async () => {
+    if (!selectedManageSeason) return;
+    setSeasonsSaving(true);
+    const name = `${cap(newDivDay)} ${cap(newDivLevel)}`;
+    try {
+      await qAuth("divisions", "", "POST", {
+        season_id: selectedManageSeason,
+        name,
+        day_of_week: newDivDay,
+        level: newDivLevel,
+        time_slot: newDivTime || null,
+        price_cents: parseInt(newDivPrice) * 100 || 65000,
+        max_teams: parseInt(newDivMax) || 16,
+        registration_open: false,
+      });
+      setSuccess(`Division "${name}" created!`);
+      setShowAddDiv(false);
+      await loadSeasonDivisions(selectedManageSeason);
+    } catch (e) { setError(e.message); }
+    setSeasonsSaving(false);
+  };
+
+  const toggleRegistration = async (divId, currentVal) => {
+    try {
+      await qAuth("divisions", `id=eq.${divId}`, "PATCH", { registration_open: !currentVal });
+      setAllDivisions(prev => prev.map(d => d.id === divId ? { ...d, registration_open: !currentVal } : d));
+      setSuccess(!currentVal ? "Registration opened!" : "Registration closed.");
+    } catch (e) { setError(e.message); }
+  };
+
+  const toggleSeasonActive = async (sId, currentVal) => {
+    try {
+      if (!currentVal) {
+        await qAuth("seasons", `is_active=eq.true`, "PATCH", { is_active: false });
+      }
+      await qAuth("seasons", `id=eq.${sId}`, "PATCH", { is_active: !currentVal });
+      setSuccess(!currentVal ? "Season activated!" : "Season deactivated.");
+      await loadAllSeasons();
+    } catch (e) { setError(e.message); }
+  };
+
+  const deleteDiv = async (divId, divName) => {
+    if (!window.confirm(`Delete division "${divName}"? This cannot be undone.`)) return;
+    try {
+      await qAuth("divisions", `id=eq.${divId}`, "DELETE");
+      setAllDivisions(prev => prev.filter(d => d.id !== divId));
+      setSuccess("Division deleted.");
+    } catch (e) { setError(e.message); }
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}dd`, backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
@@ -3792,7 +3891,7 @@ function AdminApp({ user, myRole }) {
         <div style={{ display: "flex", gap: 3, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
           {(adminGroup === "season"
             ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
-            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]]
+            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"], ["seasons", "📅 Seasons"]]
           ).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{
               flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
@@ -3943,6 +4042,208 @@ function AdminApp({ user, myRole }) {
             })()}
           </>
         )}
+
+        {tab === "seasons" && (() => {
+          // Load seasons on first view
+          if (!allSeasons.length && !seasonsLoading) loadAllSeasons();
+
+          const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 13, outline: "none", boxSizing: "border-box" };
+          const labelStyle = { fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, display: "block" };
+
+          return (
+            <>
+              {/* Create Season */}
+              {!showCreateSeason ? (
+                <button onClick={() => setShowCreateSeason(true)}
+                  style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: `2px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.b, fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+                  + New Season
+                </button>
+              ) : (
+                <Card style={{ padding: "16px", marginBottom: 16, border: `1px solid ${C.amber}30` }}>
+                  <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>Create Season</div>
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={labelStyle}>Season Name</label>
+                    <input value={newSeasonName} onChange={e => setNewSeasonName(e.target.value)} placeholder="e.g. Spring 2026" style={inputStyle} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Start Date</label>
+                      <input type="date" value={newSeasonStart} onChange={e => setNewSeasonStart(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>End Date (optional)</label>
+                      <input type="date" value={newSeasonEnd} onChange={e => setNewSeasonEnd(e.target.value)} style={inputStyle} />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setShowCreateSeason(false)}
+                      style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                    <button onClick={createSeason} disabled={seasonsSaving}
+                      style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      {seasonsSaving ? "Creating..." : "Create Season"}
+                    </button>
+                  </div>
+                </Card>
+              )}
+
+              {/* Seasons list */}
+              {seasonsLoading ? <Loader /> : allSeasons.length === 0 ? <Empty msg="No seasons yet" /> : allSeasons.map(s => {
+                const isSelected = selectedManageSeason === s.id;
+                const isActive = s.is_active;
+                return (
+                  <div key={s.id} style={{ marginBottom: 10 }}>
+                    <Card style={{
+                      padding: "14px 16px", cursor: "pointer",
+                      border: `1px solid ${isSelected ? C.amber + "40" : isActive ? C.green + "30" : C.border}`,
+                      background: isSelected ? `${C.amber}08` : C.surface,
+                    }}
+                      onClick={async () => {
+                        if (isSelected) { setSelectedManageSeason(null); setAllDivisions([]); }
+                        else { setSelectedManageSeason(s.id); await loadSeasonDivisions(s.id); }
+                      }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>
+                            {s.name}
+                            {isActive && <Badge color={C.green} style={{ marginLeft: 8, fontSize: 9 }}>Active</Badge>}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginTop: 2 }}>
+                            {s.start_date ? new Date(s.start_date + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No start date"}
+                            {s.end_date ? ` — ${new Date(s.end_date + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button onClick={(e) => { e.stopPropagation(); toggleSeasonActive(s.id, isActive); }}
+                            style={{
+                              padding: "5px 10px", borderRadius: 6, border: `1px solid ${isActive ? C.green + "50" : C.border}`,
+                              background: isActive ? `${C.green}15` : "transparent",
+                              color: isActive ? C.green : C.muted, fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                            }}>
+                            {isActive ? "✓ Active" : "Set Active"}
+                          </button>
+                          <span style={{ color: C.dim, fontSize: 16 }}>{isSelected ? "▾" : "▸"}</span>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Expanded: divisions for this season */}
+                    {isSelected && (
+                      <div style={{ padding: "10px 0 0 12px", borderLeft: `2px solid ${C.amber}30`, marginLeft: 16 }}>
+                        {allDivisions.length === 0 ? (
+                          <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim, marginBottom: 10 }}>No divisions yet</div>
+                        ) : allDivisions.map(d => (
+                          <Card key={d.id} style={{ padding: "12px 14px", marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                              <div>
+                                <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
+                                  {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                                </div>
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 2 }}>
+                                  {d.time_slot || "No time"} · ${((d.price_cents || 65000) / 100).toFixed(0)} · {d.max_teams || 16} teams max
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <button onClick={(e) => { e.stopPropagation(); toggleRegistration(d.id, d.registration_open); }}
+                                  style={{
+                                    padding: "5px 10px", borderRadius: 6, border: "none",
+                                    background: d.registration_open ? C.green : `${C.dim}30`,
+                                    color: d.registration_open ? "#fff" : C.muted,
+                                    fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                                  }}>
+                                  {d.registration_open ? "✓ Reg Open" : "Reg Closed"}
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); deleteDiv(d.id, d.name); }}
+                                  style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+
+                        {/* Add division */}
+                        {!showAddDiv ? (
+                          <button onClick={() => setShowAddDiv(true)}
+                            style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: `1px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 11, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}>
+                            + Add Division
+                          </button>
+                        ) : (
+                          <Card style={{ padding: "14px", marginBottom: 8, border: `1px solid ${C.amber}30` }}>
+                            <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 10 }}>New Division</div>
+
+                            {/* Quick presets */}
+                            <div style={{ marginBottom: 10 }}>
+                              <label style={labelStyle}>Quick Add</label>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {[["monday", "hammer"], ["monday", "cherry"], ["tuesday", "hammer"], ["tuesday", "cherry"]].map(([day, lvl]) => (
+                                  <button key={`${day}-${lvl}`} onClick={() => { setNewDivDay(day); setNewDivLevel(lvl); }}
+                                    style={{
+                                      padding: "5px 10px", borderRadius: 6,
+                                      border: `1px solid ${newDivDay === day && newDivLevel === lvl ? C.amber : C.border}`,
+                                      background: newDivDay === day && newDivLevel === lvl ? `${C.amber}15` : "transparent",
+                                      color: newDivDay === day && newDivLevel === lvl ? C.amber : C.muted,
+                                      fontFamily: F.m, fontSize: 10, cursor: "pointer",
+                                    }}>
+                                    {levelEmoji(lvl)} {cap(day).slice(0, 3)} {cap(lvl)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                              <div>
+                                <label style={labelStyle}>Day</label>
+                                <select value={newDivDay} onChange={e => setNewDivDay(e.target.value)} style={inputStyle}>
+                                  {["monday", "tuesday", "wednesday", "thursday", "friday"].map(d => (
+                                    <option key={d} value={d}>{cap(d)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label style={labelStyle}>Level</label>
+                                <select value={newDivLevel} onChange={e => setNewDivLevel(e.target.value)} style={inputStyle}>
+                                  {["hammer", "cherry", "pilot", "party"].map(l => (
+                                    <option key={l} value={l}>{cap(l)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+                              <div>
+                                <label style={labelStyle}>Time Slot</label>
+                                <input value={newDivTime} onChange={e => setNewDivTime(e.target.value)} placeholder="7:00 PM" style={inputStyle} />
+                              </div>
+                              <div>
+                                <label style={labelStyle}>Price ($)</label>
+                                <input type="number" value={newDivPrice} onChange={e => setNewDivPrice(e.target.value)} style={inputStyle} />
+                              </div>
+                              <div>
+                                <label style={labelStyle}>Max Teams</label>
+                                <input type="number" value={newDivMax} onChange={e => setNewDivMax(e.target.value)} style={inputStyle} />
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button onClick={() => setShowAddDiv(false)}
+                                style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 11, cursor: "pointer" }}>
+                                Cancel
+                              </button>
+                              <button onClick={createDivision} disabled={seasonsSaving}
+                                style={{ flex: 2, padding: "9px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                {seasonsSaving ? "Creating..." : `Create ${cap(newDivDay)} ${cap(newDivLevel)}`}
+                              </button>
+                            </div>
+                          </Card>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          );
+        })()}
 
         <div style={{ textAlign: "center", marginTop: 32 }}><a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a></div>
       </main>
@@ -4602,7 +4903,7 @@ function RegisterPage() {
     async function load() {
       try {
         const [divs, seas, tms, regs] = await Promise.all([
-          q("divisions", "registration_open=eq.true&select=id,name,level,day,season_id,price_cents,max_teams,time_slot"),
+          q("divisions", "registration_open=eq.true&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot"),
           q("seasons", "order=start_date.desc&limit=5"),
           q("teams", "primary_team_id=is.null&order=name.asc&limit=500&select=id,name"),
           q("registrations", "payment_status=eq.paid&select=division_id"),
@@ -4641,7 +4942,7 @@ function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           division_id: div.id,
-          division_name: `${cap(div.day)} ${cap(div.level)}${div.time_slot ? ` · ${div.time_slot}` : ""}`,
+          division_name: `${cap(div.day_of_week)} ${cap(div.level)}${div.time_slot ? ` · ${div.time_slot}` : ""}`,
           season_name: getSeasonName(div.season_id),
           team_name: teamName,
           team_id: teamMode === "existing" ? selectedTeamId : null,
@@ -4799,7 +5100,7 @@ function RegisterPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div>
                         <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
-                          {levelEmoji(d.level)} {cap(d.day)} {cap(d.level)}
+                          {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
                         </div>
                         <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
                           {sName}{d.time_slot ? ` · ${d.time_slot}` : ""}
