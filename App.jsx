@@ -2877,13 +2877,13 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     setSaving(`div-${divId}`);
     setError(null);
     try {
-      // Check if already exists
-      const existing = existingChamps.find(c => c.type === "division" && confirmedDivWinners[divId] === teamId);
-      if (existing) { setSaving(null); return; }
+      const div = divisions.find(d => d.id === divId);
+      const label = div ? makeSeedLabel(div, 1) : "?1";
 
-      // Remove old division championship if switching winner
-      if (confirmedDivWinners[divId]) {
-        await qAuth("championships", `team_id=eq.${confirmedDivWinners[divId]}&season_id=eq.${seasonId}&type=eq.division`, "DELETE");
+      // Clean slate: remove any existing division championship for this division's teams
+      const divTeamIds = (standings[divId] || []).map(t => t.team_id);
+      for (const tid of divTeamIds) {
+        await qAuth("championships", `team_id=eq.${tid}&season_id=eq.${seasonId}&type=eq.division`, "DELETE").catch(() => {});
       }
 
       // Insert new championship
@@ -2893,27 +2893,30 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         type: "division",
       });
 
-      // Also auto-add as playoff team #1 seed if not already in
-      const alreadyPlayoff = existingPlayoffs.find(p => p.team_id === teamId);
-      const div = divisions.find(d => d.id === divId);
-      const label = div ? makeSeedLabel(div, 1) : "?1";
-      if (!alreadyPlayoff) {
-        await qAuth("playoff_appearances", "", "POST", {
-          team_id: teamId,
-          season_id: seasonId,
-          round_reached: "qualified",
-          seed_label: label,
-        });
-        setConfirmedPlayoffs(prev => ({
-          ...prev,
-          [divId]: [...(prev[divId] || []), teamId],
-        }));
-        setExistingPlayoffs(prev => [...prev, { team_id: teamId, round_reached: "qualified", seed_label: label }]);
-        setSeedLabels(prev => ({ ...prev, [teamId]: label }));
-      }
+      // Auto-add as playoff team #1 seed — delete existing first to avoid duplicates
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+      await qAuth("playoff_appearances", "", "POST", {
+        team_id: teamId,
+        season_id: seasonId,
+        round_reached: "qualified",
+        seed_label: label,
+      });
 
+      // Update all state at once
       setConfirmedDivWinners(prev => ({ ...prev, [divId]: teamId }));
-      setExistingChamps(prev => [...prev.filter(c => !(c.type === "division" && c.team_id === confirmedDivWinners[divId])), { team_id: teamId, type: "division" }]);
+      setConfirmedPlayoffs(prev => ({
+        ...prev,
+        [divId]: [...(prev[divId] || []).filter(id => id !== teamId), teamId],
+      }));
+      setExistingChamps(prev => [
+        ...prev.filter(c => !(c.type === "division" && divTeamIds.includes(c.team_id))),
+        { team_id: teamId, type: "division" },
+      ]);
+      setExistingPlayoffs(prev => [
+        ...prev.filter(p => p.team_id !== teamId),
+        { team_id: teamId, round_reached: "qualified", seed_label: label },
+      ]);
+      setSeedLabels(prev => ({ ...prev, [teamId]: label }));
       setSuccess(`Division winner confirmed! (${label})`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (e) { setError(e.message); }
@@ -2924,14 +2927,13 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     setSaving(`playoff-${teamId}`);
     setError(null);
     try {
-      const alreadyIn = existingPlayoffs.find(p => p.team_id === teamId);
-      if (alreadyIn) { setSaving(null); return; }
-
       const div = divisions.find(d => d.id === divId);
       const divTeams = standings[divId] || [];
       const seedNum = divTeams.findIndex(t => t.team_id === teamId) + 1;
       const label = div ? makeSeedLabel(div, seedNum) : `?${seedNum}`;
 
+      // Delete first to avoid duplicates
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
       await qAuth("playoff_appearances", "", "POST", {
         team_id: teamId,
         season_id: seasonId,
@@ -2941,9 +2943,12 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
       setConfirmedPlayoffs(prev => ({
         ...prev,
-        [divId]: [...(prev[divId] || []), teamId],
+        [divId]: [...(prev[divId] || []).filter(id => id !== teamId), teamId],
       }));
-      setExistingPlayoffs(prev => [...prev, { team_id: teamId, round_reached: "qualified", seed_label: label }]);
+      setExistingPlayoffs(prev => [
+        ...prev.filter(p => p.team_id !== teamId),
+        { team_id: teamId, round_reached: "qualified", seed_label: label },
+      ]);
       setSeedLabels(prev => ({ ...prev, [teamId]: label }));
       setSuccess(`Playoff team confirmed! (${label})`);
       setTimeout(() => setSuccess(null), 3000);
@@ -2988,11 +2993,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     setSaving(`wc-${teamId}`);
     setError(null);
     try {
-      const alreadyIn = existingPlayoffs.find(p => p.team_id === teamId);
-      if (alreadyIn) { setSaving(null); return; }
-
       const label = `WC${wildcards.length + 1}`;
 
+      // Delete-then-insert to avoid duplicates
+      await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
       await qAuth("playoff_appearances", "", "POST", {
         team_id: teamId,
         season_id: seasonId,
@@ -3020,26 +3024,25 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       const newLabels = {};
       for (let i = 0; i < topN.length; i++) {
         const t = topN[i];
-        const alreadyIn = existingPlayoffs.find(p => p.team_id === t.team_id);
         const label = div ? makeSeedLabel(div, i + 1) : `?${i + 1}`;
         newLabels[t.team_id] = label;
-        if (!alreadyIn) {
-          await qAuth("playoff_appearances", "", "POST", {
-            team_id: t.team_id,
-            season_id: seasonId,
-            round_reached: "qualified",
-            seed_label: label,
-          });
-        }
+        // Delete-then-insert to avoid duplicates
+        await qAuth("playoff_appearances", `team_id=eq.${t.team_id}&season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+        await qAuth("playoff_appearances", "", "POST", {
+          team_id: t.team_id,
+          season_id: seasonId,
+          round_reached: "qualified",
+          seed_label: label,
+        });
       }
       setConfirmedPlayoffs(prev => ({
         ...prev,
         [divId]: topN.map(t => t.team_id),
       }));
       setExistingPlayoffs(prev => {
-        const existing = new Set(prev.map(p => p.team_id));
-        const newEntries = topN.filter(t => !existing.has(t.team_id)).map((t, i) => ({ team_id: t.team_id, round_reached: "qualified", seed_label: newLabels[t.team_id] }));
-        return [...prev, ...newEntries];
+        const filtered = prev.filter(p => !topN.find(t => t.team_id === p.team_id));
+        const newEntries = topN.map(t => ({ team_id: t.team_id, round_reached: "qualified", seed_label: newLabels[t.team_id] }));
+        return [...filtered, ...newEntries];
       });
       setSeedLabels(prev => ({ ...prev, ...newLabels }));
       setSuccess(`All top ${spots} confirmed for playoffs!`);
