@@ -3772,8 +3772,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       </Card>
 
       {/* ── Group Draw Section ── */}
-      {totalConfirmed >= 8 && (
-        <div style={{ marginTop: 20 }}>
+      <div style={{ marginTop: 20 }}>
           <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
             🎱 Playoff Group Draw
           </div>
@@ -3782,21 +3781,42 @@ function AdminPostseasonTab({ seasonId, divisions }) {
           {groupDrawStep === "idle" && !existingGroups && (
             <Card style={{ padding: "16px", textAlign: "center" }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>🎱</div>
-              <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
-                Ready to Draw Groups
-              </div>
-              <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
-                {totalConfirmed} teams will be drawn into 8 groups of {Math.ceil(totalConfirmed / 8)}.
-                Teams are seeded by finish — same-division teams are separated.
-              </div>
-              <button onClick={startGroupDraw}
-                style={{
-                  width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
-                  background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700,
-                  cursor: "pointer",
-                }}>
-                🎲 Draw Groups
-              </button>
+              {totalConfirmed >= 32 ? (
+                <>
+                  <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                    Ready to Draw Groups
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
+                    {totalConfirmed} teams will be drawn into 8 groups of 4.
+                    Teams are seeded by finish — same-division teams are separated.
+                  </div>
+                  <button onClick={startGroupDraw}
+                    style={{
+                      width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+                      background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700,
+                      cursor: "pointer",
+                    }}>
+                    🎲 Draw Groups
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                    Playoff Group Draw
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginBottom: 8, lineHeight: 1.5 }}>
+                    Confirm all 32 playoff teams above before generating the group draw.
+                  </div>
+                  <div style={{ fontFamily: F.d, fontSize: 28, fontWeight: 800, color: totalConfirmed > 0 ? C.amber : C.dim, marginBottom: 4 }}>
+                    {totalConfirmed} / 32
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 14 }}>teams confirmed</div>
+                  {/* Progress bar */}
+                  <div style={{ width: "100%", height: 6, background: C.border, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${(totalConfirmed / 32) * 100}%`, height: "100%", background: totalConfirmed >= 32 ? C.green : C.amber, borderRadius: 3, transition: "width 0.3s" }} />
+                  </div>
+                </>
+              )}
             </Card>
           )}
 
@@ -3883,7 +3903,6 @@ function AdminPostseasonTab({ seasonId, divisions }) {
             </>
           )}
         </div>
-      )}
 
     </div>
   );
