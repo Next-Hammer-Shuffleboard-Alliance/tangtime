@@ -1,0 +1,1620 @@
+{
+  "season": "Winter 2023",
+  "venue": "Royal Palms Brooklyn",
+  "divisions": [
+    {
+      "id": "0xAsrA",
+      "name": "Tuesday Cherry Division",
+      "teams": [],
+      "matches": [
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "j5t91J",
+          "team_a_name": "Risky Biscuits",
+          "team_b_id": "Zet0wq",
+          "team_b_name": "Champagne Shufflenova",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "K2tZgX",
+          "team_b_name": "Danny Devito your mom is at the front to pick you up",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "j5t9qw",
+          "team_a_name": "Five Finger Shuffle",
+          "team_b_id": "JPte39",
+          "team_b_name": "The Royal Palms in the Ass",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "WbtbPR",
+          "team_a_name": "The Caton Shuffle",
+          "team_b_id": "BGtA63",
+          "team_b_name": "Shufflepuff",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "q0tGbK",
+          "team_a_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "team_b_id": "n3t4vZ",
+          "team_b_name": "The Gin Poles",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "wAtBjz",
+          "team_a_name": "R.I.P.aul",
+          "team_b_id": "z7tjpr",
+          "team_b_name": "Sky Daddies",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "vpt4pZ",
+          "team_b_name": "Wasted Shots",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "K2twD6",
+          "team_a_name": "The Sassy Catz",
+          "team_b_id": "VdtW9r",
+          "team_b_name": "All Tangled Up",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "XltpW9",
+          "team_a_name": "\ud83d\udd96 Captain's Log......",
+          "team_b_id": "58tb9G",
+          "team_b_name": "Seabiscuit",
+          "result": null
+        },
+        {
+          "date": "1/17/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "61tXog",
+          "team_a_name": "Shuffleupagaus",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "XltpW9",
+          "team_a_name": "\ud83d\udd96 Captain's Log......",
+          "team_b_id": "vpt4pZ",
+          "team_b_name": "Wasted Shots",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "VdtW9r",
+          "team_a_name": "All Tangled Up",
+          "team_b_id": "q0tGbK",
+          "team_b_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "j5t91J",
+          "team_a_name": "Risky Biscuits",
+          "team_b_id": "WbtbPR",
+          "team_b_name": "The Caton Shuffle",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "K2tZgX",
+          "team_a_name": "Danny Devito your mom is at the front to pick you up",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "Zet0wq",
+          "team_a_name": "Champagne Shufflenova",
+          "team_b_id": "61tXog",
+          "team_b_name": "Shuffleupagaus",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "j5t9qw",
+          "team_a_name": "Five Finger Shuffle",
+          "team_b_id": "Omt1xG",
+          "team_b_name": "Wolftang Pucks",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "BGtA63",
+          "team_a_name": "Shufflepuff",
+          "team_b_id": "wAtBjz",
+          "team_b_name": "R.I.P.aul",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "58tb9G",
+          "team_b_name": "Seabiscuit",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "z7tjpr",
+          "team_a_name": "Sky Daddies",
+          "team_b_id": "JPte39",
+          "team_b_name": "The Royal Palms in the Ass",
+          "result": null
+        },
+        {
+          "date": "1/24/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "K2twD6",
+          "team_a_name": "The Sassy Catz",
+          "team_b_id": "n3t4vZ",
+          "team_b_name": "The Gin Poles",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "j5t9qw",
+          "team_b_name": "Five Finger Shuffle",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "Zet0wq",
+          "team_a_name": "Champagne Shufflenova",
+          "team_b_id": "JPte39",
+          "team_b_name": "The Royal Palms in the Ass",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "wAtBjz",
+          "team_a_name": "R.I.P.aul",
+          "team_b_id": "61tXog",
+          "team_b_name": "Shuffleupagaus",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "z7tjpr",
+          "team_a_name": "Sky Daddies",
+          "team_b_id": "VdtW9r",
+          "team_b_name": "All Tangled Up",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "vpt4pZ",
+          "team_a_name": "Wasted Shots",
+          "team_b_id": "K2twD6",
+          "team_b_name": "The Sassy Catz",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "n3t4vZ",
+          "team_a_name": "The Gin Poles",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "WbtbPR",
+          "team_a_name": "The Caton Shuffle",
+          "team_b_id": "58tb9G",
+          "team_b_name": "Seabiscuit",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "q0tGbK",
+          "team_b_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "j5t91J",
+          "team_a_name": "Risky Biscuits",
+          "team_b_id": "K2tZgX",
+          "team_b_name": "Danny Devito your mom is at the front to pick you up",
+          "result": null
+        },
+        {
+          "date": "1/31/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "XltpW9",
+          "team_a_name": "\ud83d\udd96 Captain's Log......",
+          "team_b_id": "BGtA63",
+          "team_b_name": "Shufflepuff",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "58tb9G",
+          "team_a_name": "Seabiscuit",
+          "team_b_id": "61tXog",
+          "team_b_name": "Shuffleupagaus",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "j5t91J",
+          "team_a_name": "Risky Biscuits",
+          "team_b_id": "wAtBjz",
+          "team_b_name": "R.I.P.aul",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "VdtW9r",
+          "team_a_name": "All Tangled Up",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "n3t4vZ",
+          "team_b_name": "The Gin Poles",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "K2tZgX",
+          "team_a_name": "Danny Devito your mom is at the front to pick you up",
+          "team_b_id": "z7tjpr",
+          "team_b_name": "Sky Daddies",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "K2twD6",
+          "team_a_name": "The Sassy Catz",
+          "team_b_id": "BGtA63",
+          "team_b_name": "Shufflepuff",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "JPte39",
+          "team_a_name": "The Royal Palms in the Ass",
+          "team_b_id": "XltpW9",
+          "team_b_name": "\ud83d\udd96 Captain's Log......",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "vpt4pZ",
+          "team_a_name": "Wasted Shots",
+          "team_b_id": "WbtbPR",
+          "team_b_name": "The Caton Shuffle",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "Zet0wq",
+          "team_b_name": "Champagne Shufflenova",
+          "result": null
+        },
+        {
+          "date": "2/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "j5t9qw",
+          "team_a_name": "Five Finger Shuffle",
+          "team_b_id": "q0tGbK",
+          "team_b_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "VdtW9r",
+          "team_a_name": "All Tangled Up",
+          "team_b_id": "JPte39",
+          "team_b_name": "The Royal Palms in the Ass",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "vpt4pZ",
+          "team_a_name": "Wasted Shots",
+          "team_b_id": "j5t9qw",
+          "team_b_name": "Five Finger Shuffle",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "BGtA63",
+          "team_a_name": "Shufflepuff",
+          "team_b_id": "q0tGbK",
+          "team_b_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "58tb9G",
+          "team_a_name": "Seabiscuit",
+          "team_b_id": "wAtBjz",
+          "team_b_name": "R.I.P.aul",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "j5t91J",
+          "team_b_name": "Risky Biscuits",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "XltpW9",
+          "team_a_name": "\ud83d\udd96 Captain's Log......",
+          "team_b_id": "K2tZgX",
+          "team_b_name": "Danny Devito your mom is at the front to pick you up",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "dwtgdN",
+          "team_a_name": "HIGH END GAYS",
+          "team_b_id": "K2twD6",
+          "team_b_name": "The Sassy Catz",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "n3t4vZ",
+          "team_a_name": "The Gin Poles",
+          "team_b_id": "z7tjpr",
+          "team_b_name": "Sky Daddies",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "WbtbPR",
+          "team_a_name": "The Caton Shuffle",
+          "team_b_id": "61tXog",
+          "team_b_name": "Shuffleupagaus",
+          "result": null
+        },
+        {
+          "date": "2/14/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "Zet0wq",
+          "team_b_name": "Champagne Shufflenova",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "z7tjpr",
+          "team_a_name": "Sky Daddies",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "WbtbPR",
+          "team_a_name": "The Caton Shuffle",
+          "team_b_id": "K2twD6",
+          "team_b_name": "The Sassy Catz",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "n3t4vZ",
+          "team_b_name": "The Gin Poles",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "61tXog",
+          "team_a_name": "Shuffleupagaus",
+          "team_b_id": "j5t91J",
+          "team_b_name": "Risky Biscuits",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "VdtW9r",
+          "team_a_name": "All Tangled Up",
+          "team_b_id": "XltpW9",
+          "team_b_name": "\ud83d\udd96 Captain's Log......",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "JPte39",
+          "team_a_name": "The Royal Palms in the Ass",
+          "team_b_id": "q0tGbK",
+          "team_b_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "j5t9qw",
+          "team_a_name": "Five Finger Shuffle",
+          "team_b_id": "Zet0wq",
+          "team_b_name": "Champagne Shufflenova",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "BGtA63",
+          "team_a_name": "Shufflepuff",
+          "team_b_id": "K2tZgX",
+          "team_b_name": "Danny Devito your mom is at the front to pick you up",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "wAtBjz",
+          "team_b_name": "R.I.P.aul",
+          "result": null
+        },
+        {
+          "date": "2/21/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "vpt4pZ",
+          "team_a_name": "Wasted Shots",
+          "team_b_id": "58tb9G",
+          "team_b_name": "Seabiscuit",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "K2twD6",
+          "team_b_name": "The Sassy Catz",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "58tb9G",
+          "team_a_name": "Seabiscuit",
+          "team_b_id": "z7tjpr",
+          "team_b_name": "Sky Daddies",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "Zet0wq",
+          "team_a_name": "Champagne Shufflenova",
+          "team_b_id": "XltpW9",
+          "team_b_name": "\ud83d\udd96 Captain's Log......",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "q0tGbK",
+          "team_a_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "team_b_id": "xot6Ol",
+          "team_b_name": "Deep Sevens",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "WbtbPR",
+          "team_a_name": "The Caton Shuffle",
+          "team_b_id": "JPte39",
+          "team_b_name": "The Royal Palms in the Ass",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "j5t91J",
+          "team_a_name": "Risky Biscuits",
+          "team_b_id": "vpt4pZ",
+          "team_b_name": "Wasted Shots",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "K2tZgX",
+          "team_a_name": "Danny Devito your mom is at the front to pick you up",
+          "team_b_id": "n3t4vZ",
+          "team_b_name": "The Gin Poles",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "61tXog",
+          "team_a_name": "Shuffleupagaus",
+          "team_b_id": "j5t9qw",
+          "team_b_name": "Five Finger Shuffle",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "BGtA63",
+          "team_a_name": "Shufflepuff",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "2/28/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "VdtW9r",
+          "team_a_name": "All Tangled Up",
+          "team_b_id": "wAtBjz",
+          "team_b_name": "R.I.P.aul",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 01",
+          "team_a_id": "n3t4vZ",
+          "team_a_name": "The Gin Poles",
+          "team_b_id": "BGtA63",
+          "team_b_name": "Shufflepuff",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 02",
+          "team_a_id": "61tXog",
+          "team_a_name": "Shuffleupagaus",
+          "team_b_id": "XltpW9",
+          "team_b_name": "\ud83d\udd96 Captain's Log......",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 03",
+          "team_a_id": "z7tjpr",
+          "team_a_name": "Sky Daddies",
+          "team_b_id": "vpt4pZ",
+          "team_b_name": "Wasted Shots",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 04",
+          "team_a_id": "JPte39",
+          "team_a_name": "The Royal Palms in the Ass",
+          "team_b_id": "K2twD6",
+          "team_b_name": "The Sassy Catz",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 05",
+          "team_a_id": "Omt1xG",
+          "team_a_name": "Wolftang Pucks",
+          "team_b_id": "58tb9G",
+          "team_b_name": "Seabiscuit",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 06",
+          "team_a_id": "WbtbPR",
+          "team_a_name": "The Caton Shuffle",
+          "team_b_id": "Zet0wq",
+          "team_b_name": "Champagne Shufflenova",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 07",
+          "team_a_id": "q0tGbK",
+          "team_a_name": "FERNETABOUDIT \ud83e\udd0c\ud83c\udffc",
+          "team_b_id": "j5t91J",
+          "team_b_name": "Risky Biscuits",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 08",
+          "team_a_id": "wAtBjz",
+          "team_a_name": "R.I.P.aul",
+          "team_b_id": "dwtgdN",
+          "team_b_name": "HIGH END GAYS",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 09",
+          "team_a_id": "j5t9qw",
+          "team_a_name": "Five Finger Shuffle",
+          "team_b_id": "VdtW9r",
+          "team_b_name": "All Tangled Up",
+          "result": null
+        },
+        {
+          "date": "3/7/2023",
+          "time": "8:00 PM",
+          "court": "Court 10",
+          "team_a_id": "xot6Ol",
+          "team_a_name": "Deep Sevens",
+          "team_b_id": "K2tZgX",
+          "team_b_name": "Danny Devito your mom is at the front to pick you up",
+          "result": null
+        }
+      ]
+    },
+    {
+      "id": "okDsZg",
+      "name": "Monday Party Division",
+      "teams": [],
+      "matches": [
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "lGtnD3",
+          "team_a_name": "Leisure League",
+          "team_b_id": "Wbt4GV",
+          "team_b_name": "Biscuits from Hell",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "ejtWw1",
+          "team_a_name": "Flamingo Biscuits",
+          "team_b_id": "K2tPjW",
+          "team_b_name": "Yu-Tang Clan",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "R4tvO6",
+          "team_a_name": "Puck Puck Goose",
+          "team_b_id": "q0t0X4",
+          "team_b_name": "Breakfast of Champions",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "wAtVqr",
+          "team_b_name": "Women in the Kitchen",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "8Jt42w",
+          "team_a_name": "Deck Sesh",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "9BtzgY",
+          "team_a_name": "Shuffle-\"Bored to Death\"",
+          "team_b_id": "antZmr",
+          "team_b_name": "Biscuits and Jam",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "vpt4dK",
+          "team_a_name": "Welcome To Flavortown",
+          "team_b_id": "dwtg4d",
+          "team_b_name": "Court Street Shuffle",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "q0t142",
+          "team_a_name": "Explicit Tanguage",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "XltlWJ",
+          "team_a_name": "Anticlimactic Adjusters",
+          "team_b_id": "n3tnbz",
+          "team_b_name": "Tang Bus",
+          "result": null
+        },
+        {
+          "date": "1/16/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "antZZP",
+          "team_a_name": "Diamond in the Shuff",
+          "team_b_id": "R4t2Yy",
+          "team_b_name": "Disky Chicks",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "antZmr",
+          "team_a_name": "Biscuits and Jam",
+          "team_b_id": "ejtWw1",
+          "team_b_name": "Flamingo Biscuits",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "9BtzgY",
+          "team_b_name": "Shuffle-\"Bored to Death\"",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "XltlWJ",
+          "team_a_name": "Anticlimactic Adjusters",
+          "team_b_id": "lGtnD3",
+          "team_b_name": "Leisure League",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "n3tnbz",
+          "team_a_name": "Tang Bus",
+          "team_b_id": "q0t0X4",
+          "team_b_name": "Breakfast of Champions",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "antZZP",
+          "team_a_name": "Diamond in the Shuff",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "K2tPjW",
+          "team_a_name": "Yu-Tang Clan",
+          "team_b_id": "Wbt4GV",
+          "team_b_name": "Biscuits from Hell",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "wAtVqr",
+          "team_a_name": "Women in the Kitchen",
+          "team_b_id": "R4t2Yy",
+          "team_b_name": "Disky Chicks",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "dwtg4d",
+          "team_a_name": "Court Street Shuffle",
+          "team_b_id": "R4tvO6",
+          "team_b_name": "Puck Puck Goose",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "8Jt42w",
+          "team_a_name": "Deck Sesh",
+          "team_b_id": "vpt4dK",
+          "team_b_name": "Welcome To Flavortown",
+          "result": null
+        },
+        {
+          "date": "1/23/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "q0t142",
+          "team_a_name": "Explicit Tanguage",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "n3tnbz",
+          "team_a_name": "Tang Bus",
+          "team_b_id": "vpt4dK",
+          "team_b_name": "Welcome To Flavortown",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "wAtVqr",
+          "team_a_name": "Women in the Kitchen",
+          "team_b_id": "R4tvO6",
+          "team_b_name": "Puck Puck Goose",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "antZmr",
+          "team_a_name": "Biscuits and Jam",
+          "team_b_id": "q0t142",
+          "team_b_name": "Explicit Tanguage",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "dwtg4d",
+          "team_a_name": "Court Street Shuffle",
+          "team_b_id": "antZZP",
+          "team_b_name": "Diamond in the Shuff",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "Wbt4GV",
+          "team_b_name": "Biscuits from Hell",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "8Jt42w",
+          "team_a_name": "Deck Sesh",
+          "team_b_id": "R4t2Yy",
+          "team_b_name": "Disky Chicks",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "XltlWJ",
+          "team_a_name": "Anticlimactic Adjusters",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "K2tPjW",
+          "team_a_name": "Yu-Tang Clan",
+          "team_b_id": "lGtnD3",
+          "team_b_name": "Leisure League",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "ejtWw1",
+          "team_a_name": "Flamingo Biscuits",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "1/30/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "q0t0X4",
+          "team_a_name": "Breakfast of Champions",
+          "team_b_id": "9BtzgY",
+          "team_b_name": "Shuffle-\"Bored to Death\"",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "R4t2Yy",
+          "team_a_name": "Disky Chicks",
+          "team_b_id": "R4tvO6",
+          "team_b_name": "Puck Puck Goose",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "dwtg4d",
+          "team_a_name": "Court Street Shuffle",
+          "team_b_id": "Wbt4GV",
+          "team_b_name": "Biscuits from Hell",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "K2tPjW",
+          "team_a_name": "Yu-Tang Clan",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "lGtnD3",
+          "team_a_name": "Leisure League",
+          "team_b_id": "antZmr",
+          "team_b_name": "Biscuits and Jam",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "ejtWw1",
+          "team_a_name": "Flamingo Biscuits",
+          "team_b_id": "wAtVqr",
+          "team_b_name": "Women in the Kitchen",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "vpt4dK",
+          "team_a_name": "Welcome To Flavortown",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "q0t142",
+          "team_a_name": "Explicit Tanguage",
+          "team_b_id": "9BtzgY",
+          "team_b_name": "Shuffle-\"Bored to Death\"",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "n3tnbz",
+          "team_a_name": "Tang Bus",
+          "team_b_id": "P7tyMz",
+          "team_b_name": "Kitchensurfing",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "q0t0X4",
+          "team_a_name": "Breakfast of Champions",
+          "team_b_id": "antZZP",
+          "team_b_name": "Diamond in the Shuff",
+          "result": null
+        },
+        {
+          "date": "2/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "XltlWJ",
+          "team_a_name": "Anticlimactic Adjusters",
+          "team_b_id": "8Jt42w",
+          "team_b_name": "Deck Sesh",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "G0t6rZ",
+          "team_a_name": "The Philly Specials",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "q0t142",
+          "team_a_name": "Explicit Tanguage",
+          "team_b_id": "antZZP",
+          "team_b_name": "Diamond in the Shuff",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "ejtWw1",
+          "team_a_name": "Flamingo Biscuits",
+          "team_b_id": "8Jt42w",
+          "team_b_name": "Deck Sesh",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "K2tPjW",
+          "team_a_name": "Yu-Tang Clan",
+          "team_b_id": "R4t2Yy",
+          "team_b_name": "Disky Chicks",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "q0t0X4",
+          "team_a_name": "Breakfast of Champions",
+          "team_b_id": "dwtg4d",
+          "team_b_name": "Court Street Shuffle",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "R4tvO6",
+          "team_a_name": "Puck Puck Goose",
+          "team_b_id": "n3tnbz",
+          "team_b_name": "Tang Bus",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "lGtnD3",
+          "team_b_name": "Leisure League",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "9BtzgY",
+          "team_a_name": "Shuffle-\"Bored to Death\"",
+          "team_b_id": "XltlWJ",
+          "team_b_name": "Anticlimactic Adjusters",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "wAtVqr",
+          "team_a_name": "Women in the Kitchen",
+          "team_b_id": "antZmr",
+          "team_b_name": "Biscuits and Jam",
+          "result": null
+        },
+        {
+          "date": "2/13/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "Wbt4GV",
+          "team_a_name": "Biscuits from Hell",
+          "team_b_id": "vpt4dK",
+          "team_b_name": "Welcome To Flavortown",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "XltlWJ",
+          "team_b_name": "Anticlimactic Adjusters",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "R4t2Yy",
+          "team_a_name": "Disky Chicks",
+          "team_b_id": "q0t0X4",
+          "team_b_name": "Breakfast of Champions",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "wAtVqr",
+          "team_a_name": "Women in the Kitchen",
+          "team_b_id": "vpt4dK",
+          "team_b_name": "Welcome To Flavortown",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "9BtzgY",
+          "team_a_name": "Shuffle-\"Bored to Death\"",
+          "team_b_id": "8Jt42w",
+          "team_b_name": "Deck Sesh",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "antZmr",
+          "team_a_name": "Biscuits and Jam",
+          "team_b_id": "n3tnbz",
+          "team_b_name": "Tang Bus",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "lGtnD3",
+          "team_a_name": "Leisure League",
+          "team_b_id": "q0t142",
+          "team_b_name": "Explicit Tanguage",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "Wbt4GV",
+          "team_a_name": "Biscuits from Hell",
+          "team_b_id": "ejtWw1",
+          "team_b_name": "Flamingo Biscuits",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "antZZP",
+          "team_a_name": "Diamond in the Shuff",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "R4tvO6",
+          "team_a_name": "Puck Puck Goose",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "2/20/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "dwtg4d",
+          "team_a_name": "Court Street Shuffle",
+          "team_b_id": "K2tPjW",
+          "team_b_name": "Yu-Tang Clan",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "q0t142",
+          "team_a_name": "Explicit Tanguage",
+          "team_b_id": "q0t0X4",
+          "team_b_name": "Breakfast of Champions",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "lGtnD3",
+          "team_a_name": "Leisure League",
+          "team_b_id": "vpt4dK",
+          "team_b_name": "Welcome To Flavortown",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "n3tnbz",
+          "team_a_name": "Tang Bus",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "Wbt4GV",
+          "team_a_name": "Biscuits from Hell",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "XltlWJ",
+          "team_a_name": "Anticlimactic Adjusters",
+          "team_b_id": "R4t2Yy",
+          "team_b_name": "Disky Chicks",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "ejtWw1",
+          "team_b_name": "Flamingo Biscuits",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "antZZP",
+          "team_a_name": "Diamond in the Shuff",
+          "team_b_id": "K2tPjW",
+          "team_b_name": "Yu-Tang Clan",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "8Jt42w",
+          "team_a_name": "Deck Sesh",
+          "team_b_id": "wAtVqr",
+          "team_b_name": "Women in the Kitchen",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "9BtzgY",
+          "team_a_name": "Shuffle-\"Bored to Death\"",
+          "team_b_id": "dwtg4d",
+          "team_b_name": "Court Street Shuffle",
+          "result": null
+        },
+        {
+          "date": "2/27/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "antZmr",
+          "team_a_name": "Biscuits and Jam",
+          "team_b_id": "R4tvO6",
+          "team_b_name": "Puck Puck Goose",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 01",
+          "team_a_id": "K2tPjW",
+          "team_a_name": "Yu-Tang Clan",
+          "team_b_id": "9BtzgY",
+          "team_b_name": "Shuffle-\"Bored to Death\"",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 02",
+          "team_a_id": "8Jt42w",
+          "team_a_name": "Deck Sesh",
+          "team_b_id": "OmtGe5",
+          "team_b_name": "Tang Fast Sticks",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 03",
+          "team_a_id": "Wbt4GV",
+          "team_a_name": "Biscuits from Hell",
+          "team_b_id": "antZZP",
+          "team_b_name": "Diamond in the Shuff",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 04",
+          "team_a_id": "q0t142",
+          "team_a_name": "Explicit Tanguage",
+          "team_b_id": "XltlWJ",
+          "team_b_name": "Anticlimactic Adjusters",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 05",
+          "team_a_id": "vpt4dK",
+          "team_a_name": "Welcome To Flavortown",
+          "team_b_id": "R4tvO6",
+          "team_b_name": "Puck Puck Goose",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 06",
+          "team_a_id": "wAtVqr",
+          "team_a_name": "Women in the Kitchen",
+          "team_b_id": "dwtg4d",
+          "team_b_name": "Court Street Shuffle",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 07",
+          "team_a_id": "antZmr",
+          "team_a_name": "Biscuits and Jam",
+          "team_b_id": "G0t6rZ",
+          "team_b_name": "The Philly Specials",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 08",
+          "team_a_id": "ejtWw1",
+          "team_a_name": "Flamingo Biscuits",
+          "team_b_id": "q0t0X4",
+          "team_b_name": "Breakfast of Champions",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 09",
+          "team_a_id": "P7tyMz",
+          "team_a_name": "Kitchensurfing",
+          "team_b_id": "R4t2Yy",
+          "team_b_name": "Disky Chicks",
+          "result": null
+        },
+        {
+          "date": "3/6/2023",
+          "time": "9:00 PM",
+          "court": "Court 10",
+          "team_a_id": "lGtnD3",
+          "team_a_name": "Leisure League",
+          "team_b_id": "n3tnbz",
+          "team_b_name": "Tang Bus",
+          "result": null
+        }
+      ]
+    }
+  ]
+}
