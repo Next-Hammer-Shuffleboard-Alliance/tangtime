@@ -3218,12 +3218,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   </div>
                 </div>
 
-                {/* Standings with inline tie warnings */}
+                {/* Standings */}
                 {(() => {
                   const topTeams = displayRanks.slice(0, spots);
                   const bottomTeams = displayRanks.slice(spots);
-                  const renderedTieWarnings = new Set();
-
                   const renderTeamRow = (t, isAboveCutoff) => {
                     const isWinner = divWinner === t.team_id;
                     const isPlayoff = divPlayoffTeams.includes(t.team_id);
@@ -3296,30 +3294,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                     );
                   };
 
-                  const renderInlineTieWarning = (rank, count) => {
-                    if (renderedTieWarnings.has(rank)) return null;
-                    renderedTieWarnings.add(rank);
-                    const ordinal = rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : `${rank}th`;
-                    return (
-                      <div key={`tie-${rank}`} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", margin: "4px 0" }}>
-                        <span style={{ fontFamily: F.m, fontSize: 9, color: C.red, whiteSpace: "nowrap" }}>
-                          ⚠️ {count}-way tie for {ordinal}
-                        </span>
-                        <div style={{ flex: 1, height: 1, background: C.red + "25" }} />
-                      </div>
-                    );
-                  };
 
                   return (
                     <>
-                      {topTeams.map((t) => {
-                        const items = [];
-                        if (t.tiedCount > 1 && !renderedTieWarnings.has(t.tiedRank)) {
-                          items.push(renderInlineTieWarning(t.tiedRank, t.tiedCount));
-                        }
-                        items.push(renderTeamRow(t, true));
-                        return items;
-                      }).flat()}
+                      {topTeams.map((t) => renderTeamRow(t, true))}
 
                       {/* Cutoff line */}
                       {bottomTeams.length > 0 && (
@@ -3331,14 +3309,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                       )}
 
                       {/* Below cutoff */}
-                      {bottomTeams.map((t) => {
-                        const items = [];
-                        if (t.tiedCount > 1 && !renderedTieWarnings.has(t.tiedRank)) {
-                          items.push(renderInlineTieWarning(t.tiedRank, t.tiedCount));
-                        }
-                        items.push(renderTeamRow(t, false));
-                        return items;
-                      }).flat()}
+                      {bottomTeams.map((t) => renderTeamRow(t, false))}
                     </>
                   );
                 })()}
