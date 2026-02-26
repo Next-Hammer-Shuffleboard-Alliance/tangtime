@@ -2956,10 +2956,27 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     setError(null);
     try {
       await qAuth("playoff_appearances", `team_id=eq.${teamId}&season_id=eq.${seasonId}`, "DELETE");
-      setConfirmedPlayoffs(prev => ({
-        ...prev,
-        [divId]: (prev[divId] || []).filter(id => id !== teamId),
-      }));
+
+      // Also remove division championship if this was the winner
+      const winnerDivId = Object.keys(confirmedDivWinners).find(did => confirmedDivWinners[did] === teamId);
+      if (winnerDivId) {
+        await qAuth("championships", `team_id=eq.${teamId}&season_id=eq.${seasonId}&type=eq.division`, "DELETE");
+        setConfirmedDivWinners(prev => { const next = { ...prev }; delete next[winnerDivId]; return next; });
+        setExistingChamps(prev => prev.filter(c => !(c.team_id === teamId && c.type === "division")));
+      }
+
+      setConfirmedPlayoffs(prev => {
+        const next = { ...prev };
+        // Remove from the specific division, or search all divisions
+        if (divId && next[divId]) {
+          next[divId] = next[divId].filter(id => id !== teamId);
+        } else {
+          for (const did of Object.keys(next)) {
+            next[did] = next[did].filter(id => id !== teamId);
+          }
+        }
+        return next;
+      });
       setExistingPlayoffs(prev => prev.filter(p => p.team_id !== teamId));
       setSeedLabels(prev => { const next = { ...prev }; delete next[teamId]; return next; });
       setWildcards(prev => prev.filter(id => id !== teamId));
@@ -3083,19 +3100,38 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         const divPlayoffTeams = confirmedPlayoffs[d.id] || [];
         const spots = getPlayoffSpots(d.id);
 
-        // Compute display ranks with ties
-        const displayRanks = divTeams.map((t, i) => {
-          const firstIdx = divTeams.findIndex(x => x.wins === t.wins && x.losses === t.losses);
-          const sameCount = divTeams.filter(x => x.wins === t.wins && x.losses === t.losses).length;
-          const rank = firstIdx + 1;
-          return { ...t, displayRank: sameCount > 1 ? `T${rank}` : `${rank}`, rawIdx: i, tiedCount: sameCount, tiedRank: rank };
-        });
+        // Compute display ranks with ties, accounting for confirmed winner
+        const displayRanks = (() => {
+          if (divWinner) {
+            // Winner gets rank 1, rest re-ranked from 2
+            const winnerTeam = divTeams.find(t => t.team_id === divWinner);
+            const others = divTeams.filter(t => t.team_id !== divWinner);
+            const result = [];
+            if (winnerTeam) {
+              result.push({ ...winnerTeam, displayRank: "1", rawIdx: 0, tiedCount: 1, tiedRank: 1 });
+            }
+            others.forEach((t, i) => {
+              const firstIdx = others.findIndex(x => x.wins === t.wins && x.losses === t.losses);
+              const sameCount = others.filter(x => x.wins === t.wins && x.losses === t.losses).length;
+              const rank = firstIdx + 2; // +2 because winner is rank 1
+              result.push({ ...t, displayRank: sameCount > 1 ? `T${rank}` : `${rank}`, rawIdx: i + 1, tiedCount: sameCount, tiedRank: rank });
+            });
+            return result;
+          }
+          // No winner confirmed — pure record-based ranking
+          return divTeams.map((t, i) => {
+            const firstIdx = divTeams.findIndex(x => x.wins === t.wins && x.losses === t.losses);
+            const sameCount = divTeams.filter(x => x.wins === t.wins && x.losses === t.losses).length;
+            const rank = firstIdx + 1;
+            return { ...t, displayRank: sameCount > 1 ? `T${rank}` : `${rank}`, rawIdx: i, tiedCount: sameCount, tiedRank: rank };
+          });
+        })();
 
         // Cutoff tie: team at last qualifying spot shares record with first non-qualifying
         const hasCutoffTie = divTeams.length > spots && divTeams[spots - 1] && divTeams[spots] &&
           divTeams[spots - 1].wins === divTeams[spots].wins && divTeams[spots - 1].losses === divTeams[spots].losses;
 
-        const tieAt1 = divTeams.length > 1 && divTeams[0].wins === divTeams[1].wins && divTeams[0].losses === divTeams[1].losses;
+        const tieAt1 = !divWinner && divTeams.length > 1 && divTeams[0].wins === divTeams[1].wins && divTeams[0].losses === divTeams[1].losses;
 
         return (
           <Card key={d.id} style={{ marginBottom: 10, padding: 0, overflow: "hidden" }}>
