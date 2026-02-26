@@ -4158,7 +4158,8 @@ function AdminApp({ user, myRole }) {
               {seasonsLoading ? <Loader /> : allSeasons.length === 0 ? <Empty msg="No seasons yet" /> : allSeasons.map(s => {
                 const isSelected = selectedManageSeason === s.id;
                 const isActive = s.is_active;
-                const isPast = s.end_date && new Date(s.end_date + "T23:59:59") < new Date();
+                const isFuture = s.start_date && new Date(s.start_date + "T00:00") > new Date();
+                const isPast = !isActive && !isFuture;
                 return (
                   <div key={s.id} style={{ marginBottom: 10 }}>
                     <Card style={{
