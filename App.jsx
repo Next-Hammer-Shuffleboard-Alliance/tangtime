@@ -3796,13 +3796,42 @@ function AdminApp({ user, myRole }) {
     if (!newSeasonStart) { setError("Start date required"); return; }
     setSeasonsSaving(true);
     try {
-      const body = { name: newSeasonName.trim(), start_date: newSeasonStart, is_active: false };
+      // Get venue_id from an existing season
+      const existing = await q("seasons", "select=venue_id&limit=1");
+      const venueId = existing?.[0]?.venue_id;
+      if (!venueId) { setError("No venue found — create at least one season in Supabase first"); setSeasonsSaving(false); return; }
+
+      const body = { name: newSeasonName.trim(), start_date: newSeasonStart, is_active: false, venue_id: venueId };
       if (newSeasonEnd) body.end_date = newSeasonEnd;
-      await qAuth("seasons", "", "POST", body);
-      setSuccess(`Season "${newSeasonName.trim()}" created!`);
+      const created = await qAuth("seasons", "", "POST", body);
+      const newId = created?.[0]?.id || created?.id;
+      if (!newId) { setError("Season created but couldn't get ID — refresh and check"); setSeasonsSaving(false); return; }
+
+      // Auto-create 6 default divisions
+      const defaults = [
+        ["monday", "pilot"], ["monday", "cherry"], ["monday", "hammer"],
+        ["tuesday", "pilot"], ["tuesday", "cherry"], ["tuesday", "hammer"],
+      ];
+      for (const [day, level] of defaults) {
+        await qAuth("divisions", "", "POST", {
+          season_id: newId,
+          name: `${cap(day)} ${cap(level)}`,
+          day_of_week: day,
+          level,
+          time_slot: level === "pilot" ? "6:30 PM" : level === "cherry" ? "7:30 PM" : "8:30 PM",
+          price_cents: 65000,
+          max_teams: 16,
+          registration_open: false,
+        });
+      }
+
+      setSuccess(`Season "${newSeasonName.trim()}" created with 6 divisions!`);
       setNewSeasonName(""); setNewSeasonStart(""); setNewSeasonEnd("");
       setShowCreateSeason(false);
       await loadAllSeasons();
+      // Auto-expand new season
+      setSelectedManageSeason(newId);
+      await loadSeasonDivisions(newId);
     } catch (e) { setError(e.message); }
     setSeasonsSaving(false);
   };
