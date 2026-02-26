@@ -2782,9 +2782,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [wildcards, setWildcards] = useState([]); // [team_id, team_id]
   const [seedLabels, setSeedLabels] = useState({}); // team_id -> "MH1" etc
   const [expandedDiv, setExpandedDiv] = useState(null);
+  const [playoffSpotsMap, setPlayoffSpotsMap] = useState({}); // divId -> number
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
-  const PLAYOFF_SPOTS = 5;
+  const DEFAULT_PLAYOFF_SPOTS = 5;
+  const getPlayoffSpots = (divId) => playoffSpotsMap[divId] || DEFAULT_PLAYOFF_SPOTS;
 
   // Generate seed label: MH1 = Monday Hammer 1st, TC3 = Tuesday Cherry 3rd, WC1 = Wildcard 1
   const makeSeedLabel = (div, seedNum) => {
@@ -2847,7 +2849,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
           let inTopN = false;
           for (const [, teams] of Object.entries(standingsMap)) {
             const idx = teams.findIndex(t => t.team_id === p.team_id);
-            if (idx >= 0 && idx < PLAYOFF_SPOTS) { inTopN = true; break; }
+            if (idx >= 0 && idx < DEFAULT_PLAYOFF_SPOTS) { inTopN = true; break; }
           }
           if (!inTopN) wcTeams.push(p.team_id);
         });
@@ -2864,20 +2866,6 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       setLoading(false);
     })();
   }, [seasonId, divisions.length]);
-
-  const hasTie = (divTeams, position) => {
-    if (!divTeams || divTeams.length <= position) return false;
-    const atPos = divTeams[position - 1];
-    // Check if team at position shares record with team at position+1 or position-1
-    const ties = divTeams.filter(t => t.wins === atPos.wins && t.losses === atPos.losses);
-    return ties.length > 1;
-  };
-
-  const getTiedTeams = (divTeams, position) => {
-    if (!divTeams || divTeams.length <= position - 1) return [];
-    const atPos = divTeams[position - 1];
-    return divTeams.filter(t => t.wins === atPos.wins && t.losses === atPos.losses);
-  };
 
   const confirmDivisionWinner = async (divId, teamId) => {
     setSaving(`div-${divId}`);
@@ -3000,7 +2988,8 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
   const confirmAllTopN = async (divId) => {
     const divTeams = standings[divId] || [];
-    const topN = divTeams.slice(0, PLAYOFF_SPOTS);
+    const spots = getPlayoffSpots(divId);
+    const topN = divTeams.slice(0, spots);
     const div = divisions.find(d => d.id === divId);
     setSaving(`batch-${divId}`);
     setError(null);
@@ -3030,7 +3019,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         return [...prev, ...newEntries];
       });
       setSeedLabels(prev => ({ ...prev, ...newLabels }));
-      setSuccess(`All top ${PLAYOFF_SPOTS} confirmed for playoffs!`);
+      setSuccess(`All top ${spots} confirmed for playoffs!`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (e) { setError(e.message); }
     setSaving(null);
@@ -3074,8 +3063,8 @@ function AdminPostseasonTab({ seasonId, divisions }) {
               {Object.keys(confirmedDivWinners).length}/{activeDivs.length} div winners · {totalConfirmed} playoff teams
             </div>
           </div>
-          <Badge color={totalConfirmed >= (activeDivs.length * PLAYOFF_SPOTS + 2) ? C.green : C.amber}>
-            {totalConfirmed >= (activeDivs.length * PLAYOFF_SPOTS + 2) ? "✓ Complete" : "In Progress"}
+          <Badge color={totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? C.green : C.amber}>
+            {totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? "✓ Complete" : "In Progress"}
           </Badge>
         </div>
       </Card>
@@ -3086,13 +3075,25 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         const isExpanded = expandedDiv === d.id;
         const divWinner = confirmedDivWinners[d.id];
         const divPlayoffTeams = confirmedPlayoffs[d.id] || [];
-        const tieAt1 = hasTie(divTeams, 1);
-        const tieAtCutoff = hasTie(divTeams, PLAYOFF_SPOTS);
-        const tiedAtCutoff = tieAtCutoff ? getTiedTeams(divTeams, PLAYOFF_SPOTS) : [];
+        const spots = getPlayoffSpots(d.id);
+
+        // Compute display ranks with ties
+        const displayRanks = divTeams.map((t, i) => {
+          const firstIdx = divTeams.findIndex(x => x.wins === t.wins && x.losses === t.losses);
+          const sameCount = divTeams.filter(x => x.wins === t.wins && x.losses === t.losses).length;
+          const rank = firstIdx + 1;
+          return { ...t, displayRank: sameCount > 1 ? `T${rank}` : `${rank}`, rawIdx: i, tiedCount: sameCount, tiedRank: rank };
+        });
+
+        // Cutoff tie: team at last qualifying spot shares record with first non-qualifying
+        const hasCutoffTie = divTeams.length > spots && divTeams[spots - 1] && divTeams[spots] &&
+          divTeams[spots - 1].wins === divTeams[spots].wins && divTeams[spots - 1].losses === divTeams[spots].losses;
+
+        const tieAt1 = divTeams.length > 1 && divTeams[0].wins === divTeams[1].wins && divTeams[0].losses === divTeams[1].losses;
 
         return (
           <Card key={d.id} style={{ marginBottom: 10, padding: 0, overflow: "hidden" }}>
-            {/* Division Header */}
+            {/* Division Header — simplified */}
             <div
               onClick={() => setExpandedDiv(isExpanded ? null : d.id)}
               style={{
@@ -3104,20 +3105,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                 <span style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700, color: C.text }}>
                   {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
                 </span>
-                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-                  {divWinner ? (
-                    <Badge color={C.green} style={{ fontSize: 9 }}>✓ Winner set</Badge>
-                  ) : tieAt1 ? (
-                    <Badge color={C.red} style={{ fontSize: 9 }}>⚠️ Tie for 1st</Badge>
-                  ) : (
-                    <Badge color={C.dim} style={{ fontSize: 9 }}>No winner yet</Badge>
-                  )}
-                  <Badge color={divPlayoffTeams.length >= PLAYOFF_SPOTS ? C.green : C.dim} style={{ fontSize: 9 }}>
-                    {divPlayoffTeams.length}/{PLAYOFF_SPOTS} playoff
+                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                  <Badge color={divPlayoffTeams.length >= spots ? C.green : C.dim} style={{ fontSize: 9 }}>
+                    {divPlayoffTeams.length}/{spots} playoff
                   </Badge>
-                  {tieAtCutoff && !divPlayoffTeams.length && (
-                    <Badge color={C.red} style={{ fontSize: 9 }}>⚠️ Tie at #{PLAYOFF_SPOTS}</Badge>
-                  )}
+                  {divWinner && <Badge color={C.green} style={{ fontSize: 9 }}>✓ Winner</Badge>}
                 </div>
               </div>
               <span style={{ color: C.dim, fontSize: 14, transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
@@ -3126,99 +3118,126 @@ function AdminPostseasonTab({ seasonId, divisions }) {
             {/* Expanded Standings */}
             {isExpanded && (
               <div style={{ padding: "0 16px 16px", borderTop: `1px solid ${C.border}` }}>
-                {/* Tie warnings at top */}
-                {tieAtCutoff && divPlayoffTeams.length < PLAYOFF_SPOTS && (
-                  <div style={{ margin: "12px 0 8px", padding: "10px 14px", borderRadius: 8, background: `${C.red}10`, border: `1px solid ${C.red}25` }}>
-                    <span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>
-                      ⚠️ Tie at #{PLAYOFF_SPOTS} — manually pick which team(s) qualify
-                    </span>
+                {/* Playoff spots control */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 8px" }}>
+                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>Standings</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff spots:</span>
+                    {[3, 4, 5, 6].map(n => (
+                      <button key={n} onClick={(e) => { e.stopPropagation(); setPlayoffSpotsMap(prev => ({ ...prev, [d.id]: n })); }}
+                        style={{
+                          width: 24, height: 24, borderRadius: 6, border: "none", cursor: "pointer",
+                          background: spots === n ? C.amber : C.surfAlt,
+                          color: spots === n ? C.bg : C.dim,
+                          fontFamily: F.m, fontSize: 11, fontWeight: 700,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>{n}</button>
+                    ))}
                   </div>
-                )}
-                {tieAt1 && !divWinner && (
-                  <div style={{ margin: "12px 0 8px", padding: "10px 14px", borderRadius: 8, background: `${C.red}10`, border: `1px solid ${C.red}25` }}>
-                    <span style={{ fontFamily: F.b, fontSize: 12, color: C.red }}>
-                      ⚠️ Tie for 1st — pick division winner (speed shuffle)
-                    </span>
-                  </div>
-                )}
-
-                {/* Standings Table */}
-                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, margin: "12px 0 8px" }}>
-                  Standings
                 </div>
+
+                {/* Standings with inline tie warnings */}
                 {(() => {
-                  // Compute tied display ranks: T1, T1, T1, 4, T5, T5, 7...
-                  const displayRanks = divTeams.map((t, i) => {
-                    const sameRecord = divTeams.filter(x => x.wins === t.wins && x.losses === t.losses);
-                    const firstIdx = divTeams.findIndex(x => x.wins === t.wins && x.losses === t.losses);
-                    const rank = firstIdx + 1;
-                    const isTied = sameRecord.length > 1;
-                    return { ...t, displayRank: isTied ? `T${rank}` : `${rank}`, rawRank: i + 1 };
-                  });
-                  const topTeams = displayRanks.slice(0, PLAYOFF_SPOTS);
-                  const bottomTeams = displayRanks.slice(PLAYOFF_SPOTS);
+                  const topTeams = displayRanks.slice(0, spots);
+                  const bottomTeams = displayRanks.slice(spots);
+                  const renderedTieWarnings = new Set();
+
+                  const renderTeamRow = (t, isAboveCutoff) => {
+                    const isWinner = divWinner === t.team_id;
+                    const isPlayoff = divPlayoffTeams.includes(t.team_id);
+                    const isTiedFor1st = tieAt1 && divTeams[0]?.wins === t.wins && divTeams[0]?.losses === t.losses;
+                    const previewLabel = makeSeedLabel(d, t.rawIdx + 1);
+                    const isTiedAtCutoff = hasCutoffTie && divTeams[spots - 1]?.wins === t.wins && divTeams[spots - 1]?.losses === t.losses;
+
+                    return (
+                      <div key={t.team_id} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 10px", borderRadius: 8, marginBottom: 3,
+                        background: isWinner ? `${C.green}12` : isPlayoff ? `${C.amber}08` : isAboveCutoff ? C.surface : "transparent",
+                        border: `1px solid ${isWinner ? C.green + "30" : isPlayoff ? C.amber + "20" : isTiedAtCutoff && !isAboveCutoff ? C.red + "25" : "transparent"}`,
+                        opacity: !isAboveCutoff && !isPlayoff && !isTiedAtCutoff ? 0.5 : 1,
+                      }}>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: t.displayRank.startsWith("T") ? C.red : C.dim, width: 22, textAlign: "center", fontWeight: t.displayRank.startsWith("T") ? 600 : 400 }}>{t.displayRank}</span>
+                        <TeamAvatar name={t.team_name} size={24} />
+                        <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, fontWeight: isWinner ? 700 : 400, color: isWinner ? C.green : isPlayoff ? C.amber : isAboveCutoff ? C.text : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {t.team_name}
+                        </span>
+                        <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginRight: 2 }}>{t.wins}-{t.losses}</span>
+
+                        {/* Seed preview when not confirmed */}
+                        {!isPlayoff && !isWinner && isAboveCutoff && (
+                          <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, minWidth: 28, textAlign: "center" }}>{previewLabel}</span>
+                        )}
+
+                        {/* Winner buttons */}
+                        {t.rawIdx === 0 && !divWinner && !tieAt1 && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmDivisionWinner(d.id, t.team_id); }}
+                            disabled={saving === `div-${d.id}`}
+                            style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: C.green, color: C.bg, fontFamily: F.m, fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {saving === `div-${d.id}` ? "..." : "👑 Winner"}
+                          </button>
+                        )}
+                        {isTiedFor1st && !divWinner && tieAt1 && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmDivisionWinner(d.id, t.team_id); }}
+                            disabled={saving === `div-${d.id}`}
+                            style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${C.green}50`, background: `${C.green}15`, color: C.green, fontFamily: F.m, fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                            {saving === `div-${d.id}` ? "..." : "👑 Pick"}
+                          </button>
+                        )}
+
+                        {/* Confirmed badges */}
+                        {isWinner && <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>👑 {seedLabels[t.team_id] || previewLabel}</Badge>}
+                        {isPlayoff && !isWinner && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 6px" }}>{seedLabels[t.team_id] || previewLabel}</Badge>}
+
+                        {/* Add/remove buttons */}
+                        {!isPlayoff && !isWinner && isAboveCutoff && divPlayoffTeams.length < spots && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmPlayoffTeam(d.id, t.team_id); }}
+                            disabled={saving === `playoff-${t.team_id}`}
+                            style={{ padding: "3px 6px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                            {saving === `playoff-${t.team_id}` ? "..." : "+"}
+                          </button>
+                        )}
+                        {!isPlayoff && !isAboveCutoff && isTiedAtCutoff && (
+                          <button onClick={(e) => { e.stopPropagation(); confirmPlayoffTeam(d.id, t.team_id); }}
+                            style={{ padding: "3px 6px", borderRadius: 5, border: `1px solid ${C.red}50`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                            + Tie
+                          </button>
+                        )}
+                        {(isPlayoff || isWinner) && (
+                          <button onClick={(e) => { e.stopPropagation(); removePlayoffTeam(d.id, t.team_id); }}
+                            disabled={saving === `playoff-${t.team_id}`}
+                            style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    );
+                  };
+
+                  const renderInlineTieWarning = (rank, count) => {
+                    if (renderedTieWarnings.has(rank)) return null;
+                    renderedTieWarnings.add(rank);
+                    const ordinal = rank === 1 ? "1st" : rank === 2 ? "2nd" : rank === 3 ? "3rd" : `${rank}th`;
+                    return (
+                      <div key={`tie-${rank}`} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", margin: "4px 0" }}>
+                        <span style={{ fontFamily: F.m, fontSize: 9, color: C.red, whiteSpace: "nowrap" }}>
+                          ⚠️ {count}-way tie for {ordinal}
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: C.red + "25" }} />
+                      </div>
+                    );
+                  };
 
                   return (
                     <>
-                      {topTeams.map((t, i) => {
-                        const isWinner = divWinner === t.team_id;
-                        const isPlayoff = divPlayoffTeams.includes(t.team_id);
-                        const isTiedFor1st = tieAt1 && (divTeams[0]?.wins === t.wins && divTeams[0]?.losses === t.losses);
-                        const previewLabel = makeSeedLabel(d, i + 1);
-
-                        return (
-                          <div key={t.team_id} style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            padding: "8px 10px", borderRadius: 8, marginBottom: 3,
-                            background: isWinner ? `${C.green}12` : isPlayoff ? `${C.amber}08` : C.surface,
-                            border: `1px solid ${isWinner ? C.green + "30" : isPlayoff ? C.amber + "20" : "transparent"}`,
-                          }}>
-                            <span style={{ fontFamily: F.m, fontSize: 11, color: t.displayRank.startsWith("T") ? C.red : C.dim, width: 22, textAlign: "center", fontWeight: t.displayRank.startsWith("T") ? 600 : 400 }}>{t.displayRank}</span>
-                            <TeamAvatar name={t.team_name} size={24} />
-                            <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, fontWeight: isWinner ? 700 : 400, color: isWinner ? C.green : isPlayoff ? C.amber : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {t.team_name}
-                            </span>
-                            <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginRight: 2 }}>{t.wins}-{t.losses}</span>
-
-                            {/* Seed preview (dim) when not yet confirmed */}
-                            {!isPlayoff && !isWinner && (
-                              <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, minWidth: 28, textAlign: "center" }}>{previewLabel}</span>
-                            )}
-
-                            {/* Action buttons */}
-                            {i === 0 && !divWinner && !tieAt1 && (
-                              <button onClick={(e) => { e.stopPropagation(); confirmDivisionWinner(d.id, t.team_id); }}
-                                disabled={saving === `div-${d.id}`}
-                                style={{ padding: "4px 8px", borderRadius: 6, border: "none", background: C.green, color: C.bg, fontFamily: F.m, fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                {saving === `div-${d.id}` ? "..." : "👑 Winner"}
-                              </button>
-                            )}
-                            {isTiedFor1st && !divWinner && tieAt1 && (
-                              <button onClick={(e) => { e.stopPropagation(); confirmDivisionWinner(d.id, t.team_id); }}
-                                disabled={saving === `div-${d.id}`}
-                                style={{ padding: "4px 8px", borderRadius: 6, border: `1px solid ${C.green}50`, background: `${C.green}15`, color: C.green, fontFamily: F.m, fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                {saving === `div-${d.id}` ? "..." : "👑 Pick"}
-                              </button>
-                            )}
-                            {isWinner && <Badge color={C.green} style={{ fontSize: 9, padding: "2px 6px" }}>👑 {seedLabels[t.team_id] || previewLabel}</Badge>}
-                            {isPlayoff && !isWinner && <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 6px" }}>{seedLabels[t.team_id] || previewLabel}</Badge>}
-                            {!isPlayoff && !isWinner && divPlayoffTeams.length < PLAYOFF_SPOTS && (
-                              <button onClick={(e) => { e.stopPropagation(); confirmPlayoffTeam(d.id, t.team_id); }}
-                                disabled={saving === `playoff-${t.team_id}`}
-                                style={{ padding: "3px 6px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                                {saving === `playoff-${t.team_id}` ? "..." : "+"}
-                              </button>
-                            )}
-                            {(isPlayoff || isWinner) && (
-                              <button onClick={(e) => { e.stopPropagation(); removePlayoffTeam(d.id, t.team_id); }}
-                                disabled={saving === `playoff-${t.team_id}`}
-                                style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                                ✕
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {topTeams.map((t) => {
+                        const items = [];
+                        if (t.tiedCount > 1 && !renderedTieWarnings.has(t.tiedRank)) {
+                          items.push(renderInlineTieWarning(t.tiedRank, t.tiedCount));
+                        }
+                        items.push(renderTeamRow(t, true));
+                        return items;
+                      }).flat()}
 
                       {/* Cutoff line */}
                       {bottomTeams.length > 0 && (
@@ -3231,55 +3250,35 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
                       {/* Below cutoff */}
                       {bottomTeams.map((t) => {
-                        const isPlayoff = divPlayoffTeams.includes(t.team_id);
-                        const isTiedAtCutoff = tiedAtCutoff.find(x => x.team_id === t.team_id);
-                        return (
-                          <div key={t.team_id} style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            padding: "8px 10px", borderRadius: 8, marginBottom: 3,
-                            background: isPlayoff ? `${C.amber}08` : "transparent",
-                            border: `1px solid ${isTiedAtCutoff ? C.red + "25" : "transparent"}`,
-                            opacity: isPlayoff || isTiedAtCutoff ? 1 : 0.5,
-                          }}>
-                            <span style={{ fontFamily: F.m, fontSize: 11, color: t.displayRank.startsWith("T") ? C.red : C.dim, width: 22, textAlign: "center", fontWeight: t.displayRank.startsWith("T") ? 600 : 400 }}>{t.displayRank}</span>
-                            <TeamAvatar name={t.team_name} size={24} />
-                            <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {t.team_name}
-                            </span>
-                            <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim, marginRight: 6 }}>{t.wins}-{t.losses}</span>
-                            {isTiedAtCutoff && !isPlayoff && (
-                              <button onClick={(e) => { e.stopPropagation(); confirmPlayoffTeam(d.id, t.team_id); }}
-                                style={{ padding: "3px 6px", borderRadius: 5, border: `1px solid ${C.red}50`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                                + Tie
-                              </button>
-                            )}
-                            {isPlayoff && (
-                              <>
-                                <Badge color={C.amber} style={{ fontSize: 9, padding: "2px 6px" }}>{seedLabels[t.team_id] || "✓ In"}</Badge>
-                                <button onClick={(e) => { e.stopPropagation(); removePlayoffTeam(d.id, t.team_id); }}
-                                  style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                                  ✕
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
+                        const items = [];
+                        if (t.tiedCount > 1 && !renderedTieWarnings.has(t.tiedRank)) {
+                          items.push(renderInlineTieWarning(t.tiedRank, t.tiedCount));
+                        }
+                        items.push(renderTeamRow(t, false));
+                        return items;
+                      }).flat()}
                     </>
                   );
                 })()}
 
                 {/* Quick actions */}
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  {!tieAtCutoff && divPlayoffTeams.length < PLAYOFF_SPOTS && (
+                  {!hasCutoffTie && divPlayoffTeams.length < spots && (
                     <button onClick={() => confirmAllTopN(d.id)}
                       disabled={!!saving}
                       style={{
                         flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
                         background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer",
                       }}>
-                      {saving === `batch-${d.id}` ? "Confirming..." : `✓ Confirm Top ${PLAYOFF_SPOTS}`}
+                      {saving === `batch-${d.id}` ? "Confirming..." : `✓ Confirm Top ${spots}`}
                     </button>
+                  )}
+                  {hasCutoffTie && divPlayoffTeams.length < spots && (
+                    <div style={{ flex: 1, padding: "8px 12px", borderRadius: 8, background: `${C.red}10`, border: `1px solid ${C.red}25` }}>
+                      <span style={{ fontFamily: F.m, fontSize: 11, color: C.red }}>
+                        Cutoff tie — manually confirm teams or adjust playoff spots
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
