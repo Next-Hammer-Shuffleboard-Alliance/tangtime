@@ -2788,6 +2788,12 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [lotteryDrawn, setLotteryDrawn] = useState([]); // drawn team_ids
   const [lotteryAnimating, setLotteryAnimating] = useState(false);
   const [lotteryMode, setLotteryMode] = useState("pool"); // "pool" | "drawn" | "manual"
+  // Group draw state
+  const [groups, setGroups] = useState(null); // { A: [{team_id, team_name, seed_label, division_id}], ... }
+  const [groupDrawStep, setGroupDrawStep] = useState("idle"); // "idle" | "animating" | "done"
+  const [drawingTier, setDrawingTier] = useState(null); // current tier being drawn
+  const [drawingTeam, setDrawingTeam] = useState(null); // current team being placed
+  const [existingGroups, setExistingGroups] = useState(null); // loaded from DB
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
   const DEFAULT_PLAYOFF_SPOTS = 5;
@@ -2871,6 +2877,21 @@ function AdminPostseasonTab({ seasonId, divisions }) {
           if (p.seed_label) labels[p.team_id] = p.seed_label;
         });
         setSeedLabels(labels);
+
+        // Load existing group draw
+        try {
+          const grps = await q("playoff_groups", `season_id=eq.${seasonId}&select=group_name,team_id,team_name,seed_label,division_id&order=group_name,position`);
+          if (grps?.length > 0) {
+            const groupMap = {};
+            grps.forEach(g => {
+              if (!groupMap[g.group_name]) groupMap[g.group_name] = [];
+              groupMap[g.group_name].push(g);
+            });
+            setExistingGroups(groupMap);
+            setGroups(groupMap);
+            setGroupDrawStep("done");
+          }
+        } catch {}
 
       } catch (e) { console.error(e); setError(e.message); }
       setLoading(false);
@@ -3070,6 +3091,167 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   }, [standings, existingPlayoffs]);
 
   const totalConfirmed = existingPlayoffs.length;
+
+  // ── Group Draw Algorithm ──
+  const buildPlayoffTeamList = () => {
+    // Collect all confirmed playoff teams with metadata
+    const teams = [];
+    for (const [divId, teamIds] of Object.entries(confirmedPlayoffs)) {
+      const div = divisions.find(d => d.id === divId);
+      for (const tid of teamIds) {
+        const team = (standings[divId] || []).find(t => t.team_id === tid);
+        if (team) {
+          const label = seedLabels[tid] || "";
+          const seedNum = parseInt(label.replace(/[^0-9]/g, "")) || 99;
+          teams.push({
+            team_id: tid,
+            team_name: team.team_name,
+            seed_label: label,
+            seed_num: label.startsWith("WC") ? 99 : seedNum,
+            division_id: divId,
+            div_code: label.replace(/[0-9]/g, ""), // "MH", "TC", etc.
+          });
+        }
+      }
+    }
+    // Add wildcards
+    for (const wcId of wildcards) {
+      let wcTeam = null;
+      let wcDivId = null;
+      for (const [divId, dTeams] of Object.entries(standings)) {
+        const found = dTeams.find(t => t.team_id === wcId);
+        if (found) { wcTeam = found; wcDivId = divId; break; }
+      }
+      if (wcTeam && !teams.find(t => t.team_id === wcId)) {
+        teams.push({
+          team_id: wcId,
+          team_name: wcTeam.team_name,
+          seed_label: seedLabels[wcId] || "WC",
+          seed_num: 99,
+          division_id: wcDivId,
+          div_code: "WC",
+        });
+      }
+    }
+    return teams;
+  };
+
+  const runGroupDraw = (allTeams) => {
+    const groupNames = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    const result = {};
+    groupNames.forEach(g => result[g] = []);
+
+    // Sort teams into tiers by seed number
+    const tiers = {};
+    allTeams.forEach(t => {
+      const tier = t.seed_num;
+      if (!tiers[tier]) tiers[tier] = [];
+      tiers[tier].push(t);
+    });
+
+    // Process tiers in order
+    const tierKeys = Object.keys(tiers).map(Number).sort((a, b) => a - b);
+
+    for (const tierNum of tierKeys) {
+      // Shuffle within tier
+      const tierTeams = [...tiers[tierNum]].sort(() => Math.random() - 0.5);
+
+      for (const team of tierTeams) {
+        // Find eligible groups
+        const eligible = groupNames.filter(g => {
+          if (result[g].length >= 4) return false;
+          // No same-division team in group
+          if (result[g].some(t => t.division_id === team.division_id)) return false;
+          return true;
+        });
+
+        if (eligible.length === 0) {
+          // Fallback: just find a group with space (ignore division constraint)
+          const fallback = groupNames.filter(g => result[g].length < 4);
+          if (fallback.length > 0) {
+            const minSize = Math.min(...fallback.map(g => result[g].length));
+            const smallest = fallback.filter(g => result[g].length === minSize);
+            const pick = smallest[Math.floor(Math.random() * smallest.length)];
+            result[pick].push(team);
+          }
+        } else {
+          // Prefer emptier groups
+          const minSize = Math.min(...eligible.map(g => result[g].length));
+          const smallest = eligible.filter(g => result[g].length === minSize);
+          const pick = smallest[Math.floor(Math.random() * smallest.length)];
+          result[pick].push(team);
+        }
+      }
+    }
+    return result;
+  };
+
+  const startGroupDraw = async () => {
+    const allTeams = buildPlayoffTeamList();
+    if (allTeams.length < 8) {
+      setError(`Need at least 8 teams for group draw. Currently have ${allTeams.length}.`);
+      return;
+    }
+
+    setGroupDrawStep("animating");
+    setGroups(null);
+
+    // Animate: show random shuffles
+    for (let tick = 0; tick < 10; tick++) {
+      const shuffled = runGroupDraw(allTeams);
+      setGroups(shuffled);
+      const tierNum = tick < 3 ? 1 : tick < 5 ? 2 : tick < 7 ? 3 : tick < 9 ? 4 : 5;
+      setDrawingTier(`Seed ${tierNum}`);
+      await new Promise(r => setTimeout(r, 200 + tick * 50));
+    }
+
+    // Final draw
+    const finalGroups = runGroupDraw(allTeams);
+    setGroups(finalGroups);
+    setDrawingTier(null);
+    setDrawingTeam(null);
+    setGroupDrawStep("done");
+  };
+
+  const saveGroups = async () => {
+    if (!groups) return;
+    setSaving("groups");
+    try {
+      // Delete existing groups for this season
+      await qAuth("playoff_groups", `season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+
+      // Insert all groups
+      for (const [groupName, teams] of Object.entries(groups)) {
+        for (let i = 0; i < teams.length; i++) {
+          const t = teams[i];
+          await qAuth("playoff_groups", "", "POST", {
+            season_id: seasonId,
+            group_name: groupName,
+            team_id: t.team_id,
+            team_name: t.team_name,
+            seed_label: t.seed_label,
+            division_id: t.division_id,
+            position: i + 1,
+          });
+        }
+      }
+      setExistingGroups(groups);
+      setSuccess("Group draw saved!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  const clearGroups = async () => {
+    if (!window.confirm("Clear the group draw? This cannot be undone.")) return;
+    try {
+      await qAuth("playoff_groups", `season_id=eq.${seasonId}`, "DELETE");
+      setGroups(null);
+      setExistingGroups(null);
+      setGroupDrawStep("idle");
+      setSuccess("Group draw cleared.");
+    } catch (e) { setError(e.message); }
+  };
 
   if (loading) return <Loader />;
 
@@ -3588,6 +3770,121 @@ function AdminPostseasonTab({ seasonId, divisions }) {
           </div>
         </div>
       </Card>
+
+      {/* ── Group Draw Section ── */}
+      {totalConfirmed >= 8 && (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+            🎱 Playoff Group Draw
+          </div>
+
+          {/* Draw controls */}
+          {groupDrawStep === "idle" && !existingGroups && (
+            <Card style={{ padding: "16px", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🎱</div>
+              <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                Ready to Draw Groups
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
+                {totalConfirmed} teams will be drawn into 8 groups of {Math.ceil(totalConfirmed / 8)}.
+                Teams are seeded by finish — same-division teams are separated.
+              </div>
+              <button onClick={startGroupDraw}
+                style={{
+                  width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+                  background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700,
+                  cursor: "pointer",
+                }}>
+                🎲 Draw Groups
+              </button>
+            </Card>
+          )}
+
+          {/* Animating state */}
+          {groupDrawStep === "animating" && (
+            <div style={{ textAlign: "center", marginBottom: 12 }}>
+              <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.amber, marginBottom: 4 }}>
+                🎲 Drawing {drawingTier || "..."}
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>Shuffling teams into groups...</div>
+            </div>
+          )}
+
+          {/* Groups display */}
+          {groups && (
+            <>
+              {groupDrawStep === "done" && !existingGroups && (
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <button onClick={() => { setGroups(null); setGroupDrawStep("idle"); }}
+                    style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, cursor: "pointer" }}>
+                    🔄 Redraw
+                  </button>
+                  <button onClick={saveGroups} disabled={saving === "groups"}
+                    style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    {saving === "groups" ? "Saving..." : "✓ Confirm & Save Groups"}
+                  </button>
+                </div>
+              )}
+
+              {existingGroups && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <Badge color={C.green} style={{ fontSize: 10 }}>✓ Groups Confirmed</Badge>
+                  <button onClick={clearGroups}
+                    style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.red}30`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    Clear & Redraw
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => (
+                  <Card key={groupName} style={{
+                    padding: "10px 12px",
+                    border: `1px solid ${groupDrawStep === "animating" ? C.amber + "30" : C.border}`,
+                    transition: "all 0.15s",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{
+                        fontFamily: F.d, fontSize: 14, fontWeight: 800,
+                        width: 26, height: 26, borderRadius: 13,
+                        background: `${C.amber}20`, color: C.amber,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {groupName}
+                      </div>
+                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                        {teamList.length} team{teamList.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    {teamList.map((t, i) => (
+                      <div key={t.team_id} style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "5px 0",
+                        borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                      }}>
+                        <TeamAvatar name={t.team_name} size={20} />
+                        <span style={{
+                          flex: 1, fontFamily: F.b, fontSize: 11, color: C.text,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {t.team_name}
+                        </span>
+                        <Badge color={
+                          t.seed_label?.startsWith("WC") ? C.blue :
+                          t.seed_label?.endsWith("1") ? C.green : C.dim
+                        } style={{ fontSize: 8, padding: "1px 4px" }}>
+                          {t.seed_label}
+                        </Badge>
+                      </div>
+                    ))}
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
