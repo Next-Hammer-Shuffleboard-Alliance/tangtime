@@ -5238,6 +5238,7 @@ function RegisterPage() {
 
                 {/* Existing Team Picker */}
                 {teamMode === "existing" ? (
+                  <>
                   <div style={{ marginBottom: 14 }}>
                     <input
                       type="text" placeholder="Search teams..." value={teamSearch}
@@ -5289,7 +5290,7 @@ function RegisterPage() {
                       )}
                     </div>
                   )}
-                </div>
+                  </>
                 ) : (
                   <div style={{ marginBottom: 14 }}>
                     <input
