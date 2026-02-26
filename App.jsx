@@ -1533,6 +1533,558 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
   );
 }
 
+// ─── PLAYOFFS ───
+function PlayoffsPage({ activeSeason, divisions, goPage }) {
+  const [playoffTab, setPlayoffTab] = useState("groups");
+  const [groups, setGroups] = useState(null);
+  const [playoffTeams, setPlayoffTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showDraw, setShowDraw] = useState(false);
+  const [drawComplete, setDrawComplete] = useState(false);
+  const [lotteryData, setLotteryData] = useState(null);
+  const [lotteryReplay, setLotteryReplay] = useState(null); // { step: "wc1"|"wc2"|"done", showing: team_id }
+  const [lotteryAnimating, setLotteryAnimating] = useState(false);
+
+  useEffect(() => {
+    if (!activeSeason) { setLoading(false); return; }
+    Promise.all([
+      q("playoff_groups", `season_id=eq.${activeSeason.id}&select=group_name,team_id,team_name,seed_label,division_id&order=group_name,position`),
+      q("playoff_appearances", `season_id=eq.${activeSeason.id}&select=team_id,seed_label,round_reached`),
+      q("seasons", `id=eq.${activeSeason.id}&select=lottery_data`),
+    ]).then(([grps, pa, seasonInfo]) => {
+      if (grps?.length > 0) {
+        const groupMap = {};
+        grps.forEach(g => {
+          if (!groupMap[g.group_name]) groupMap[g.group_name] = [];
+          groupMap[g.group_name].push(g);
+        });
+        setGroups(groupMap);
+      }
+      setPlayoffTeams(pa || []);
+      if (seasonInfo?.[0]?.lottery_data) setLotteryData(seasonInfo[0].lottery_data);
+      setLoading(false);
+    });
+  }, [activeSeason]);
+
+  // Shuffle groups for animation
+  const shuffleGroups = (grps) => {
+    const allTeams = Object.values(grps).flat().sort(() => Math.random() - 0.5);
+    const names = Object.keys(grps).sort();
+    const result = {};
+    names.forEach((n, i) => {
+      result[n] = allTeams.slice(i * 4, (i + 1) * 4);
+    });
+    return result;
+  };
+
+  const runDrawAnimation = async () => {
+    if (!groups) return;
+    setShowDraw(true);
+    setDrawComplete(false);
+    const final = {};
+    Object.entries(groups).forEach(([k, v]) => { final[k] = [...v]; });
+    for (let tick = 0; tick < 14; tick++) {
+      setGroups(shuffleGroups(final));
+      await new Promise(r => setTimeout(r, 150 + tick * 30));
+    }
+    setGroups(final);
+    setDrawComplete(true);
+  };
+
+  const runLotteryReplay = async () => {
+    if (!lotteryData?.drawn?.length || !lotteryData?.pool) return;
+    setLotteryAnimating(true);
+    const pool = lotteryData.pool;
+    const poolNames = lotteryData.pool_names || {};
+
+    // Draw WC1
+    setLotteryReplay({ step: "wc1", showing: null });
+    for (let tick = 0; tick < 14; tick++) {
+      const randomId = pool[Math.floor(Math.random() * pool.length)];
+      setLotteryReplay({ step: "wc1", showing: randomId });
+      await new Promise(r => setTimeout(r, 120 + tick * 25));
+    }
+    const wc1 = lotteryData.drawn[0];
+    setLotteryReplay({ step: "wc1_result", showing: wc1.team_id });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Draw WC2 if exists
+    if (lotteryData.drawn.length > 1) {
+      setLotteryReplay({ step: "wc2", showing: null });
+      const remainingPool = pool.filter(id => id !== wc1.team_id);
+      for (let tick = 0; tick < 14; tick++) {
+        const randomId = remainingPool[Math.floor(Math.random() * remainingPool.length)];
+        setLotteryReplay({ step: "wc2", showing: randomId });
+        await new Promise(r => setTimeout(r, 120 + tick * 25));
+      }
+      const wc2 = lotteryData.drawn[1];
+      setLotteryReplay({ step: "wc2_result", showing: wc2.team_id });
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    setLotteryReplay({ step: "done" });
+    setLotteryAnimating(false);
+  };
+
+  const seedColor = (label) => {
+    if (!label) return C.dim;
+    if (label.startsWith("WC")) return C.blue;
+    const num = parseInt(label.replace(/[^0-9]/g, ""));
+    if (num === 1) return C.green;
+    if (num === 2) return C.amber;
+    return C.dim;
+  };
+
+  const divLabel = (code) => {
+    const map = { MH: "Mon Ham", MC: "Mon Cher", MP: "Mon Pil", TH: "Tue Ham", TC: "Tue Cher", TP: "Tue Pil", WC: "Wild Card" };
+    const prefix = code?.replace(/[0-9]/g, "") || "";
+    return map[prefix] || code;
+  };
+
+  const progress = getSeasonProgress(activeSeason);
+
+  if (loading) return <Loader />;
+
+  // ── PHASE 1: Postseason started, no teams confirmed ──
+  if (playoffTeams.length === 0) {
+    return (
+      <div>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>
+          🏆 Playoffs
+        </div>
+        <Card style={{
+          padding: "24px 16px", textAlign: "center",
+          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+          border: `1px solid ${C.amber}15`,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🏆</div>
+          <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+            Postseason Has Begun
+          </div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
+            The regular season is complete! The playoff field is being finalized.
+            Check back soon for the official wildcard lottery and group draw.
+          </div>
+          <div style={{
+            marginTop: 16, padding: "10px 14px", borderRadius: 8,
+            background: `${C.amber}08`, border: `1px solid ${C.amber}15`,
+          }}>
+            <div style={{ fontFamily: F.b, fontSize: 11, color: C.amber }}>What's Next</div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+              ① Playoff teams confirmed by division{"\n"}
+              ② Wildcard lottery for final 2 spots{"\n"}
+              ③ Group draw — 32 teams into 8 groups{"\n"}
+              ④ Group stage matches → Championship bracket
+            </div>
+          </div>
+        </Card>
+        <Footer />
+      </div>
+    );
+  }
+
+  // ── PHASE 2: Teams confirmed, no groups yet ──
+  if (!groups) {
+    // Organize teams by division origin
+    const qualifiedByDiv = {};
+    const wcTeams = [];
+    playoffTeams.forEach(pt => {
+      if (pt.seed_label?.startsWith("WC")) {
+        wcTeams.push(pt);
+      } else {
+        const divCode = pt.seed_label?.replace(/[0-9]/g, "") || "?";
+        if (!qualifiedByDiv[divCode]) qualifiedByDiv[divCode] = [];
+        qualifiedByDiv[divCode].push(pt);
+      }
+    });
+
+    return (
+      <div>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>
+          🏆 Playoff Field
+        </div>
+
+        {/* Summary hero */}
+        <Card style={{
+          padding: "16px", marginBottom: 14, textAlign: "center",
+          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+          border: `1px solid ${C.amber}15`,
+        }}>
+          <div style={{ fontFamily: F.d, fontSize: 32, fontWeight: 800, color: C.amber }}>{playoffTeams.length}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>teams qualified for playoffs</div>
+          <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginTop: 6 }}>
+            {groups ? "Groups drawn!" : playoffTeams.length >= 32 ? "Group draw coming soon..." : "Finalizing playoff field..."}
+          </div>
+        </Card>
+
+        {/* Lottery Replay */}
+        {lotteryData?.drawn?.length > 0 && (
+          <Card style={{ padding: "14px 16px", marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                🎲 Wildcard Lottery
+              </div>
+              {!lotteryAnimating && lotteryReplay?.step !== "done" && (
+                <button onClick={runLotteryReplay}
+                  style={{
+                    padding: "5px 12px", borderRadius: 6, border: "none",
+                    background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                  }}>
+                  ▶ Watch Lottery
+                </button>
+              )}
+              {lotteryReplay?.step === "done" && (
+                <button onClick={() => { setLotteryReplay(null); }}
+                  style={{
+                    padding: "5px 12px", borderRadius: 6, border: `1px solid ${C.border}`,
+                    background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer",
+                  }}>
+                  🔄 Replay
+                </button>
+              )}
+            </div>
+
+            {/* Animating lottery */}
+            {lotteryAnimating && lotteryReplay && (
+              <div style={{ textAlign: "center", padding: "8px 0" }}>
+                <div style={{ fontFamily: F.b, fontSize: 12, color: C.amber, marginBottom: 8 }}>
+                  🎲 Drawing {lotteryReplay.step === "wc1" ? "Wildcard 1" : "Wildcard 2"}...
+                </div>
+                {lotteryReplay.showing && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px",
+                    background: `${C.amber}10`, borderRadius: 10, transition: "all 0.1s",
+                  }}>
+                    <span style={{ fontSize: 16 }}>🎲</span>
+                    <span style={{ fontFamily: F.b, fontSize: 14, color: C.amber }}>
+                      {lotteryData.pool_names?.[lotteryReplay.showing] || "..."}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* WC1 result */}
+            {lotteryReplay?.step === "wc1_result" && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+                background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 10, marginBottom: 8,
+              }}>
+                <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 8px" }}>WC1</Badge>
+                <TeamAvatar name={lotteryData.pool_names?.[lotteryReplay.showing] || "?"} size={28} />
+                <span style={{ flex: 1, fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>
+                  {lotteryData.pool_names?.[lotteryReplay.showing] || "?"}
+                </span>
+                <span style={{ fontSize: 20 }}>🎉</span>
+              </div>
+            )}
+
+            {/* Final results */}
+            {(lotteryReplay?.step === "wc2_result" || lotteryReplay?.step === "done" || !lotteryReplay) && lotteryData.drawn.map((wc, i) => (
+              <div key={wc.team_id} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                background: `${C.amber}08`, border: `1px solid ${C.amber}20`, borderRadius: 10,
+                marginBottom: i < lotteryData.drawn.length - 1 ? 6 : 0,
+              }}>
+                <Badge color={C.amber} style={{ fontSize: 11, padding: "3px 7px" }}>{wc.label}</Badge>
+                <TeamAvatar name={lotteryData.pool_names?.[wc.team_id] || "?"} size={24} />
+                <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
+                  {lotteryData.pool_names?.[wc.team_id] || "?"}
+                </span>
+              </div>
+            ))}
+
+            {/* Pool info */}
+            {lotteryData.pool && !lotteryAnimating && (
+              <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 8, textAlign: "center" }}>
+                Drawn from a pool of {lotteryData.pool.length} eligible teams
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Qualified teams by division */}
+        {Object.entries(qualifiedByDiv).sort(([a], [b]) => a.localeCompare(b)).map(([divCode, teams]) => (
+          <Card key={divCode} style={{ padding: "10px 14px", marginBottom: 8 }}>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+              {divLabel(divCode)}
+            </div>
+            {teams.sort((a, b) => {
+              const aNum = parseInt(a.seed_label?.replace(/[^0-9]/g, "")) || 99;
+              const bNum = parseInt(b.seed_label?.replace(/[^0-9]/g, "")) || 99;
+              return aNum - bNum;
+            }).map((t, i) => (
+              <div key={t.team_id} style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "5px 0",
+                borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+              }}>
+                <Badge color={seedColor(t.seed_label)} style={{ fontSize: 9, padding: "2px 6px", minWidth: 30, textAlign: "center" }}>
+                  {t.seed_label}
+                </Badge>
+                <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{t.seed_label}</span>
+              </div>
+            ))}
+          </Card>
+        ))}
+
+        <Footer />
+      </div>
+    );
+  }
+
+  // ── PHASE 3: Groups drawn ──
+  return (
+    <div>
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+        {[
+          { id: "groups", label: "🎱 Groups" },
+          { id: "bracket", label: "🏆 Bracket" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setPlayoffTab(t.id)}
+            style={{
+              flex: 1, padding: "9px 0", borderRadius: 8, border: "none",
+              background: playoffTab === t.id ? `${C.amber}15` : "transparent",
+              color: playoffTab === t.id ? C.amber : C.muted,
+              fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              transition: "all 0.15s",
+              borderBottom: playoffTab === t.id ? `2px solid ${C.amber}` : `2px solid transparent`,
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── GROUPS TAB ── */}
+      {playoffTab === "groups" && (
+        <>
+          {/* Hero */}
+          <Card style={{
+            padding: "16px", marginBottom: 14, textAlign: "center",
+            background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+            border: `1px solid ${C.amber}15`,
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 4 }}>🎱</div>
+            <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>
+              Group Stage
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+              {Object.values(groups).flat().length} teams drawn into {Object.keys(groups).length} groups · Top 2 advance to bracket
+            </div>
+            {!showDraw ? (
+              <button onClick={runDrawAnimation}
+                style={{
+                  marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none",
+                  background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 11,
+                  fontWeight: 700, cursor: "pointer",
+                }}>
+                ▶ Watch the Draw
+              </button>
+            ) : drawComplete ? (
+              <button onClick={() => { setShowDraw(false); setDrawComplete(false); }}
+                style={{
+                  marginTop: 12, padding: "7px 16px", borderRadius: 8,
+                  border: `1px solid ${C.border}`, background: "transparent",
+                  color: C.muted, fontFamily: F.b, fontSize: 10, cursor: "pointer",
+                }}>
+                🔄 Replay Draw
+              </button>
+            ) : (
+              <div style={{ marginTop: 12, fontFamily: F.b, fontSize: 12, color: C.amber }}>
+                🎲 Drawing groups...
+              </div>
+            )}
+          </Card>
+
+          {/* Lottery replay in groups phase */}
+          {lotteryData?.drawn?.length > 0 && (
+            <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>
+                  🎲 Wildcard Lottery
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {lotteryData.drawn.map(wc => (
+                    <Badge key={wc.team_id} color={C.blue} style={{ fontSize: 9, padding: "2px 6px" }}>
+                      {wc.label}: {lotteryData.pool_names?.[wc.team_id]?.split(" ").slice(0, 2).join(" ") || "?"}
+                    </Badge>
+                  ))}
+                  {!lotteryAnimating && (
+                    <button onClick={runLotteryReplay}
+                      style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                      ▶
+                    </button>
+                  )}
+                </div>
+              </div>
+              {/* Inline lottery animation */}
+              {lotteryAnimating && lotteryReplay && (
+                <div style={{ textAlign: "center", padding: "10px 0 4px" }}>
+                  <div style={{ fontFamily: F.b, fontSize: 11, color: C.amber, marginBottom: 6 }}>
+                    🎲 {lotteryReplay.step === "wc1" || lotteryReplay.step === "wc1_result" ? "Wildcard 1" : "Wildcard 2"}
+                  </div>
+                  {lotteryReplay.showing && (
+                    <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 10px" }}>
+                      {lotteryData.pool_names?.[lotteryReplay.showing] || "..."}
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Groups grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, minWidth: 0 }}>
+            {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => (
+              <Card key={groupName} style={{
+                padding: "10px 12px", minWidth: 0, overflow: "hidden",
+                border: `1px solid ${showDraw && !drawComplete ? C.amber + "25" : C.border}`,
+                transition: "border-color 0.15s",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{
+                    fontFamily: F.d, fontSize: 13, fontWeight: 800,
+                    width: 26, height: 26, borderRadius: 13,
+                    background: `${C.amber}18`, color: C.amber,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {groupName}
+                  </div>
+                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Group {groupName}</span>
+                </div>
+                {[...teamList].sort((a, b) => {
+                  const aWC = a.seed_label?.startsWith("WC") ? 1 : 0;
+                  const bWC = b.seed_label?.startsWith("WC") ? 1 : 0;
+                  if (aWC !== bWC) return aWC - bWC;
+                  const aNum = parseInt(a.seed_label?.replace(/[^0-9]/g, "")) || 99;
+                  const bNum = parseInt(b.seed_label?.replace(/[^0-9]/g, "")) || 99;
+                  return aNum - bNum;
+                }).map((t, i) => (
+                  <div key={t.team_id} style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "5px 0",
+                    borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => goPage("teams", { teamId: t.team_id })}>
+                    <TeamAvatar name={t.team_name} size={20} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontFamily: F.b, fontSize: 11, color: C.text, fontWeight: 500,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {t.team_name}
+                      </div>
+                      <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>
+                        {divLabel(t.seed_label?.replace(/[0-9]/g, ""))}
+                      </div>
+                    </div>
+                    <Badge color={seedColor(t.seed_label)} style={{ fontSize: 8, padding: "1px 5px" }}>
+                      {t.seed_label}
+                    </Badge>
+                  </div>
+                ))}
+              </Card>
+            ))}
+          </div>
+
+          {/* Seed legend */}
+          <Card style={{ marginTop: 12, padding: "10px 14px" }}>
+            <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+              Division Key
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {[
+                { code: "MH", full: "Mon Hammer" },
+                { code: "MC", full: "Mon Cherry" },
+                { code: "MP", full: "Mon Pilot" },
+                { code: "TH", full: "Tue Hammer" },
+                { code: "TC", full: "Tue Cherry" },
+                { code: "TP", full: "Tue Pilot" },
+                { code: "WC", full: "Wild Card" },
+              ].map(s => (
+                <span key={s.code} style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>
+                  <span style={{ color: s.code === "WC" ? C.blue : C.text, fontWeight: 600 }}>{s.code}</span> {s.full}
+                </span>
+              ))}
+            </div>
+          </Card>
+        </>
+      )}
+
+      {/* ── BRACKET TAB ── */}
+      {playoffTab === "bracket" && (
+        <>
+          <Card style={{
+            padding: "20px 16px", textAlign: "center", marginBottom: 14,
+            background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+            border: `1px solid ${C.amber}15`,
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 4 }}>🏆</div>
+            <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>
+              Championship Bracket
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+              16-team single elimination · Group winners vs runners-up
+            </div>
+          </Card>
+
+          <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+            Round of 16
+          </div>
+          {[
+            { match: 1, court: "Court 1", g1: "A", g2: "B" },
+            { match: 2, court: "Court 2", g1: "B", g2: "A" },
+            { match: 3, court: "Court 3", g1: "C", g2: "D" },
+            { match: 4, court: "Court 4", g1: "D", g2: "C" },
+            { match: 5, court: "Court 5", g1: "E", g2: "F" },
+            { match: 6, court: "Court 6", g1: "F", g2: "E" },
+            { match: 7, court: "Court 7", g1: "G", g2: "H" },
+            { match: 8, court: "Court 8", g1: "H", g2: "G" },
+          ].map(m => (
+            <Card key={m.match} style={{ padding: "10px 12px", marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>{m.court}</span>
+                <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Match {m.match}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{
+                  flex: 1, padding: "8px 10px", borderRadius: 8,
+                  background: `${C.green}08`, border: `1px solid ${C.green}15`, textAlign: "center",
+                }}>
+                  <div style={{ fontFamily: F.b, fontSize: 11, color: C.text }}>
+                    Group {m.g1} Winner
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.green }}>👑 1st Place</div>
+                </div>
+                <span style={{ fontFamily: F.d, fontSize: 11, color: C.dim, fontWeight: 700 }}>vs</span>
+                <div style={{
+                  flex: 1, padding: "8px 10px", borderRadius: 8,
+                  background: `${C.amber}08`, border: `1px solid ${C.amber}15`, textAlign: "center",
+                }}>
+                  <div style={{ fontFamily: F.b, fontSize: 11, color: C.text }}>
+                    Group {m.g2} Runner-up
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.amber }}>2nd Place</div>
+                </div>
+              </div>
+            </Card>
+          ))}
+
+          <Card style={{ padding: "16px", marginTop: 10, textAlign: "center" }}>
+            <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>
+              Quarterfinals → Semifinals → Finals
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginTop: 4 }}>
+              Bracket populates as group stage completes
+            </div>
+          </Card>
+        </>
+      )}
+      <Footer />
+    </div>
+  );
+}
+
 // ─── TEAMS ───
 function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teams, setTeams] = useState([]);
@@ -3627,18 +4179,16 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   onClick={async () => {
                     if (lotteryPool.size < 2) { setError("Need at least 2 teams in the lottery pool"); return; }
                     setLotteryAnimating(true);
-                    // Shuffle animation: show random names cycling
                     const poolArr = [...lotteryPool];
-                    const numToDraw = Math.min(2 - wildcards.length, poolArr.length);
-                    // Quick visual shuffle
-                    for (let tick = 0; tick < 12; tick++) {
+                    // Draw one team at a time
+                    for (let tick = 0; tick < 14; tick++) {
                       const shuffled = [...poolArr].sort(() => Math.random() - 0.5);
-                      setLotteryDrawn(shuffled.slice(0, numToDraw));
-                      await new Promise(r => setTimeout(r, 100 + tick * 30));
+                      setLotteryDrawn([shuffled[0]]);
+                      await new Promise(r => setTimeout(r, 120 + tick * 25));
                     }
-                    // Final draw
+                    // Final pick for WC1
                     const finalShuffled = [...poolArr].sort(() => Math.random() - 0.5);
-                    setLotteryDrawn(finalShuffled.slice(0, numToDraw));
+                    setLotteryDrawn([finalShuffled[0]]);
                     setLotteryAnimating(false);
                   }}
                   disabled={lotteryPool.size < 2 || lotteryAnimating}
@@ -3648,52 +4198,78 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                     color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer",
                     opacity: lotteryPool.size < 2 ? 0.5 : 1,
                   }}>
-                  {lotteryAnimating ? "🎲 Drawing..." : `🎲 Draw ${Math.min(2 - wildcards.length, lotteryPool.size)} Wildcard${(2 - wildcards.length) > 1 ? "s" : ""}`}
+                  {lotteryAnimating ? "🎲 Drawing WC1..." : `🎲 Draw Wildcard ${wildcards.length + 1}`}
                 </button>
               </>
             )}
 
-            {/* Lottery Results */}
-            {lotteryMode === "pool" && lotteryDrawn.length > 0 && !lotteryAnimating && (
+            {/* Lottery Result — WC1 drawn, confirm before WC2 */}
+            {lotteryMode === "pool" && lotteryDrawn.length === 1 && !lotteryAnimating && (
               <div>
                 <div style={{ textAlign: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 28, marginBottom: 4 }}>🎉</div>
-                  <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>Lottery Results</div>
+                  <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>
+                    Wildcard {wildcards.length + 1} Drawn!
+                  </div>
                 </div>
-                {lotteryDrawn.map((tid, i) => {
+                {(() => {
+                  const tid = lotteryDrawn[0];
                   let team = null;
                   for (const [, teams] of Object.entries(standings)) {
                     team = teams.find(t => t.team_id === tid);
                     if (team) break;
                   }
                   return team ? (
-                    <div key={tid} style={{
+                    <div style={{
                       display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
                       background: `${C.amber}10`, border: `1px solid ${C.amber}30`,
-                      borderRadius: 10, marginBottom: 8,
+                      borderRadius: 10, marginBottom: 12,
                     }}>
-                      <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 8px" }}>WC{wildcards.length + i + 1}</Badge>
+                      <Badge color={C.amber} style={{ fontSize: 13, padding: "4px 8px" }}>WC{wildcards.length + 1}</Badge>
                       <TeamAvatar name={team.team_name} size={28} />
                       <span style={{ flex: 1, fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>{team.team_name}</span>
                       <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>{team.wins}-{team.losses}</span>
                     </div>
                   ) : null;
-                })}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                })()}
+                <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setLotteryDrawn([])}
                     style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                     🔄 Redraw
                   </button>
                   <button onClick={async () => {
-                    for (const tid of lotteryDrawn) {
-                      await confirmWildcard(tid);
+                    const tid = lotteryDrawn[0];
+                    // Save lottery data to season
+                    const poolNames = {};
+                    for (const pid of lotteryPool) {
+                      for (const [, teams] of Object.entries(standings)) {
+                        const t = teams.find(x => x.team_id === pid);
+                        if (t) { poolNames[pid] = t.team_name; break; }
+                      }
                     }
+                    const existingLottery = await q("seasons", `id=eq.${seasonId}&select=lottery_data`);
+                    const prevData = existingLottery?.[0]?.lottery_data || { pool: [...lotteryPool], pool_names: poolNames, drawn: [] };
+                    prevData.drawn = [...(prevData.drawn || []), { team_id: tid, label: `WC${wildcards.length + 1}` }];
+                    if (!prevData.pool_names) { prevData.pool = [...lotteryPool]; prevData.pool_names = poolNames; }
+                    await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { lottery_data: prevData });
+
+                    await confirmWildcard(tid);
                     setLotteryDrawn([]);
-                    setLotteryPool(new Set());
+
+                    // If WC1 was just confirmed and need WC2, keep pool open minus drawn team
+                    if (wildcards.length + 1 < 2) {
+                      setLotteryPool(prev => {
+                        const next = new Set(prev);
+                        next.delete(tid);
+                        return next;
+                      });
+                    } else {
+                      setLotteryPool(new Set());
+                    }
                   }}
                     disabled={!!saving}
                     style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    ✓ Confirm Wildcards
+                    {wildcards.length + 1 < 2 ? `✓ Confirm WC${wildcards.length + 1} & Draw Next` : `✓ Confirm WC${wildcards.length + 1}`}
                   </button>
                 </div>
               </div>
@@ -5866,6 +6442,8 @@ function MainApp() {
         return <StandingsPage divisions={divisions} activeSeason={selectedSeason} goPage={goPage} />;
       case "matches":
         return <MatchesPage divisions={divisions} activeSeason={selectedSeason} goPage={goPage} />;
+      case "playoffs":
+        return <PlayoffsPage activeSeason={selectedSeason} divisions={divisions} goPage={goPage} />;
       case "teams":
         return <TeamsPage goPage={goPage} initialTeamId={pageData.teamId} activeSeason={selectedSeason} />;
       case "fame":
@@ -5915,29 +6493,34 @@ function MainApp() {
         background: `linear-gradient(180deg, transparent 0%, ${C.bg} 25%)`,
         borderTop: `1px solid ${C.border}`,
       }}>
-        {[
-          ["home", "⌂", "Home"],
-          ["standings", "☰", "Standings"],
-          ["matches", "◉", "Matches"],
-          ["teams", "◈", "Teams"],
-          ["fame", "♕", "History"],
-        ].map(([key, icon, label]) => {
+        {(() => {
+          const sp = getSeasonProgress(selectedSeason);
+          const showPlayoffs = sp.status === "postseason" || sp.status === "completed";
+          return [
+            ["home", "⌂", "Home"],
+            ["standings", "☰", "Standings"],
+            ["matches", "◉", "Matches"],
+            ...(showPlayoffs ? [["playoffs", "🏆", "Playoffs"]] : []),
+            ["teams", "◈", "Teams"],
+            ["fame", "♕", "History"],
+          ].map(([key, icon, label]) => {
           const active = page === key;
           return (
             <button key={key} onClick={() => goPage(key)} style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
               background: "none", border: "none", cursor: "pointer",
-              color: active ? C.amber : C.dim, padding: "6px 6px", borderRadius: 10,
+              color: active ? C.amber : C.dim, padding: "6px 4px", borderRadius: 10,
               position: "relative", fontFamily: F.b, transition: "color 0.15s",
             }}>
               {active && (
                 <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", width: 18, height: 3, borderRadius: 2, background: C.amber }} />
               )}
-              <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
-              <span style={{ fontSize: 9, fontWeight: active ? 700 : 500, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
+              <span style={{ fontSize: showPlayoffs ? 16 : 18, lineHeight: 1 }}>{icon}</span>
+              <span style={{ fontSize: showPlayoffs ? 8 : 9, fontWeight: active ? 700 : 500, textTransform: "uppercase", letterSpacing: showPlayoffs ? 0.3 : 0.5 }}>{label}</span>
             </button>
           );
-        })}
+        });
+        })()}
       </nav>
     </div>
   );
