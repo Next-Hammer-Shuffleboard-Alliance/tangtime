@@ -3562,6 +3562,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       setExistingPlayoffs(prev => prev.filter(p => p.team_id !== teamId));
       setSeedLabels(prev => { const next = { ...prev }; delete next[teamId]; return next; });
       setWildcards(prev => prev.filter(id => id !== teamId));
+      // Clear lottery data if a wildcard was removed
+      const wasWC = seedLabels[teamId]?.startsWith("WC");
+      if (wasWC) {
+        await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { lottery_data: null }).catch(() => {});
+      }
     } catch (e) { setError(e.message); }
     setSaving(null);
   };
@@ -4247,11 +4252,17 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                         if (t) { poolNames[pid] = t.team_name; break; }
                       }
                     }
-                    const existingLottery = await q("seasons", `id=eq.${seasonId}&select=lottery_data`);
-                    const prevData = existingLottery?.[0]?.lottery_data || { pool: [...lotteryPool], pool_names: poolNames, drawn: [] };
-                    prevData.drawn = [...(prevData.drawn || []), { team_id: tid, label: `WC${wildcards.length + 1}` }];
-                    if (!prevData.pool_names) { prevData.pool = [...lotteryPool]; prevData.pool_names = poolNames; }
-                    await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { lottery_data: prevData });
+                    let lottData;
+                    if (wildcards.length === 0) {
+                      // First wildcard - start fresh
+                      lottData = { pool: [...lotteryPool], pool_names: poolNames, drawn: [{ team_id: tid, label: "WC1" }] };
+                    } else {
+                      // Second wildcard - append to existing
+                      const existingLottery = await q("seasons", `id=eq.${seasonId}&select=lottery_data`);
+                      lottData = existingLottery?.[0]?.lottery_data || { pool: [...lotteryPool], pool_names: poolNames, drawn: [] };
+                      lottData.drawn = [...(lottData.drawn || []), { team_id: tid, label: `WC${wildcards.length + 1}` }];
+                    }
+                    await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { lottery_data: lottData });
 
                     await confirmWildcard(tid);
                     setLotteryDrawn([]);
@@ -6519,7 +6530,7 @@ function MainApp() {
               {active && (
                 <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", width: 18, height: 3, borderRadius: 2, background: C.amber }} />
               )}
-              <span style={{ fontSize: showPlayoffs ? 16 : 18, lineHeight: 1 }}>{icon}</span>
+              <span style={{ fontSize: showPlayoffs ? 16 : 18, lineHeight: 1, filter: active ? "none" : "grayscale(1) brightness(0.6)", transition: "filter 0.15s" }}>{icon}</span>
               <span style={{ fontSize: showPlayoffs ? 8 : 9, fontWeight: active ? 700 : 500, textTransform: "uppercase", letterSpacing: showPlayoffs ? 0.3 : 0.5 }}>{label}</span>
             </button>
           );
