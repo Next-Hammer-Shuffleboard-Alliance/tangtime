@@ -3890,9 +3890,16 @@ function AdminApp({ user, myRole }) {
   };
 
   const deleteSeason = async (sId, sName) => {
+    // Check if season has any matches
+    try {
+      const matches = await q("matches", `season_id=eq.${sId}&select=id&limit=1`);
+      if (matches?.length > 0) {
+        setError(`Cannot delete "${sName}" — it has matches. Only seasons with 0 matches can be deleted.`);
+        return;
+      }
+    } catch {}
     if (!window.confirm(`Delete season "${sName}" and all its divisions? This cannot be undone.`)) return;
     try {
-      // Delete divisions first
       await qAuth("divisions", `season_id=eq.${sId}`, "DELETE");
       await qAuth("seasons", `id=eq.${sId}`, "DELETE");
       setSuccess(`Season "${sName}" deleted.`);
@@ -4945,7 +4952,8 @@ function RegisterPage() {
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [wantRename, setWantRename] = useState(false);
   const [renameName, setRenameName] = useState("");
-  const [rosterMembers, setRosterMembers] = useState([{ name: "", email: "" }, { name: "", email: "" }]);
+  const [rosterMembers, setRosterMembers] = useState([{ name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }]);
+  const [showWaiver, setShowWaiver] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -5370,7 +5378,8 @@ function RegisterPage() {
                   </div>
                   <span style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
                     I agree to the <a href="/terms" target="_blank" style={{ color: C.amber, textDecoration: "underline" }}>Terms of Service</a> and
-                    acknowledge the league waiver, including assumption of risk and release of liability for shuffleboard activities at Royal Palms Brooklyn.
+                    the <span onClick={(e) => { e.stopPropagation(); setShowWaiver(true); }} style={{ color: C.amber, textDecoration: "underline", cursor: "pointer" }}>League Waiver</span>,
+                    including assumption of risk and release of liability for shuffleboard activities at Royal Palms Brooklyn.
                   </span>
                 </div>
 
@@ -5408,6 +5417,31 @@ function RegisterPage() {
           <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to TangTime</a>
         </div>
       </main>
+
+      {/* Waiver Modal */}
+      {showWaiver && (
+        <div onClick={() => setShowWaiver(false)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: C.surface, borderRadius: 14, padding: "20px 18px", maxWidth: 480,
+            maxHeight: "80vh", overflowY: "auto", width: "100%", border: `1px solid ${C.border}`,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 700, color: C.text }}>League Waiver</div>
+              <button onClick={() => setShowWaiver(false)} style={{ background: "none", border: "none", color: C.dim, fontSize: 18, cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
+              <p>The Royal Palms is committed to creating a positive community-driven experience through our shuffleboard league. Should The Royal Palms deem that the behavior of any team or member of a team is in conflict with the values stated above, we reserve the right to terminate that team's membership in the league without warning or prior notice. This decision will be irrefutable and at the sole discretion of The Royal Palms. If a team is terminated from the league, they will be credited with a pro-rated refund of their league dues for that season based on however much of the season they were not able to complete.</p>
+            </div>
+            <button onClick={() => setShowWaiver(false)} style={{
+              width: "100%", marginTop: 14, padding: "11px 0", borderRadius: 8, border: "none",
+              background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}>Close</button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
