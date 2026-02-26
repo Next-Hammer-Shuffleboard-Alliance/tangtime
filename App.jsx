@@ -1899,24 +1899,37 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
           {/* Lottery replay in groups phase */}
           {lotteryData?.drawn?.length > 0 && (
             <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>
                   🎲 Wildcard Lottery
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {lotteryData.drawn.map(wc => (
-                    <Badge key={wc.team_id} color={C.blue} style={{ fontSize: 9, padding: "2px 6px" }}>
-                      {wc.label}: {lotteryData.pool_names?.[wc.team_id]?.split(" ").slice(0, 2).join(" ") || "?"}
-                    </Badge>
-                  ))}
-                  {!lotteryAnimating && (
-                    <button onClick={runLotteryReplay}
-                      style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                      ▶
-                    </button>
-                  )}
-                </div>
+                {!lotteryAnimating && lotteryReplay?.step !== "done" && (
+                  <button onClick={runLotteryReplay}
+                    style={{ padding: "4px 10px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    ▶ Watch
+                  </button>
+                )}
+                {lotteryReplay?.step === "done" && (
+                  <button onClick={() => { setLotteryReplay(null); }}
+                    style={{ padding: "4px 10px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    🔄 Replay
+                  </button>
+                )}
               </div>
+              {lotteryData.drawn.map(wc => (
+                <div key={wc.team_id} style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "5px 0",
+                  borderTop: `1px solid ${C.border}`,
+                }}>
+                  <Badge color={C.blue} style={{ fontSize: 9, padding: "2px 6px", minWidth: 30, textAlign: "center" }}>
+                    {wc.label}
+                  </Badge>
+                  <TeamAvatar name={lotteryData.pool_names?.[wc.team_id] || "?"} size={20} />
+                  <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>
+                    {lotteryData.pool_names?.[wc.team_id] || "?"}
+                  </span>
+                </div>
+              ))}
               {/* Inline lottery animation */}
               {lotteryAnimating && lotteryReplay && (
                 <div style={{ textAlign: "center", padding: "10px 0 4px" }}>
