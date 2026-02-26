@@ -2784,6 +2784,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [seedLabels, setSeedLabels] = useState({}); // team_id -> "MH1" etc
   const [expandedDiv, setExpandedDiv] = useState(null);
   const [playoffSpotsMap, setPlayoffSpotsMap] = useState({}); // divId -> number
+  const [lotteryPool, setLotteryPool] = useState(new Set()); // team_ids in lottery
+  const [lotteryDrawn, setLotteryDrawn] = useState([]); // drawn team_ids
+  const [lotteryAnimating, setLotteryAnimating] = useState(false);
+  const [lotteryMode, setLotteryMode] = useState("pool"); // "pool" | "drawn" | "manual"
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
   const DEFAULT_PLAYOFF_SPOTS = 5;
@@ -3103,36 +3107,65 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         const divPlayoffTeams = confirmedPlayoffs[d.id] || [];
         const spots = getPlayoffSpots(d.id);
 
-        // Compute display ranks with ties, accounting for confirmed winner
+        // Compute display ranks: within each same-record group, confirmed teams sort first
+        // This handles any combination of ties and manual resolutions
         const displayRanks = (() => {
-          if (divWinner) {
-            // Winner gets rank 1, rest re-ranked from 2
-            const winnerTeam = divTeams.find(t => t.team_id === divWinner);
-            const others = divTeams.filter(t => t.team_id !== divWinner);
-            const result = [];
-            if (winnerTeam) {
-              result.push({ ...winnerTeam, displayRank: "1", rawIdx: 0, tiedCount: 1, tiedRank: 1 });
+          const confirmedSet = new Set(divPlayoffTeams);
+          // Sort: by record (already sorted), then within same record: confirmed before unconfirmed
+          const sorted = [...divTeams].sort((a, b) => {
+            // Primary: wins desc
+            if (b.wins !== a.wins) return b.wins - a.wins;
+            // Secondary: losses asc
+            if (a.losses !== b.losses) return a.losses - b.losses;
+            // Tertiary: confirmed teams first (winner first, then other confirmed)
+            const aConf = a.team_id === divWinner ? 2 : confirmedSet.has(a.team_id) ? 1 : 0;
+            const bConf = b.team_id === divWinner ? 2 : confirmedSet.has(b.team_id) ? 1 : 0;
+            return bConf - aConf;
+          });
+
+          // Now compute display ranks — only UNCONFIRMED teams with same record are "tied"
+          return sorted.map((t, i) => {
+            const isConfirmed = confirmedSet.has(t.team_id);
+            // Find unconfirmed teams with same record
+            const unconfirmedSameRecord = sorted.filter(x =>
+              x.wins === t.wins && x.losses === t.losses && !confirmedSet.has(x.team_id)
+            );
+            const firstUnconfIdx = sorted.findIndex(x =>
+              x.wins === t.wins && x.losses === t.losses && !confirmedSet.has(x.team_id)
+            );
+
+            let displayRank, tiedCount, tiedRank;
+            if (isConfirmed) {
+              // Confirmed teams get their exact position, no tie marker
+              displayRank = `${i + 1}`;
+              tiedCount = 1;
+              tiedRank = i + 1;
+            } else if (unconfirmedSameRecord.length > 1) {
+              // Multiple unconfirmed with same record = tied
+              const tieStartRank = firstUnconfIdx + 1;
+              displayRank = `T${tieStartRank}`;
+              tiedCount = unconfirmedSameRecord.length;
+              tiedRank = tieStartRank;
+            } else {
+              displayRank = `${i + 1}`;
+              tiedCount = 1;
+              tiedRank = i + 1;
             }
-            others.forEach((t, i) => {
-              const firstIdx = others.findIndex(x => x.wins === t.wins && x.losses === t.losses);
-              const sameCount = others.filter(x => x.wins === t.wins && x.losses === t.losses).length;
-              const rank = firstIdx + 2; // +2 because winner is rank 1
-              result.push({ ...t, displayRank: sameCount > 1 ? `T${rank}` : `${rank}`, rawIdx: i + 1, tiedCount: sameCount, tiedRank: rank });
-            });
-            return result;
-          }
-          // No winner confirmed — pure record-based ranking
-          return divTeams.map((t, i) => {
-            const firstIdx = divTeams.findIndex(x => x.wins === t.wins && x.losses === t.losses);
-            const sameCount = divTeams.filter(x => x.wins === t.wins && x.losses === t.losses).length;
-            const rank = firstIdx + 1;
-            return { ...t, displayRank: sameCount > 1 ? `T${rank}` : `${rank}`, rawIdx: i, tiedCount: sameCount, tiedRank: rank };
+
+            return { ...t, displayRank, rawIdx: i, tiedCount, tiedRank };
           });
         })();
 
-        // Cutoff tie: team at last qualifying spot shares record with first non-qualifying
-        const hasCutoffTie = divTeams.length > spots && divTeams[spots - 1] && divTeams[spots] &&
-          divTeams[spots - 1].wins === divTeams[spots].wins && divTeams[spots - 1].losses === divTeams[spots].losses;
+        // Cutoff tie: check if unconfirmed teams straddle the cutoff
+        const hasCutoffTie = displayRanks.length > spots && (() => {
+          const atCutoff = displayRanks[spots - 1];
+          const belowCutoff = displayRanks[spots];
+          if (!atCutoff || !belowCutoff) return false;
+          // Only a cutoff tie if both are unconfirmed with same record
+          const confirmedSet = new Set(divPlayoffTeams);
+          return !confirmedSet.has(atCutoff.team_id) && !confirmedSet.has(belowCutoff.team_id) &&
+            atCutoff.wins === belowCutoff.wins && atCutoff.losses === belowCutoff.losses;
+        })();
 
         const tieAt1 = !divWinner && divTeams.length > 1 && divTeams[0].wins === divTeams[1].wins && divTeams[0].losses === divTeams[1].losses;
 
@@ -3341,55 +3374,227 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
           🎲 Wildcard Teams ({wildcards.length}/2)
         </div>
-        <Card style={{ padding: "14px 16px" }}>
-          {wildcards.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              {wildcards.map(wcId => {
-                let wcTeam = null;
-                for (const [, teams] of Object.entries(standings)) {
-                  wcTeam = teams.find(t => t.team_id === wcId);
-                  if (wcTeam) break;
-                }
-                return wcTeam ? (
-                  <div key={wcId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                    <TeamAvatar name={wcTeam.team_name} size={24} />
-                    <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, color: C.amber }}>{wcTeam.team_name}</span>
-                    <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{wcTeam.wins}-{wcTeam.losses}</span>
-                    <Badge color={C.amber} style={{ fontSize: 9 }}>{seedLabels[wcId] || "WC"}</Badge>
-                    <button onClick={() => removePlayoffTeam(null, wcId)}
-                      style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                      ✕
-                    </button>
-                  </div>
-                ) : null;
-              })}
-            </div>
-          )}
 
-          {wildcards.length < 2 && (
-            <>
-              <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 8 }}>
-                Select from non-qualifying teams (lottery winners):
-              </div>
-              <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                {allNonQualifying.length === 0 ? (
-                  <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>No eligible teams (confirm division playoff spots first)</span>
-                ) : allNonQualifying.map(t => (
-                  <div key={t.team_id} style={{
-                    display: "flex", alignItems: "center", gap: 8, padding: "7px 8px",
-                    borderBottom: `1px solid ${C.border}`, cursor: "pointer",
+        {/* Confirmed wildcards */}
+        {wildcards.length > 0 && (
+          <Card style={{ padding: "14px 16px", marginBottom: 10 }}>
+            {wildcards.map(wcId => {
+              let wcTeam = null;
+              for (const [, teams] of Object.entries(standings)) {
+                wcTeam = teams.find(t => t.team_id === wcId);
+                if (wcTeam) break;
+              }
+              return wcTeam ? (
+                <div key={wcId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <TeamAvatar name={wcTeam.team_name} size={24} />
+                  <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, color: C.amber }}>{wcTeam.team_name}</span>
+                  <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{wcTeam.wins}-{wcTeam.losses}</span>
+                  <Badge color={C.amber} style={{ fontSize: 9 }}>{seedLabels[wcId] || "WC"}</Badge>
+                  <button onClick={() => removePlayoffTeam(null, wcId)}
+                    style={{ padding: "3px 5px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                    ✕
+                  </button>
+                </div>
+              ) : null;
+            })}
+          </Card>
+        )}
+
+        {/* Lottery / Manual picker */}
+        {wildcards.length < 2 && (
+          <Card style={{ padding: "14px 16px" }}>
+            {/* Mode tabs */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 14, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` }}>
+              {[["pool", "🎲 Lottery"], ["manual", "✏️ Manual Pick"]].map(([m, label]) => (
+                <button key={m} onClick={() => { setLotteryMode(m); setLotteryDrawn([]); }}
+                  style={{
+                    flex: 1, padding: "9px 0", border: "none", fontFamily: F.m, fontSize: 11, fontWeight: 600,
+                    cursor: "pointer", transition: "all 0.15s",
+                    background: lotteryMode === m ? C.amber : C.surfAlt,
+                    color: lotteryMode === m ? C.bg : C.muted,
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Lottery Mode */}
+            {lotteryMode === "pool" && !lotteryDrawn.length && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontFamily: F.b, fontSize: 12, color: C.muted }}>
+                    Select teams entering the lottery ({lotteryPool.size} teams)
+                  </span>
+                  <button onClick={() => {
+                    if (lotteryPool.size === allNonQualifying.length) {
+                      setLotteryPool(new Set());
+                    } else {
+                      setLotteryPool(new Set(allNonQualifying.map(t => t.team_id)));
+                    }
                   }}
-                    onClick={() => confirmWildcard(t.team_id)}>
-                    <TeamAvatar name={t.team_name} size={22} />
-                    <span style={{ flex: 1, fontFamily: F.b, fontSize: 12, color: C.muted }}>{t.team_name}</span>
-                    <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{t.wins}-{t.losses}</span>
-                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>+ Add</span>
-                  </div>
-                ))}
+                    style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    {lotteryPool.size === allNonQualifying.length ? "Deselect All" : "Select All"}
+                  </button>
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto", marginBottom: 12 }}>
+                  {allNonQualifying.length === 0 ? (
+                    <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>No eligible teams yet</span>
+                  ) : allNonQualifying.map(t => {
+                    const inPool = lotteryPool.has(t.team_id);
+                    return (
+                      <div key={t.team_id} onClick={() => {
+                        setLotteryPool(prev => {
+                          const next = new Set(prev);
+                          if (next.has(t.team_id)) next.delete(t.team_id);
+                          else next.add(t.team_id);
+                          return next;
+                        });
+                      }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, padding: "7px 8px",
+                          borderBottom: `1px solid ${C.border}`, cursor: "pointer",
+                          background: inPool ? `${C.amber}08` : "transparent",
+                        }}>
+                        <div style={{
+                          width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                          border: `2px solid ${inPool ? C.amber : C.dim}`,
+                          background: inPool ? C.amber : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {inPool && <span style={{ color: C.bg, fontSize: 11, fontWeight: 900 }}>✓</span>}
+                        </div>
+                        <TeamAvatar name={t.team_name} size={22} />
+                        <span style={{ flex: 1, fontFamily: F.b, fontSize: 12, color: inPool ? C.text : C.muted }}>{t.team_name}</span>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{t.wins}-{t.losses}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={async () => {
+                    if (lotteryPool.size < 2) { setError("Need at least 2 teams in the lottery pool"); return; }
+                    setLotteryAnimating(true);
+                    // Shuffle animation: show random names cycling
+                    const poolArr = [...lotteryPool];
+                    const numToDraw = Math.min(2 - wildcards.length, poolArr.length);
+                    // Quick visual shuffle
+                    for (let tick = 0; tick < 12; tick++) {
+                      const shuffled = [...poolArr].sort(() => Math.random() - 0.5);
+                      setLotteryDrawn(shuffled.slice(0, numToDraw));
+                      await new Promise(r => setTimeout(r, 100 + tick * 30));
+                    }
+                    // Final draw
+                    const finalShuffled = [...poolArr].sort(() => Math.random() - 0.5);
+                    setLotteryDrawn(finalShuffled.slice(0, numToDraw));
+                    setLotteryAnimating(false);
+                  }}
+                  disabled={lotteryPool.size < 2 || lotteryAnimating}
+                  style={{
+                    width: "100%", padding: "12px 0", borderRadius: 10, border: "none",
+                    background: lotteryPool.size >= 2 ? C.amber : C.dim,
+                    color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer",
+                    opacity: lotteryPool.size < 2 ? 0.5 : 1,
+                  }}>
+                  {lotteryAnimating ? "🎲 Drawing..." : `🎲 Draw ${Math.min(2 - wildcards.length, lotteryPool.size)} Wildcard${(2 - wildcards.length) > 1 ? "s" : ""}`}
+                </button>
+              </>
+            )}
+
+            {/* Lottery Results */}
+            {lotteryMode === "pool" && lotteryDrawn.length > 0 && !lotteryAnimating && (
+              <div>
+                <div style={{ textAlign: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 28, marginBottom: 4 }}>🎉</div>
+                  <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>Lottery Results</div>
+                </div>
+                {lotteryDrawn.map((tid, i) => {
+                  let team = null;
+                  for (const [, teams] of Object.entries(standings)) {
+                    team = teams.find(t => t.team_id === tid);
+                    if (team) break;
+                  }
+                  return team ? (
+                    <div key={tid} style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+                      background: `${C.amber}10`, border: `1px solid ${C.amber}30`,
+                      borderRadius: 10, marginBottom: 8,
+                    }}>
+                      <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 8px" }}>WC{wildcards.length + i + 1}</Badge>
+                      <TeamAvatar name={team.team_name} size={28} />
+                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>{team.team_name}</span>
+                      <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>{team.wins}-{team.losses}</span>
+                    </div>
+                  ) : null;
+                })}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button onClick={() => setLotteryDrawn([])}
+                    style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    🔄 Redraw
+                  </button>
+                  <button onClick={async () => {
+                    for (const tid of lotteryDrawn) {
+                      await confirmWildcard(tid);
+                    }
+                    setLotteryDrawn([]);
+                    setLotteryPool(new Set());
+                  }}
+                    disabled={!!saving}
+                    style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    ✓ Confirm Wildcards
+                  </button>
+                </div>
               </div>
-            </>
-          )}
-        </Card>
+            )}
+
+            {/* Lottery animating state */}
+            {lotteryAnimating && lotteryDrawn.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                {lotteryDrawn.map((tid, i) => {
+                  let team = null;
+                  for (const [, teams] of Object.entries(standings)) {
+                    team = teams.find(t => t.team_id === tid);
+                    if (team) break;
+                  }
+                  return team ? (
+                    <div key={`anim-${i}`} style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                      background: `${C.amber}08`, borderRadius: 10, marginBottom: 6,
+                      transition: "all 0.1s",
+                    }}>
+                      <span style={{ fontSize: 18 }}>🎲</span>
+                      <span style={{ fontFamily: F.b, fontSize: 13, color: C.amber }}>{team.team_name}</span>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            )}
+
+            {/* Manual Mode */}
+            {lotteryMode === "manual" && (
+              <>
+                <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 8 }}>
+                  Manually select wildcard teams:
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                  {allNonQualifying.length === 0 ? (
+                    <span style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>No eligible teams yet</span>
+                  ) : allNonQualifying.map(t => (
+                    <div key={t.team_id} style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "7px 8px",
+                      borderBottom: `1px solid ${C.border}`, cursor: "pointer",
+                    }}
+                      onClick={() => confirmWildcard(t.team_id)}>
+                      <TeamAvatar name={t.team_name} size={22} />
+                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 12, color: C.muted }}>{t.team_name}</span>
+                      <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{t.wins}-{t.losses}</span>
+                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>+ Add</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </Card>
+        )}
       </div>
 
       {/* Total Summary */}
