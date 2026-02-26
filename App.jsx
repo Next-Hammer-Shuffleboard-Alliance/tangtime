@@ -4960,6 +4960,7 @@ function RegisterPage() {
   const [seasons, setSeasons] = useState([]);
   const [teams, setTeams] = useState([]);
   const [regCounts, setRegCounts] = useState({});
+  const [regTeams, setRegTeams] = useState({}); // divId -> [{team_name}]
   const [selectedDiv, setSelectedDiv] = useState(null);
   const [teamMode, setTeamMode] = useState("existing"); // "existing" | "new"
   const [selectedTeamId, setSelectedTeamId] = useState("");
@@ -5009,17 +5010,21 @@ function RegisterPage() {
           q("divisions", "registration_open=eq.true&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot"),
           q("seasons", "order=start_date.desc&limit=5"),
           q("teams", "primary_team_id=is.null&order=name.asc&limit=500&select=id,name"),
-          q("registrations", "payment_status=eq.paid&select=division_id"),
+          q("registrations", "payment_status=eq.paid&select=division_id,team_name"),
         ]);
         setDivisions(divs);
         setSeasons(seas);
         setTeams(tms);
-        // Count registrations per division
+        // Count registrations per division + collect team names
         const counts = {};
+        const teams_by_div = {};
         (regs || []).forEach(r => {
           counts[r.division_id] = (counts[r.division_id] || 0) + 1;
+          if (!teams_by_div[r.division_id]) teams_by_div[r.division_id] = [];
+          teams_by_div[r.division_id].push(r.team_name);
         });
         setRegCounts(counts);
+        setRegTeams(teams_by_div);
       } catch (e) { console.error(e); }
       setLoading(false);
     }
@@ -5228,11 +5233,25 @@ function RegisterPage() {
                         </div>
                         <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
                         <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
-                          {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
+                          {regCount > 0 ? `${regCount}/${d.max_teams || 16} teams` : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
                         </div>
                       </div>
                     </div>
                     {selected && <div style={{ marginTop: 4, fontSize: 10, color: C.amber }}>▼ Complete form below</div>}
+                    {(regTeams[d.id] || []).length > 0 && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                          Registered ({regCount}/{d.max_teams || 16})
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {(regTeams[d.id] || []).map((name, i) => (
+                            <span key={i} style={{ fontFamily: F.m, fontSize: 10, color: C.muted, background: `${C.amber}10`, border: `1px solid ${C.amber}15`, borderRadius: 5, padding: "2px 7px" }}>
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </Card>
                 );
               })}
