@@ -3900,6 +3900,11 @@ function AdminApp({ user, myRole }) {
     } catch {}
     if (!window.confirm(`Delete season "${sName}" and all its divisions? This cannot be undone.`)) return;
     try {
+      // Delete registrations first, then divisions, then season
+      const divs = await q("divisions", `season_id=eq.${sId}&select=id`);
+      for (const d of (divs || [])) {
+        await qAuth("registrations", `division_id=eq.${d.id}`, "DELETE");
+      }
       await qAuth("divisions", `season_id=eq.${sId}`, "DELETE");
       await qAuth("seasons", `id=eq.${sId}`, "DELETE");
       setSuccess(`Season "${sName}" deleted.`);
@@ -4153,6 +4158,7 @@ function AdminApp({ user, myRole }) {
               {seasonsLoading ? <Loader /> : allSeasons.length === 0 ? <Empty msg="No seasons yet" /> : allSeasons.map(s => {
                 const isSelected = selectedManageSeason === s.id;
                 const isActive = s.is_active;
+                const isPast = s.end_date && new Date(s.end_date + "T23:59:59") < new Date();
                 return (
                   <div key={s.id} style={{ marginBottom: 10 }}>
                     <Card style={{
@@ -4176,18 +4182,24 @@ function AdminApp({ user, myRole }) {
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <button onClick={(e) => { e.stopPropagation(); toggleSeasonActive(s.id, isActive); }}
-                            style={{
-                              padding: "5px 10px", borderRadius: 6, border: `1px solid ${isActive ? C.green + "50" : C.border}`,
-                              background: isActive ? `${C.green}15` : "transparent",
-                              color: isActive ? C.green : C.muted, fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
-                            }}>
-                            {isActive ? "✓ Active" : "Set Active"}
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
-                              style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
-                              ✕
-                            </button>
+                          {isPast ? (
+                            <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Completed</span>
+                          ) : (
+                            <>
+                              <button onClick={(e) => { e.stopPropagation(); toggleSeasonActive(s.id, isActive); }}
+                                style={{
+                                  padding: "5px 10px", borderRadius: 6, border: `1px solid ${isActive ? C.green + "50" : C.border}`,
+                                  background: isActive ? `${C.green}15` : "transparent",
+                                  color: isActive ? C.green : C.muted, fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                                }}>
+                                {isActive ? "✓ Active" : "Set Active"}
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
+                                style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                                ✕
+                              </button>
+                            </>
+                          )}
                           <span style={{ color: C.dim, fontSize: 16 }}>{isSelected ? "▾" : "▸"}</span>
                         </div>
                       </div>
