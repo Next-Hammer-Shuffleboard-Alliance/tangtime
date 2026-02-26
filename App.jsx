@@ -3889,6 +3889,25 @@ function AdminApp({ user, myRole }) {
     } catch (e) { setError(e.message); }
   };
 
+  const deleteSeason = async (sId, sName) => {
+    if (!window.confirm(`Delete season "${sName}" and all its divisions? This cannot be undone.`)) return;
+    try {
+      // Delete divisions first
+      await qAuth("divisions", `season_id=eq.${sId}`, "DELETE");
+      await qAuth("seasons", `id=eq.${sId}`, "DELETE");
+      setSuccess(`Season "${sName}" deleted.`);
+      if (selectedManageSeason === sId) { setSelectedManageSeason(null); setAllDivisions([]); }
+      await loadAllSeasons();
+    } catch (e) { setError(e.message); }
+  };
+
+  const updateDivField = async (divId, field, value) => {
+    try {
+      await qAuth("divisions", `id=eq.${divId}`, "PATCH", { [field]: value });
+      setAllDivisions(prev => prev.map(d => d.id === divId ? { ...d, [field]: value } : d));
+    } catch (e) { setError(e.message); }
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}dd`, backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
@@ -4107,6 +4126,9 @@ function AdminApp({ user, myRole }) {
                       <input type="date" value={newSeasonEnd} onChange={e => setNewSeasonEnd(e.target.value)} style={inputStyle} />
                     </div>
                   </div>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 10, padding: "8px 10px", background: `${C.amber}08`, borderRadius: 6, border: `1px solid ${C.amber}15` }}>
+                    💡 6 default divisions will be created (Mon & Tue — Pilot, Cherry, Hammer). You can add, remove, or edit them after.
+                  </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => setShowCreateSeason(false)}
                       style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, cursor: "pointer" }}>
@@ -4146,7 +4168,7 @@ function AdminApp({ user, myRole }) {
                             {s.end_date ? ` — ${new Date(s.end_date + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}
                           </div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <button onClick={(e) => { e.stopPropagation(); toggleSeasonActive(s.id, isActive); }}
                             style={{
                               padding: "5px 10px", borderRadius: 6, border: `1px solid ${isActive ? C.green + "50" : C.border}`,
@@ -4155,6 +4177,12 @@ function AdminApp({ user, myRole }) {
                             }}>
                             {isActive ? "✓ Active" : "Set Active"}
                           </button>
+                          {!isActive && (
+                            <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
+                              style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                              ✕
+                            </button>
+                          )}
                           <span style={{ color: C.dim, fontSize: 16 }}>{isSelected ? "▾" : "▸"}</span>
                         </div>
                       </div>
@@ -4165,16 +4193,13 @@ function AdminApp({ user, myRole }) {
                       <div style={{ padding: "10px 0 0 12px", borderLeft: `2px solid ${C.amber}30`, marginLeft: 16 }}>
                         {allDivisions.length === 0 ? (
                           <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim, marginBottom: 10 }}>No divisions yet</div>
-                        ) : allDivisions.map(d => (
+                        ) : allDivisions.map(d => {
+                          const editInputStyle = { padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.m, fontSize: 11, outline: "none", width: "100%" };
+                          return (
                           <Card key={d.id} style={{ padding: "12px 14px", marginBottom: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                              <div>
-                                <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
-                                  {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
-                                </div>
-                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 2 }}>
-                                  {d.time_slot || "No time"} · ${((d.price_cents || 65000) / 100).toFixed(0)} · {d.max_teams || 16} teams max
-                                </div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                              <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
+                                {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <button onClick={(e) => { e.stopPropagation(); toggleRegistration(d.id, d.registration_open); }}
@@ -4192,8 +4217,29 @@ function AdminApp({ user, myRole }) {
                                 </button>
                               </div>
                             </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                              <div>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Time</div>
+                                <input value={d.time_slot || ""} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, time_slot: e.target.value } : x))}
+                                  onBlur={e => updateDivField(d.id, "time_slot", e.target.value)}
+                                  style={editInputStyle} />
+                              </div>
+                              <div>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Price ($)</div>
+                                <input type="number" value={((d.price_cents || 65000) / 100)} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, price_cents: parseInt(e.target.value) * 100 || 65000 } : x))}
+                                  onBlur={e => updateDivField(d.id, "price_cents", parseInt(e.target.value) * 100 || 65000)}
+                                  style={editInputStyle} />
+                              </div>
+                              <div>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Max Teams</div>
+                                <input type="number" value={d.max_teams || 16} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, max_teams: parseInt(e.target.value) || 16 } : x))}
+                                  onBlur={e => updateDivField(d.id, "max_teams", parseInt(e.target.value) || 16)}
+                                  style={editInputStyle} />
+                              </div>
+                            </div>
                           </Card>
-                        ))}
+                          );
+                        })}
 
                         {/* Add division */}
                         {!showAddDiv ? (
