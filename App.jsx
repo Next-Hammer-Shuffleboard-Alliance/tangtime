@@ -1301,20 +1301,21 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             ))}
           </div>
           {rows.map((t, i) => {
-            const useTop5 = !hasPlayoffData;
-            const isTop5 = t.displayRank <= 5;
-            const lastTop5Idx = useTop5 ? rows.reduce((last, r, j) => r.displayRank <= 5 ? j : last, -1) : -1;
+            const playoffSpots = selDiv?.playoff_spots || 5;
+            const useTopN = !hasPlayoffData;
+            const isTopN = t.displayRank <= playoffSpots;
+            const lastTopNIdx = useTopN ? rows.reduce((last, r, j) => r.displayRank <= playoffSpots ? j : last, -1) : -1;
             return (
             <div key={t.team_id || i} onClick={() => goPage("teams", { teamId: t.team_id })} style={{
               display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
               alignItems: "center", padding: "12px 12px", cursor: "pointer",
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
-              background: useTop5 && isTop5 ? C.amberGlow : "transparent", position: "relative",
+              background: useTopN && isTopN ? C.amberGlow : "transparent", position: "relative",
             }}>
-              {useTop5 && i === lastTop5Idx && i < rows.length - 1 && (
+              {useTopN && i === lastTopNIdx && i < rows.length - 1 && (
                 <div style={{ position: "absolute", bottom: 0, left: 14, right: 14, height: 1, background: `repeating-linear-gradient(90deg, ${C.amber}50, ${C.amber}50 4px, transparent 4px, transparent 8px)` }} />
               )}
-              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: useTop5 && isTop5 ? C.amber : C.dim }}>{t.rankLabel}</span>
+              <span style={{ fontFamily: F.m, fontSize: 12, fontWeight: 800, color: useTopN && isTopN ? C.amber : C.dim }}>{t.rankLabel}</span>
               <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.team_name}</span>
                 {t.playoffRound && (
@@ -2799,6 +2800,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     if (!seasonId) return;
     (async () => {
       try {
+        // Load playoff_spots from divisions
+        const spotsMap = {};
+        divisions.forEach(d => { if (d.playoff_spots) spotsMap[d.id] = d.playoff_spots; });
+        setPlayoffSpotsMap(spotsMap);
+
         // Load standings for all divisions
         const divs = divisions.filter(d => d.has_data);
         const standingsMap = {};
@@ -3123,8 +3129,12 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>Standings</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>Playoff spots:</span>
-                    {[3, 4, 5, 6].map(n => (
-                      <button key={n} onClick={(e) => { e.stopPropagation(); setPlayoffSpotsMap(prev => ({ ...prev, [d.id]: n })); }}
+                    {[4, 5, 6, 7].map(n => (
+                      <button key={n} onClick={(e) => {
+                          e.stopPropagation();
+                          setPlayoffSpotsMap(prev => ({ ...prev, [d.id]: n }));
+                          qAuth("divisions", `id=eq.${d.id}`, "PATCH", { playoff_spots: n }).catch(err => console.error("Save playoff_spots:", err));
+                        }}
                         style={{
                           width: 24, height: 24, borderRadius: 6, border: "none", cursor: "pointer",
                           background: spots === n ? C.amber : C.surfAlt,
@@ -3394,7 +3404,7 @@ function AdminApp({ user, myRole }) {
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
       setSeasonData(seasons[0]);
-      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`);
+      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`);
       const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
       setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
     })();
@@ -4783,7 +4793,7 @@ function MainApp() {
 
   useEffect(() => {
     if (!selectedSeason) return;
-    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,team_seasons(team_id)`).then(d => {
+    q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
   }, [selectedSeason]);
