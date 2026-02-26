@@ -3069,7 +3069,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       <Card style={{ marginBottom: 16, padding: "14px 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700 }}>Postseason Setup</div>
+            <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>Postseason Setup</div>
             <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginTop: 2 }}>
               {Object.keys(confirmedDivWinners).length}/{activeDivs.length} div winners · {totalConfirmed} playoff teams
             </div>
@@ -3101,7 +3101,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                 background: isExpanded ? `${C.amber}08` : "transparent",
               }}>
               <div>
-                <span style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700 }}>
+                <span style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700, color: C.text }}>
                   {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
                 </span>
                 <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
@@ -3339,6 +3339,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 }
 
 function AdminApp({ user, myRole }) {
+  const [adminGroup, setAdminGroup] = useState("manage"); // "season" | "manage"
   const [tab, setTab] = useState("requests");
   const [divisionId, setDivisionId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
@@ -3524,10 +3525,29 @@ function AdminApp({ user, myRole }) {
       <main style={{ padding: "16px 16px 60px", maxWidth: 520, margin: "0 auto" }}>
         {success && <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.green }}>✓ {success}</span></div>}
         {error && <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}><span style={{ fontFamily: F.b, fontSize: 13, color: C.red }}>{error}</span><button onClick={() => setError(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", float: "right" }}>✕</button></div>}
-        <div style={{ display: "flex", gap: 3, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}`, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          {[["requests", `🔔${requests.length ? ` (${requests.length})` : " Reqs"}`], ["matches", "📋 Matches"], ["postseason", "🏆 Post"], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ flex: "0 0 auto", padding: "9px 8px", borderRadius: 8, border: "none", cursor: "pointer", background: tab === k ? C.amber : "transparent", color: tab === k ? C.bg : C.muted, fontFamily: F.m, fontSize: 10, fontWeight: 700, transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, whiteSpace: "nowrap" }}>
-              {k === "captains" ? <><CaptainBadge size={12} /> Caps</> : l}
+        <div style={{ display: "flex", gap: 3, marginBottom: 8, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+          {[["season", "🏟️ Season"], ["manage", "⚙️ Manage"]].map(([k, l]) => (
+            <button key={k} onClick={() => { setAdminGroup(k); setTab(k === "season" ? "matches" : "requests"); }} style={{
+              flex: 1, padding: "10px 0", borderRadius: 8, border: "none", cursor: "pointer",
+              background: adminGroup === k ? C.amber : "transparent",
+              color: adminGroup === k ? C.bg : C.muted,
+              fontFamily: F.m, fontSize: 12, fontWeight: 700, transition: "all 0.15s",
+            }}>{l}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 3, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+          {(adminGroup === "season"
+            ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
+            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]]
+          ).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
+              background: tab === k ? `${C.amber}25` : "transparent",
+              color: tab === k ? C.amber : C.muted,
+              fontFamily: F.m, fontSize: 11, fontWeight: tab === k ? 700 : 500, transition: "all 0.15s",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+            }}>
+              {k === "captains" ? <><CaptainBadge size={13} /> Captains</> : l}
             </button>
           ))}
         </div>
