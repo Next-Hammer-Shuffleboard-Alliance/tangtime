@@ -3801,7 +3801,8 @@ function AdminApp({ user, myRole }) {
       const venueId = existing?.[0]?.venue_id;
       if (!venueId) { setError("No venue found — create at least one season in Supabase first"); setSeasonsSaving(false); return; }
 
-      const body = { name: newSeasonName.trim(), start_date: newSeasonStart, is_active: false, venue_id: venueId };
+      const slug = newSeasonName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const body = { name: newSeasonName.trim(), start_date: newSeasonStart, is_active: false, venue_id: venueId, slug };
       if (newSeasonEnd) body.end_date = newSeasonEnd;
       const created = await qAuth("seasons", "", "POST", body);
       const newId = created?.[0]?.id || created?.id;
@@ -3816,6 +3817,7 @@ function AdminApp({ user, myRole }) {
         await qAuth("divisions", "", "POST", {
           season_id: newId,
           name: `${cap(day)} ${cap(level)}`,
+          slug: `${day}-${level}`,
           day_of_week: day,
           level,
           time_slot: level === "pilot" ? "6:30 PM" : level === "cherry" ? "7:30 PM" : "8:30 PM",
@@ -3844,6 +3846,7 @@ function AdminApp({ user, myRole }) {
       await qAuth("divisions", "", "POST", {
         season_id: selectedManageSeason,
         name,
+        slug: `${newDivDay}-${newDivLevel}`,
         day_of_week: newDivDay,
         level: newDivLevel,
         time_slot: newDivTime || null,
