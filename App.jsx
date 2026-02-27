@@ -669,7 +669,7 @@ function Footer() {
         <NHSALogo size={20} />
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
       </div>
-      <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, opacity: 0.4 }}>v28bg18</span>
+      <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, opacity: 0.4 }}>v28bg19</span>
     </div>
   );
 }
@@ -4221,7 +4221,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       setScoreInputs({ team1: "", team2: "" });
 
       // Auto-advance bracket: populate next round
-      if (isBracket) await advanceBracket(groupName, matchNumber, winnerId, match);
+      if (isBracket) {
+        console.log("[TT-SAVE] About to call advanceBracket:", { groupName, matchNumber, winnerId, matchTeam1: match?.team1_id, matchTeam2: match?.team2_id });
+        await advanceBracket(groupName, matchNumber, winnerId, match);
+        console.log("[TT-SAVE] advanceBracket returned successfully");
+      }
     } catch (e) { setError(e.message); }
     setSaving(null);
   };
@@ -4301,26 +4305,33 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     const loserId = String(match.team1_id) === wId ? match.team2_id : match.team1_id;
     const loserName = String(match.team1_id) === wId ? match.team2_name : match.team1_name;
 
+    console.log("[TT-ADV] advanceBracket called:", { round, matchNum, winnerId: wId, winnerName, loserId, loserName });
+    console.log("[TT-ADV] match object:", JSON.stringify(match));
+
     try {
       // R16 → QF: matches 1&5→QF1, 2&6→QF2, 3&7→QF3, 4&8→QF4
       if (round === "R16") {
         const qfMatch = matchNum <= 4 ? matchNum : matchNum - 4;
         const isTeam1 = matchNum <= 4;
+        console.log("[TT-ADV] R16→QF: qfMatch=", qfMatch, "isTeam1=", isTeam1);
         await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.QF[qfMatch - 1] || qfMatch);
+        console.log("[TT-ADV] QF upsert complete");
       }
       // QF → SF: 1&2→SF1, 3&4→SF2
       if (round === "QF") {
         const sfMatch = matchNum <= 2 ? 1 : 2;
         const isTeam1 = matchNum % 2 === 1;
+        console.log("[TT-ADV] QF→SF: sfMatch=", sfMatch, "isTeam1=", isTeam1);
         await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.SF[sfMatch - 1] || sfMatch);
       }
       // SF → FIN + 3RD
       if (round === "SF") {
+        console.log("[TT-ADV] SF→FIN+3RD");
         await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName, BRACKET_COURTS.FIN[0]);
         await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName, BRACKET_COURTS["3RD"][0]);
       }
     } catch (e) {
-      console.error("advanceBracket error:", e);
+      console.error("[TT-ADV] advanceBracket error:", e);
       setError("Bracket advance failed: " + e.message);
     }
   };
@@ -4342,19 +4353,23 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   };
 
   const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName, court) => {
+    console.log("[TT-UPS] upsertBracketSlot:", { round, matchNum, isTeam1, teamId, teamName, court });
     // Query DB for existing match (don't rely on React state which may be stale)
     const existing = await q("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`);
     const match = existing?.[0];
+    console.log("[TT-UPS] existing match from DB:", match ? "FOUND" : "NOT FOUND", match);
 
     if (match) {
       const field = isTeam1
         ? { team1_id: teamId, team1_name: teamName }
         : { team2_id: teamId, team2_name: teamName };
+      console.log("[TT-UPS] PATCHing existing:", field);
       await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`, "PATCH", field);
       setBracketMatches(prev => ({
         ...prev,
         [round]: (prev[round] || []).map(m => m.match_number === matchNum ? { ...m, ...field } : m),
       }));
+      console.log("[TT-UPS] PATCH + state update done");
     } else {
       const data = {
         season_id: seasonId, group_name: round, match_number: matchNum, status: "scheduled",
@@ -4362,11 +4377,14 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         team2_id: isTeam1 ? null : teamId, team2_name: isTeam1 ? null : teamName,
         court: court || null,
       };
-      await qAuth("group_matches", "", "POST", data);
-      setBracketMatches(prev => ({
-        ...prev,
-        [round]: [...(prev[round] || []), data],
-      }));
+      console.log("[TT-UPS] POSTing new:", data);
+      const result = await qAuth("group_matches", "", "POST", data);
+      console.log("[TT-UPS] POST result:", result);
+      setBracketMatches(prev => {
+        const updated = { ...prev, [round]: [...(prev[round] || []), data] };
+        console.log("[TT-UPS] Updated bracketMatches keys:", Object.keys(updated), "QF count:", (updated.QF || []).length);
+        return updated;
+      });
     }
   };
 
@@ -5405,11 +5423,24 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                         </button>
                       )}
                       {hasR16 && (
-                        <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
-                          disabled={saving === "bracket"}
-                          style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
-                          🔄 Regenerate
-                        </button>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button onClick={async () => {
+                            const gm = await q("group_matches", `season_id=eq.${seasonId}&order=group_name,match_number`);
+                            const bracketMap = {};
+                            const bracketRoundsList = ["R16", "QF", "SF", "FIN", "3RD"];
+                            gm.forEach(m => { if (bracketRoundsList.includes(m.group_name)) { if (!bracketMap[m.group_name]) bracketMap[m.group_name] = []; bracketMap[m.group_name].push(m); } });
+                            setBracketMatches(bracketMap);
+                            console.log("[TT-REFRESH] Bracket data refreshed:", Object.keys(bracketMap).map(k => `${k}:${bracketMap[k].length}`).join(", "));
+                          }}
+                            style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                            🔄 Refresh
+                          </button>
+                          <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
+                            disabled={saving === "bracket"}
+                            style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                            ♻️ Regenerate
+                          </button>
+                        </div>
                       )}
                     </div>
 
