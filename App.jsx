@@ -1576,6 +1576,25 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
     });
   }, [activeSeason]);
 
+  // Poll for match updates every 15s
+  useEffect(() => {
+    if (!activeSeason || !groups) return;
+    const poll = setInterval(async () => {
+      try {
+        const gm = await q("group_matches", `season_id=eq.${activeSeason.id}&order=group_name,match_number`);
+        if (gm?.length > 0) {
+          const matchMap = {};
+          gm.forEach(m => {
+            if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+            matchMap[m.group_name].push(m);
+          });
+          setGroupMatches(matchMap);
+        }
+      } catch {}
+    }, 15000);
+    return () => clearInterval(poll);
+  }, [activeSeason, !!groups]);
+
   // Shuffle groups for animation
   const shuffleGroups = (grps) => {
     const allTeams = Object.values(grps).flat().sort(() => Math.random() - 0.5);
@@ -2066,27 +2085,36 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
                       </div>
-                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 }))).map((s, idx) => (
+                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 }))).map((s, idx) => {
+                        const groupDone = completed === gMatches.length && completed > 0;
+                        const advances = completed > 0 && idx < 2;
+                        return (
                         <div key={s.team_id} style={{
                           display: "flex", alignItems: "center", gap: 4, padding: "5px 4px",
                           borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
-                          background: completed > 0 && idx < 2 ? `${C.green}06` : "transparent",
-                          borderRadius: idx < 2 ? 4 : 0,
+                          background: advances ? `${C.green}06` : "transparent",
+                          borderRadius: advances ? 4 : 0,
                           cursor: "pointer",
                         }}
                         onClick={() => goPage("teams", { teamId: s.team_id })}>
                           <TeamAvatar name={s.team_name} size={18} />
                           <span style={{
                             flex: 1, fontFamily: F.b, fontSize: 11,
-                            color: completed > 0 && idx < 2 ? C.green : C.text,
+                            color: advances ? C.green : C.text,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
                             {s.team_name}
                           </span>
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.dim, textAlign: "center" }}>{s.l}</span>
+                          {groupDone && (
+                            <span style={{ width: 18, textAlign: "center", fontSize: 11, color: advances ? C.green : C.red }}>
+                              {advances ? "✓" : "✕"}
+                            </span>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Match results */}
@@ -2137,28 +2165,6 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
               })}
             </div>
           )}
-
-          {/* Seed legend */}
-          <Card style={{ marginTop: 12, padding: "10px 14px" }}>
-            <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
-              Division Key
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {[
-                { code: "MH", full: "Mon Hammer" },
-                { code: "MC", full: "Mon Cherry" },
-                { code: "MP", full: "Mon Pilot" },
-                { code: "TH", full: "Tue Hammer" },
-                { code: "TC", full: "Tue Cherry" },
-                { code: "TP", full: "Tue Pilot" },
-                { code: "WC", full: "Wild Card" },
-              ].map(s => (
-                <span key={s.code} style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>
-                  <span style={{ color: s.code === "WC" ? C.blue : C.text, fontWeight: 600 }}>{s.code}</span> {s.full}
-                </span>
-              ))}
-            </div>
-          </Card>
         </>
       )}
 
@@ -6988,7 +6994,12 @@ export default function TangTime() {
 }
 
 function MainApp() {
-  const [page, setPage] = useState("home");
+  const validPages = ["home", "standings", "matches", "playoffs", "teams", "fame"];
+  const getPageFromHash = () => {
+    const hash = window.location.hash.replace("#", "").split("?")[0];
+    return validPages.includes(hash) ? hash : "home";
+  };
+  const [page, setPage] = useState(getPageFromHash);
   const [pageData, setPageData] = useState({});
   const [seasons, setSeasons] = useState([]);
   const [selectedSeason, setSelectedSeason] = useState(null);
@@ -7032,7 +7043,18 @@ function MainApp() {
   const goPage = useCallback((p, data = {}) => {
     setPage(p);
     setPageData(data);
+    window.location.hash = p === "home" ? "" : p;
     mainRef.current?.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const p = getPageFromHash();
+      setPage(p);
+      setPageData({});
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   const renderPage = () => {
