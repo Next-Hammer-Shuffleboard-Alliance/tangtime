@@ -4338,35 +4338,25 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
         await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.QF[qfMatch - 1] || qfMatch);
       }
       // QF → SF: 1&2→SF1, 3&4→SF2
-      // When reaching SF, mark team as "banquet" (Final 4) in playoff_appearances
       if (round === "QF") {
         const sfMatch = matchNum <= 2 ? 1 : 2;
         const isTeam1 = matchNum % 2 === 1;
         await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.SF[sfMatch - 1] || sfMatch);
         // Update playoff_appearances: this team reached the banquet (Final 4)
-        await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "banquet" }).catch(() => {});
-        // Add banquet championship entry
-        await qAuth("championships", "", "POST", { season_id: seasonId, team_id: winnerId, team_name: winnerName, type: "banquet" }).catch(() => {});
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "banquet" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances to banquet:", e.message); }
       }
       // SF → FIN + 3RD
       if (round === "SF") {
         await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName, BRACKET_COURTS.FIN[0]);
         await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName, BRACKET_COURTS["3RD"][0]);
       }
-      // FIN complete → champion + finalist designations
+      // FIN complete → update playoff_appearances only (championships written at season complete)
       if (round === "FIN") {
-        await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "champion" }).catch(() => {});
-        await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${loserId}`, "PATCH", { round_reached: "finalist" }).catch(() => {});
-        // Remove banquet entries for finalists (they get upgraded)
-        await qAuth("championships", `season_id=eq.${seasonId}&team_id=eq.${winnerId}&type=eq.banquet`, "DELETE").catch(() => {});
-        await qAuth("championships", `season_id=eq.${seasonId}&team_id=eq.${loserId}&type=eq.banquet`, "DELETE").catch(() => {});
-        // Add champion + finalist entries
-        await qAuth("championships", "", "POST", { season_id: seasonId, team_id: winnerId, team_name: winnerName, type: "league" }).catch(() => {});
-        await qAuth("championships", "", "POST", { season_id: seasonId, team_id: loserId, team_name: loserName, type: "finalist" }).catch(() => {});
-        // Increment winner's championship count
-        const teamData = await q("teams", `id=eq.${winnerId}&select=championship_count`);
-        const currentCount = teamData?.[0]?.championship_count || 0;
-        await qAuth("teams", `id=eq.${winnerId}`, "PATCH", { championship_count: currentCount + 1 }).catch(() => {});
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "champion" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances champion:", e.message); }
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${loserId}`, "PATCH", { round_reached: "finalist" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances finalist:", e.message); }
       }
     } catch (e) {
       setError("Bracket advance failed: " + e.message);
@@ -5634,7 +5624,75 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
                     {(() => {
                       const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
                       if (!fin) return null;
-                      const champName = String(fin.winner_id) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+                      const champId = fin.winner_id;
+                      const champName = String(champId) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+                      const finalistId = String(champId) === String(fin.team1_id) ? fin.team2_id : fin.team1_id;
+                      const finalistName = String(champId) === String(fin.team1_id) ? fin.team2_name : fin.team1_name;
+                      // Collect SF teams (banquet = Final 4 who lost in SF)
+                      const sfMatches = bracketMatches["SF"] || [];
+                      const banquetTeams = sfMatches.filter(m => m.status === "completed").map(m => {
+                        const loserId = String(m.winner_id) === String(m.team1_id) ? m.team2_id : m.team1_id;
+                        const loserName = String(m.winner_id) === String(m.team1_id) ? m.team2_name : m.team1_name;
+                        return { id: loserId, name: loserName };
+                      });
+
+                      const completeSeason = async () => {
+                        if (!window.confirm("Mark this season as completed? This will write championship data and finalize all results.")) return;
+                        setSaving("complete");
+                        setError(null);
+                        const errors = [];
+
+                        // 1. Update playoff_appearances round_reached
+                        const roundUpdates = [
+                          { teamId: champId, round: "champion" },
+                          { teamId: finalistId, round: "finalist" },
+                          ...banquetTeams.map(t => ({ teamId: t.id, round: "banquet" })),
+                        ];
+                        for (const { teamId, round } of roundUpdates) {
+                          try {
+                            await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${teamId}`, "PATCH", { round_reached: round });
+                          } catch (e) { errors.push(`playoff_appearances ${round}: ${e.message}`); }
+                        }
+
+                        // 2. Clear any existing championship entries for this season (idempotent)
+                        try {
+                          await qAuth("championships", `season_id=eq.${seasonId}&type=in.(league,finalist,banquet)`, "DELETE");
+                        } catch (e) { errors.push(`clear old champs: ${e.message}`); }
+
+                        // 3. Write championship entries
+                        const champEntries = [
+                          { season_id: seasonId, team_id: champId, team_name: champName, type: "league" },
+                          { season_id: seasonId, team_id: finalistId, team_name: finalistName, type: "finalist" },
+                          ...banquetTeams.map(t => ({ season_id: seasonId, team_id: t.id, team_name: t.name, type: "banquet" })),
+                        ];
+                        for (const entry of champEntries) {
+                          try {
+                            await qAuth("championships", "", "POST", entry);
+                          } catch (e) { errors.push(`championship ${entry.type} ${entry.team_name}: ${e.message}`); }
+                        }
+
+                        // 4. Increment winner's championship count
+                        try {
+                          const teamData = await q("teams", `id=eq.${champId}&select=championship_count`);
+                          const currentCount = teamData?.[0]?.championship_count || 0;
+                          await qAuth("teams", `id=eq.${champId}`, "PATCH", { championship_count: currentCount + 1 });
+                        } catch (e) { errors.push(`championship_count: ${e.message}`); }
+
+                        // 5. Mark season as completed
+                        try {
+                          await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { is_active: false });
+                        } catch (e) { errors.push(`season is_active: ${e.message}`); }
+
+                        if (errors.length) {
+                          setError("Some writes failed:\n" + errors.join("\n"));
+                          console.error("Complete season errors:", errors);
+                        } else {
+                          setSuccess("Season completed! Reloading...");
+                          setTimeout(() => { window.location.reload(); }, 2000);
+                        }
+                        setSaving(null);
+                      };
+
                       return (
                         <Card style={{
                           padding: "16px", textAlign: "center", marginTop: 10,
@@ -5642,30 +5700,32 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
                           border: `1px solid ${C.amber}25`,
                         }}>
                           <div style={{ fontSize: 28, marginBottom: 4 }}>🏆</div>
-                          <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800, color: C.amber, marginBottom: 6 }}>
+                          <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800, color: C.amber, marginBottom: 2 }}>
                             {champName}
                           </div>
-                          <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginBottom: 12 }}>
-                            Season Champion
+                          <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginBottom: 4 }}>
+                            🥈 {finalistName}
                           </div>
-                          {activeSeason?.is_active !== false && (
-                            <button onClick={async () => {
-                              if (!window.confirm("Mark this season as completed? This will finalize all results.")) return;
-                              setSaving("complete");
-                              try {
-                                await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { is_active: false });
-                                setSuccess("Season marked as completed!");
-                                setTimeout(() => { setSuccess(null); window.location.reload(); }, 2000);
-                              } catch (e) { setError(e.message); }
-                              setSaving(null);
-                            }}
+                          {banquetTeams.length > 0 && (
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginBottom: 10 }}>
+                              🎖️ {banquetTeams.map(t => t.name).join(" · ")}
+                            </div>
+                          )}
+                          {activeSeason?.is_active !== false ? (
+                            <button onClick={completeSeason}
                               disabled={!!saving}
                               style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: C.green, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                              {saving === "complete" ? "Completing..." : "✓ Complete Season"}
+                              {saving === "complete" ? "Writing data..." : "✓ Complete Season"}
                             </button>
-                          )}
-                          {activeSeason?.is_active === false && (
-                            <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                              <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
+                              <button onClick={completeSeason}
+                                disabled={!!saving}
+                                style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                                {saving === "complete" ? "Repairing..." : "🔄 Repair Season Data"}
+                              </button>
+                            </div>
                           )}
                         </Card>
                       );
@@ -5720,7 +5780,11 @@ function AdminApp({ user, myRole }) {
   // Load season + divisions once on mount
   useEffect(() => {
     (async () => {
-      const seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date&limit=1");
+      let seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date,is_active&limit=1");
+      if (!seasons?.length) {
+        // No active season - load most recent
+        seasons = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active&limit=1");
+      }
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
       setSeasonData(seasons[0]);
@@ -7708,7 +7772,7 @@ function MainApp() {
       }}>
         {(() => {
           const sp = getSeasonProgress(selectedSeason);
-          const showPlayoffs = sp.status === "postseason" || sp.status === "completed" || hasPlayoffData;
+          const showPlayoffs = hasPlayoffData;
           return [
             ["home", "⌂", "Home"],
             ["standings", "☰", "Standings"],
