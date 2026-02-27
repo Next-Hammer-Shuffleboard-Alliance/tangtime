@@ -181,8 +181,8 @@ function computeRanks(standings) {
   });
 }
 
-// Group stage standings with H2H tiebreaker
-function computeGroupStandings(teamList, matches) {
+// Group stage standings - sort by W-L, flag ties
+function computeGroupStandings(teamList, matches, overrideOrder = null) {
   const st = {};
   teamList.forEach(t => {
     st[t.team_id] = { team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 };
@@ -199,43 +199,26 @@ function computeGroupStandings(teamList, matches) {
     }
   });
 
-  // Sort by W desc, then H2H
+  // If admin override order exists, use that
+  if (overrideOrder && overrideOrder.length === teamList.length) {
+    return overrideOrder.map((tid, idx) => {
+      const s = st[tid];
+      return s ? { ...s, rank: idx + 1, tied: false } : null;
+    }).filter(Boolean);
+  }
+
+  // Sort by W desc, L asc
   const arr = Object.values(st).sort((a, b) => b.w - a.w || a.l - b.l);
 
-  // Detect ties and resolve with H2H
-  const resolved = [];
-  let i = 0;
-  while (i < arr.length) {
-    // Find cluster of teams with same record
-    let j = i;
-    while (j < arr.length && arr[j].w === arr[i].w && arr[j].l === arr[i].l) j++;
-    const cluster = arr.slice(i, j);
-
-    if (cluster.length === 1) {
-      resolved.push({ ...cluster[0], tieStatus: null });
-    } else if (cluster.length === 2) {
-      // 2-way tie: check H2H
-      const h2h = completed.find(m =>
-        (m.team1_id === cluster[0].team_id && m.team2_id === cluster[1].team_id) ||
-        (m.team1_id === cluster[1].team_id && m.team2_id === cluster[0].team_id)
-      );
-      if (h2h?.winner_id === cluster[0].team_id) {
-        resolved.push({ ...cluster[0], tieStatus: "h2h" });
-        resolved.push({ ...cluster[1], tieStatus: "h2h" });
-      } else if (h2h?.winner_id === cluster[1].team_id) {
-        resolved.push({ ...cluster[1], tieStatus: "h2h" });
-        resolved.push({ ...cluster[0], tieStatus: "h2h" });
-      } else {
-        // No H2H result or draw — needs speed shuffle
-        cluster.forEach(t => resolved.push({ ...t, tieStatus: "speed" }));
-      }
-    } else {
-      // 3+ way tie — needs speed shuffle
-      cluster.forEach(t => resolved.push({ ...t, tieStatus: "speed" }));
-    }
-    i = j;
-  }
-  return resolved;
+  // Flag ties at the cutline (positions 2/3 matter for advancement)
+  return arr.map((team, idx) => {
+    const sameRecord = arr.filter(t => t.w === team.w && t.l === team.l);
+    const tied = sameRecord.length > 1;
+    // Check if this tie spans the cutline (top 2 advance)
+    const positions = sameRecord.map(t => arr.indexOf(t));
+    const crossesCutline = tied && positions.some(p => p < 2) && positions.some(p => p >= 2);
+    return { ...team, rank: idx + 1, tied, crossesCutline };
+  });
 }
 
 function getSeasonProgress(season) {
@@ -1603,13 +1586,14 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
   const [lotteryAnimating, setLotteryAnimating] = useState(false);
   const [groupMatches, setGroupMatches] = useState({});
   const [bracketMatches, setBracketMatches] = useState({});
+  const [groupOverrides, setGroupOverrides] = useState({});
 
   useEffect(() => {
     if (!activeSeason) { setLoading(false); return; }
     Promise.all([
       q("playoff_groups", `season_id=eq.${activeSeason.id}&select=group_name,team_id,team_name,seed_label,division_id,court&order=group_name,position`),
       q("playoff_appearances", `season_id=eq.${activeSeason.id}&select=team_id,seed_label,round_reached`),
-      q("seasons", `id=eq.${activeSeason.id}&select=lottery_data`),
+      q("seasons", `id=eq.${activeSeason.id}&select=lottery_data,group_overrides`),
       q("group_matches", `season_id=eq.${activeSeason.id}&order=group_name,match_number`),
     ]).then(([grps, pa, seasonInfo, gm]) => {
       if (grps?.length > 0) {
@@ -1622,6 +1606,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       }
       setPlayoffTeams(pa || []);
       if (seasonInfo?.[0]?.lottery_data) setLotteryData(seasonInfo[0].lottery_data);
+      if (seasonInfo?.[0]?.group_overrides) setGroupOverrides(seasonInfo[0].group_overrides);
       if (gm?.length > 0) {
         const matchMap = {};
         const bracketMap = {};
@@ -2118,9 +2103,9 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                 const completed = gMatches.filter(m => m.status === "completed").length;
                 const court = teamList[0]?.court;
 
-                // Calculate standings with H2H tiebreaker
-                const standingsArr = computeGroupStandings(teamList, gMatches);
-                const hasTies = standingsArr.some(s => s.tieStatus === "speed");
+                // Calculate standings with admin overrides
+                const standingsArr = computeGroupStandings(teamList, gMatches, groupOverrides[groupName]);
+                const hasCutlineTie = standingsArr.some(s => s.crossesCutline) && !groupOverrides[groupName];
 
                 return (
                   <Card key={groupName} style={{ padding: "12px 14px", marginBottom: 10 }}>
@@ -2153,9 +2138,9 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
                         <span style={{ width: 28 }} />
                       </div>
-                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0, tieStatus: null }))).map((s, idx) => {
+                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0, crossesCutline: false }))).map((s, idx) => {
                         const groupDone = completed === gMatches.length && completed > 0;
-                        const advances = completed > 0 && idx < 2 && !hasTies;
+                        const advances = groupDone && idx < 2 && !hasCutlineTie;
                         return (
                         <div key={s.team_id} style={{
                           display: "flex", alignItems: "center", gap: 4, padding: "5px 4px",
@@ -2176,17 +2161,16 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.dim, textAlign: "center" }}>{s.l}</span>
                           <span style={{ width: 28, textAlign: "center", fontSize: 10 }}>
-                            {groupDone && !hasTies && (advances ? <span style={{ color: C.green }}>✓</span> : <span style={{ color: C.red }}>✕</span>)}
-                            {s.tieStatus === "h2h" && <span style={{ fontFamily: F.m, fontSize: 7, color: C.blue }}>H2H</span>}
-                            {s.tieStatus === "speed" && <span style={{ fontFamily: F.m, fontSize: 7, color: C.red }}>TIE</span>}
+                            {groupDone && !hasCutlineTie && (advances ? <span style={{ color: C.green }}>✓</span> : <span style={{ color: C.red }}>✕</span>)}
+                            {s.crossesCutline && hasCutlineTie && <span style={{ fontFamily: F.m, fontSize: 7, color: C.amber }}>TIE</span>}
                           </span>
                         </div>
                         );
                       })}
-                      {hasTies && completed === gMatches.length && (
+                      {hasCutlineTie && (
                         <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 4, background: `${C.amber}10`, border: `1px solid ${C.amber}20` }}>
                           <span style={{ fontFamily: F.m, fontSize: 9, color: C.amber }}>
-                            ⚡ Speed shuffle needed to break tie
+                            ⚡ Tiebreaker pending
                           </span>
                         </div>
                       )}
@@ -3592,6 +3576,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [courtAssignments, setCourtAssignments] = useState({}); // groupName -> court number
   const [groupMatches, setGroupMatches] = useState({}); // groupName -> [{match_number, team1_id, team1_name, team2_id, team2_name, ...}]
   const [bracketMatches, setBracketMatches] = useState({}); // "R16"->[], "QF"->[], "SF"->[], "F"->[], "3RD"->[]
+  const [groupOverrides, setGroupOverrides] = useState({}); // groupName -> [team_id ordered]
   const [editingScore, setEditingScore] = useState(null); // {groupName, matchNumber}
   const [scoreInputs, setScoreInputs] = useState({ team1: "", team2: "" });
   const [success, setSuccess] = useState(null);
@@ -3712,6 +3697,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
               setGroupMatches(matchMap);
               setBracketMatches(bracketMap);
             }
+
+            // Load group overrides
+            const seasonInfo = await q("seasons", `id=eq.${seasonId}&select=group_overrides`);
+            if (seasonInfo?.[0]?.group_overrides) setGroupOverrides(seasonInfo[0].group_overrides);
           }
         } catch {}
 
@@ -4232,18 +4221,18 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     setSaving("bracket");
     setError(null);
     try {
-      // Compute standings for each group
+      // Compute standings for each group using overrides
       const groupStandings = {};
       Object.entries(groups).forEach(([gName, teamList]) => {
-        groupStandings[gName] = computeGroupStandings(teamList, groupMatches[gName] || []);
+        groupStandings[gName] = computeGroupStandings(teamList, groupMatches[gName] || [], groupOverrides[gName]);
       });
 
-      // Check for unresolved ties
-      const hasSpeedTies = Object.values(groupStandings).some(st =>
-        st.some(s => s.tieStatus === "speed")
+      // Check for unresolved cutline ties
+      const hasUnresolved = Object.entries(groupStandings).some(([gName, st]) =>
+        st.some(s => s.crossesCutline) && !groupOverrides[gName]
       );
-      if (hasSpeedTies) {
-        setError("Cannot generate bracket: unresolved ties need speed shuffle first.");
+      if (hasUnresolved) {
+        setError("Cannot generate bracket: resolve all tied groups first.");
         setSaving(null);
         return;
       }
@@ -4302,6 +4291,22 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       await upsertBracketSlot("F", 1, matchNum === 1, winnerId, winnerName);
       await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName);
     }
+  };
+
+  // Admin designates which tied team advances from a group
+  const designateAdvance = async (groupName, advancingTeamId, standings) => {
+    // Build ordered list: move advancing team into position 2 if tied at cutline
+    const order = standings.map(s => s.team_id);
+    const advIdx = order.indexOf(advancingTeamId);
+    if (advIdx > 1) {
+      // Swap with whoever is at position 1 (2nd place)
+      [order[1], order[advIdx]] = [order[advIdx], order[1]];
+    }
+    const updated = { ...groupOverrides, [groupName]: order };
+    setGroupOverrides(updated);
+    try {
+      await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { group_overrides: updated });
+    } catch (e) { setError(e.message); }
   };
 
   const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName) => {
@@ -5095,8 +5100,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                           else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
                         }
                       });
-                      const standingsArr = computeGroupStandings(groups[gName] || [], gMatches);
-                      const hasTies = standingsArr.some(s => s.tieStatus === "speed");
+                      const standingsArr = computeGroupStandings(groups[gName] || [], gMatches, groupOverrides[gName]);
+                      const groupDone = completed === gMatches.length && completed > 0;
+                      const hasCutlineTie = groupDone && standingsArr.some(s => s.crossesCutline);
+                      const isResolved = !!groupOverrides[gName];
 
                       return (
                         <Card key={gName} style={{ padding: "12px 14px", marginBottom: 10 }}>
@@ -5124,34 +5131,59 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                 <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
                                 <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
                                 <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
-                                <span style={{ width: 30 }} />
                               </div>
-                              {standingsArr.map((s, idx) => (
+                              {standingsArr.map((s, idx) => {
+                                const advances = groupDone && idx < 2 && (!hasCutlineTie || isResolved);
+                                return (
                                 <div key={s.team_id} style={{
                                   display: "flex", alignItems: "center", gap: 4, padding: "3px 0",
                                   borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                                  background: advances ? `${C.green}06` : "transparent",
                                 }}>
                                   <span style={{
                                     flex: 1, fontFamily: F.b, fontSize: 10,
-                                    color: idx < 2 ? C.green : C.muted,
+                                    color: advances ? C.green : C.muted,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
-                                    {idx < 2 ? "▲ " : ""}{s.team_name}
+                                    {advances ? "▲ " : ""}{s.team_name}
                                   </span>
                                   <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                                   <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
-                                  <span style={{ width: 30, fontFamily: F.m, fontSize: 7, textAlign: "center",
-                                    color: s.tieStatus === "h2h" ? C.blue : s.tieStatus === "speed" ? C.red : "transparent",
-                                  }}>
-                                    {s.tieStatus === "h2h" ? "H2H" : s.tieStatus === "speed" ? "TIE" : ""}
-                                  </span>
                                 </div>
-                              ))}
-                              {hasTies && completed === gMatches.length && (
-                                <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 4, background: `${C.red}10`, border: `1px solid ${C.red}20` }}>
-                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.red }}>
-                                    ⚡ Speed shuffle needed to break tie
-                                  </span>
+                                );
+                              })}
+                              {/* Tie resolution */}
+                              {hasCutlineTie && !isResolved && (() => {
+                                const tiedTeams = standingsArr.filter(s => s.crossesCutline);
+                                return (
+                                  <div style={{ marginTop: 6, padding: "6px", borderRadius: 6, background: `${C.amber}08`, border: `1px solid ${C.amber}20` }}>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.amber, marginBottom: 6 }}>
+                                      ⚡ Tie — pick who advances:
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                      {tiedTeams.map(t => (
+                                        <button key={t.team_id}
+                                          onClick={() => designateAdvance(gName, t.team_id, standingsArr)}
+                                          style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${C.green}30`, background: `${C.green}08`, color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600, cursor: "pointer", textAlign: "left" }}>
+                                          ✓ Advance {t.team_name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                              {isResolved && hasCutlineTie && (
+                                <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.green }}>✓ Tiebreaker resolved</span>
+                                  <button onClick={() => {
+                                    const updated = { ...groupOverrides };
+                                    delete updated[gName];
+                                    setGroupOverrides(updated);
+                                    qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { group_overrides: Object.keys(updated).length ? updated : null });
+                                  }}
+                                    style={{ padding: "2px 6px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 8, cursor: "pointer" }}>
+                                    Reset
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -5312,8 +5344,8 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   return gm.length > 0 && gm.every(m => m.status === "completed");
                 });
                 const hasUnresolvedTies = Object.entries(groups).some(([gName, teamList]) => {
-                  const st = computeGroupStandings(teamList, groupMatches[gName] || []);
-                  return st.some(s => s.tieStatus === "speed");
+                  const st = computeGroupStandings(teamList, groupMatches[gName] || [], groupOverrides[gName]);
+                  return st.some(s => s.crossesCutline) && !groupOverrides[gName];
                 });
                 const hasR16 = (bracketMatches["R16"] || []).length > 0;
                 const bracketRoundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", F: "Final", "3RD": "3rd Place" };
