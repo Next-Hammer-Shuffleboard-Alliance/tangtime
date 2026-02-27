@@ -182,6 +182,14 @@ function computeRanks(standings) {
 }
 
 // Group stage standings - sort by W-L, flag ties
+// R16 bracket labels: match_number -> { team1Label, team2Label }
+const R16_LABELS = {
+  1: { t1: "A1", t2: "B2" }, 2: { t1: "C1", t2: "D2" },
+  3: { t1: "E1", t2: "F2" }, 4: { t1: "G1", t2: "H2" },
+  5: { t1: "B1", t2: "A2" }, 6: { t1: "D1", t2: "C2" },
+  7: { t1: "F1", t2: "E2" }, 8: { t1: "H1", t2: "G2" },
+};
+
 function computeGroupStandings(teamList, matches, overrideOrder = null) {
   const st = {};
   teamList.forEach(t => {
@@ -1627,14 +1635,9 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
     });
   }, [activeSeason]);
 
-  // Poll for match updates every 60s, stop when all groups complete
+  // Poll for match updates every 60s
   useEffect(() => {
     if (!activeSeason || !groups || Object.keys(groups).length === 0) return;
-    const allDone = Object.keys(groups).every(gName => {
-      const gm = groupMatches[gName] || [];
-      return gm.length > 0 && gm.every(m => m.status === "completed");
-    });
-    if (allDone) return;
 
     const poll = setInterval(async () => {
       try {
@@ -1658,7 +1661,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       } catch {}
     }, 60000);
     return () => clearInterval(poll);
-  }, [activeSeason, groups, groupMatches]);
+  }, [activeSeason, !!groups]);
 
   // Shuffle groups for animation
   const shuffleGroups = (grps) => {
@@ -2182,7 +2185,10 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         <div style={{ fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
                           Matches
                         </div>
-                        {gMatches.map((m, idx) => (
+                        {gMatches.map((m, idx) => {
+                          const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
+                          const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                          return (
                           <div key={m.match_number} style={{
                             display: "flex", alignItems: "center", gap: 4, padding: "4px 0",
                             borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
@@ -2190,10 +2196,11 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                             <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, width: 12, textAlign: "center" }}>{m.match_number}</span>
                             <span style={{
                               flex: 1, fontFamily: F.b, fontSize: 10,
-                              color: m.winner_id === m.team1_id ? C.green : m.status === "completed" ? C.muted : C.text,
-                              fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                              color: t1Wins ? C.green : m.status === "completed" ? C.muted : C.text,
+                              fontWeight: t1Wins ? 700 : 400,
                               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                             }}>
+                              {t1Wins && <span style={{ fontSize: 8, marginRight: 2 }}>W</span>}
                               {m.team1_name}
                             </span>
                             {m.status === "completed" ? (
@@ -2209,14 +2216,16 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                             )}
                             <span style={{
                               flex: 1, fontFamily: F.b, fontSize: 10, textAlign: "right",
-                              color: m.winner_id === m.team2_id ? C.green : m.status === "completed" ? C.muted : C.text,
-                              fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                              color: t2Wins ? C.green : m.status === "completed" ? C.muted : C.text,
+                              fontWeight: t2Wins ? 700 : 400,
                               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                             }}>
                               {m.team2_name}
+                              {t2Wins && <span style={{ fontSize: 8, marginLeft: 2 }}>W</span>}
                             </span>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </Card>
@@ -2260,7 +2269,9 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                   <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
                     {roundNames[round]}
                   </div>
-                  {matches.map(m => (
+                  {matches.map(m => {
+                    const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
+                    return (
                     <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{
@@ -2268,6 +2279,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                           background: m.winner_id === m.team1_id ? `${C.green}10` : "transparent",
                           border: `1px solid ${m.winner_id === m.team1_id ? C.green + "25" : C.border}`,
                         }}>
+                          {r16L && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t1}</div>}
                           <div style={{
                             fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team1_id ? 700 : 400,
                             color: m.winner_id === m.team1_id ? C.green : m.team1_name ? C.text : C.dim,
@@ -2287,6 +2299,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                           background: m.winner_id === m.team2_id ? `${C.green}10` : "transparent",
                           border: `1px solid ${m.winner_id === m.team2_id ? C.green + "25" : C.border}`,
                         }}>
+                          {r16L && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t2}</div>}
                           <div style={{
                             fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team2_id ? 700 : 400,
                             color: m.winner_id === m.team2_id ? C.green : m.team2_name ? C.text : C.dim,
@@ -2300,7 +2313,8 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         </div>
                       </div>
                     </Card>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })
@@ -5145,7 +5159,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                     color: advances ? C.green : C.muted,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
-                                    {advances ? "▲ " : ""}{s.team_name}
+                                    {advances ? "✓ " : ""}{s.team_name}
                                   </span>
                                   <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                                   <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
@@ -5414,10 +5428,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                           {matches.sort((a, b) => a.match_number - b.match_number).map(m => {
                             const isEditing = editingScore?.groupName === round && editingScore?.matchNumber === m.match_number;
                             const ready = m.team1_id && m.team2_id;
+                            const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
                             return (
                               <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14 }}>M{m.match_number}</span>
+                                  {r16L && <span style={{ fontFamily: F.d, fontSize: 9, color: C.amber, width: 18, fontWeight: 700 }}>{r16L.t1}</span>}
                                   <span style={{
                                     flex: 1, fontFamily: F.b, fontSize: 11,
                                     color: m.winner_id === m.team1_id ? C.green : m.team1_name ? C.text : C.dim,
@@ -5443,6 +5458,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                   }}>
                                     {m.team2_name || "TBD"}
                                   </span>
+                                  {r16L && <span style={{ fontFamily: F.d, fontSize: 9, color: C.amber, width: 18, fontWeight: 700, textAlign: "right" }}>{r16L.t2}</span>}
                                   {m.status === "completed" && !isEditing && (
                                     <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
                                       style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontSize: 9, cursor: "pointer" }}>
