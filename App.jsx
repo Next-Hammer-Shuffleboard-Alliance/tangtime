@@ -669,6 +669,7 @@ function Footer() {
         <NHSALogo size={20} />
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
       </div>
+      <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, opacity: 0.4 }}>v28bg18</span>
     </div>
   );
 }
@@ -1723,15 +1724,6 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
     setLotteryAnimating(false);
   };
 
-  // Auto-switch to bracket tab on initial load if R16 data exists
-  const [initialTabSet, setInitialTabSet] = useState(false);
-  useEffect(() => {
-    if (!initialTabSet && (bracketMatches["R16"] || []).length > 0) {
-      setPlayoffTab("bracket");
-      setInitialTabSet(true);
-    }
-  }, [bracketMatches, initialTabSet]);
-
   const seedColor = (label) => {
     if (!label) return C.dim;
     if (label.startsWith("WC")) return C.blue;
@@ -1944,7 +1936,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       {/* Sub-tabs */}
       <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
         {[
-          { id: "groups", label: "🎱 Groups" },
+          { id: "groups", label: "⚔️ Groups" },
           { id: "bracket", label: "🏆 Bracket" },
         ].map(t => (
           <button key={t.id} onClick={() => setPlayoffTab(t.id)}
@@ -1964,27 +1956,13 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       {/* ── GROUPS TAB ── */}
       {playoffTab === "groups" && (
         <>
-          {/* Bracket ready banner */}
-          {(bracketMatches["R16"] || []).length > 0 && (
-            <button onClick={() => setPlayoffTab("bracket")}
-              style={{
-                width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.green}30`,
-                background: `${C.green}10`, marginBottom: 12, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              }}>
-              <span style={{ fontSize: 16 }}>🏆</span>
-              <span style={{ fontFamily: F.b, fontSize: 12, color: C.green, fontWeight: 700 }}>
-                Bracket is live — tap to view →
-              </span>
-            </button>
-          )}
           {/* Hero */}
           <Card style={{
             padding: "16px", marginBottom: 14, textAlign: "center",
             background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
             border: `1px solid ${C.amber}15`,
           }}>
-            <div style={{ fontSize: 28, marginBottom: 4 }}>🎱</div>
+            <div style={{ fontSize: 28, marginBottom: 4 }}>⚔️</div>
             <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>
               Group Stage
             </div>
@@ -2273,9 +2251,13 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
           </Card>
 
           {(bracketMatches["R16"] || []).length === 0 ? (
-            <Card style={{ padding: "16px", textAlign: "center" }}>
-              <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>
-                Bracket populates when group stage completes
+            <Card style={{ padding: "24px 16px", textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🏆</div>
+              <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 6 }}>
+                Bracket Coming Soon
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+                The championship bracket will be generated once all group stage matches have been completed. Top 2 teams from each group advance to the Round of 16.
               </div>
             </Card>
           ) : (
@@ -4939,13 +4921,13 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       {/* ── Group Draw Section ── */}
       <div style={{ marginTop: 20 }}>
           <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
-            🎱 Playoff Group Draw
+            ⚔️ Playoff Group Draw
           </div>
 
           {/* Draw controls */}
           {groupDrawStep === "idle" && !existingGroups && (
             <Card style={{ padding: "16px", textAlign: "center" }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>🎱</div>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>⚔️</div>
               {totalConfirmed >= 32 ? (
                 <>
                   <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
