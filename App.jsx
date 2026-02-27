@@ -1628,6 +1628,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
             matchMap[m.group_name].push(m);
           }
         });
+        console.log("[TT] group_matches loaded:", gm.length, "total. Groups:", Object.keys(matchMap), "Bracket:", Object.keys(bracketMap), "All group_names:", [...new Set(gm.map(m => m.group_name))]);
         setGroupMatches(matchMap);
         setBracketMatches(bracketMap);
       }
@@ -2139,16 +2140,16 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
-                        <span style={{ width: 28 }} />
                       </div>
                       {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0, crossesCutline: false }))).map((s, idx) => {
                         const groupDone = completed === gMatches.length && completed > 0;
                         const advances = groupDone && idx < 2 && !hasCutlineTie;
+                        const eliminated = groupDone && idx >= 2 && !hasCutlineTie;
                         return (
                         <div key={s.team_id} style={{
                           display: "flex", alignItems: "center", gap: 4, padding: "5px 4px",
                           borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
-                          background: advances ? `${C.green}06` : "transparent",
+                          background: advances ? `${C.green}08` : "transparent",
                           borderRadius: advances ? 4 : 0,
                           cursor: "pointer",
                         }}
@@ -2156,17 +2157,13 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                           <TeamAvatar name={s.team_name} size={18} />
                           <span style={{
                             flex: 1, fontFamily: F.b, fontSize: 11,
-                            color: advances ? C.green : C.text,
+                            color: advances ? C.green : eliminated ? C.muted : C.text,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
-                            {s.team_name}
+                            {advances ? "✓ " : ""}{s.team_name}
                           </span>
-                          <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
+                          <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: eliminated ? C.dim : C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.dim, textAlign: "center" }}>{s.l}</span>
-                          <span style={{ width: 28, textAlign: "center", fontSize: 10 }}>
-                            {groupDone && !hasCutlineTie && (advances ? <span style={{ color: C.green }}>✓</span> : <span style={{ color: C.red }}>✕</span>)}
-                            {s.crossesCutline && hasCutlineTie && <span style={{ fontFamily: F.m, fontSize: 7, color: C.amber }}>TIE</span>}
-                          </span>
                         </div>
                         );
                       })}
@@ -2257,6 +2254,9 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
             <Card style={{ padding: "16px", textAlign: "center" }}>
               <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>
                 Bracket populates when group stage completes
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginTop: 8 }}>
+                Debug: bracketMatches keys: [{Object.keys(bracketMatches).join(", ")}] · groupMatches keys: [{Object.keys(groupMatches).join(", ")}]
               </div>
             </Card>
           ) : (
