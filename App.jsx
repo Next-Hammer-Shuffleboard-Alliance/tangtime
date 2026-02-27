@@ -1723,6 +1723,15 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
     setLotteryAnimating(false);
   };
 
+  // Auto-switch to bracket tab on initial load if R16 data exists
+  const [initialTabSet, setInitialTabSet] = useState(false);
+  useEffect(() => {
+    if (!initialTabSet && (bracketMatches["R16"] || []).length > 0) {
+      setPlayoffTab("bracket");
+      setInitialTabSet(true);
+    }
+  }, [bracketMatches, initialTabSet]);
+
   const seedColor = (label) => {
     if (!label) return C.dim;
     if (label.startsWith("WC")) return C.blue;
@@ -1955,6 +1964,20 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       {/* ── GROUPS TAB ── */}
       {playoffTab === "groups" && (
         <>
+          {/* Bracket ready banner */}
+          {(bracketMatches["R16"] || []).length > 0 && (
+            <button onClick={() => setPlayoffTab("bracket")}
+              style={{
+                width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${C.green}30`,
+                background: `${C.green}10`, marginBottom: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}>
+              <span style={{ fontSize: 16 }}>🏆</span>
+              <span style={{ fontFamily: F.b, fontSize: 12, color: C.green, fontWeight: 700 }}>
+                Bracket is live — tap to view →
+              </span>
+            </button>
+          )}
           {/* Hero */}
           <Card style={{
             padding: "16px", marginBottom: 14, textAlign: "center",
