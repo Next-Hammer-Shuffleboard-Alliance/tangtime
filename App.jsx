@@ -181,6 +181,63 @@ function computeRanks(standings) {
   });
 }
 
+// Group stage standings with H2H tiebreaker
+function computeGroupStandings(teamList, matches) {
+  const st = {};
+  teamList.forEach(t => {
+    st[t.team_id] = { team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 };
+  });
+  const completed = matches.filter(m => m.status === "completed");
+  completed.forEach(m => {
+    if (st[m.team1_id]) {
+      if (m.winner_id === m.team1_id) st[m.team1_id].w++;
+      else if (m.winner_id === m.team2_id) st[m.team1_id].l++;
+    }
+    if (st[m.team2_id]) {
+      if (m.winner_id === m.team2_id) st[m.team2_id].w++;
+      else if (m.winner_id === m.team1_id) st[m.team2_id].l++;
+    }
+  });
+
+  // Sort by W desc, then H2H
+  const arr = Object.values(st).sort((a, b) => b.w - a.w || a.l - b.l);
+
+  // Detect ties and resolve with H2H
+  const resolved = [];
+  let i = 0;
+  while (i < arr.length) {
+    // Find cluster of teams with same record
+    let j = i;
+    while (j < arr.length && arr[j].w === arr[i].w && arr[j].l === arr[i].l) j++;
+    const cluster = arr.slice(i, j);
+
+    if (cluster.length === 1) {
+      resolved.push({ ...cluster[0], tieStatus: null });
+    } else if (cluster.length === 2) {
+      // 2-way tie: check H2H
+      const h2h = completed.find(m =>
+        (m.team1_id === cluster[0].team_id && m.team2_id === cluster[1].team_id) ||
+        (m.team1_id === cluster[1].team_id && m.team2_id === cluster[0].team_id)
+      );
+      if (h2h?.winner_id === cluster[0].team_id) {
+        resolved.push({ ...cluster[0], tieStatus: "h2h" });
+        resolved.push({ ...cluster[1], tieStatus: "h2h" });
+      } else if (h2h?.winner_id === cluster[1].team_id) {
+        resolved.push({ ...cluster[1], tieStatus: "h2h" });
+        resolved.push({ ...cluster[0], tieStatus: "h2h" });
+      } else {
+        // No H2H result or draw — needs speed shuffle
+        cluster.forEach(t => resolved.push({ ...t, tieStatus: "speed" }));
+      }
+    } else {
+      // 3+ way tie — needs speed shuffle
+      cluster.forEach(t => resolved.push({ ...t, tieStatus: "speed" }));
+    }
+    i = j;
+  }
+  return resolved;
+}
+
 function getSeasonProgress(season) {
   if (!season) return { label: "", status: "active", week: null };
   const now = new Date();
@@ -1545,6 +1602,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
   const [lotteryReplay, setLotteryReplay] = useState(null);
   const [lotteryAnimating, setLotteryAnimating] = useState(false);
   const [groupMatches, setGroupMatches] = useState({});
+  const [bracketMatches, setBracketMatches] = useState({});
 
   useEffect(() => {
     if (!activeSeason) { setLoading(false); return; }
@@ -1566,34 +1624,56 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       if (seasonInfo?.[0]?.lottery_data) setLotteryData(seasonInfo[0].lottery_data);
       if (gm?.length > 0) {
         const matchMap = {};
+        const bracketMap = {};
+        const bracketRounds = ["R16", "QF", "SF", "F", "3RD"];
         gm.forEach(m => {
-          if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
-          matchMap[m.group_name].push(m);
+          if (bracketRounds.includes(m.group_name)) {
+            if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
+            bracketMap[m.group_name].push(m);
+          } else {
+            if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+            matchMap[m.group_name].push(m);
+          }
         });
         setGroupMatches(matchMap);
+        setBracketMatches(bracketMap);
       }
       setLoading(false);
     });
   }, [activeSeason]);
 
-  // Poll for match updates every 15s
+  // Poll for match updates every 60s, stop when all groups complete
   useEffect(() => {
-    if (!activeSeason || !groups) return;
+    if (!activeSeason || !groups || Object.keys(groups).length === 0) return;
+    const allDone = Object.keys(groups).every(gName => {
+      const gm = groupMatches[gName] || [];
+      return gm.length > 0 && gm.every(m => m.status === "completed");
+    });
+    if (allDone) return;
+
     const poll = setInterval(async () => {
       try {
         const gm = await q("group_matches", `season_id=eq.${activeSeason.id}&order=group_name,match_number`);
         if (gm?.length > 0) {
           const matchMap = {};
+          const bracketMap = {};
+          const bracketRounds = ["R16", "QF", "SF", "F", "3RD"];
           gm.forEach(m => {
-            if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
-            matchMap[m.group_name].push(m);
+            if (bracketRounds.includes(m.group_name)) {
+              if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
+              bracketMap[m.group_name].push(m);
+            } else {
+              if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+              matchMap[m.group_name].push(m);
+            }
           });
           setGroupMatches(matchMap);
+          setBracketMatches(bracketMap);
         }
       } catch {}
-    }, 15000);
+    }, 60000);
     return () => clearInterval(poll);
-  }, [activeSeason, !!groups]);
+  }, [activeSeason, groups, groupMatches]);
 
   // Shuffle groups for animation
   const shuffleGroups = (grps) => {
@@ -2038,22 +2118,9 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                 const completed = gMatches.filter(m => m.status === "completed").length;
                 const court = teamList[0]?.court;
 
-                // Calculate standings
-                const gStandings = {};
-                teamList.forEach(t => {
-                  gStandings[t.team_id] = { team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 };
-                });
-                gMatches.filter(m => m.status === "completed").forEach(m => {
-                  if (gStandings[m.team1_id]) {
-                    if (m.winner_id === m.team1_id) gStandings[m.team1_id].w++;
-                    else if (m.winner_id === m.team2_id) gStandings[m.team1_id].l++;
-                  }
-                  if (gStandings[m.team2_id]) {
-                    if (m.winner_id === m.team2_id) gStandings[m.team2_id].w++;
-                    else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
-                  }
-                });
-                const standingsArr = Object.values(gStandings).sort((a, b) => b.w - a.w || a.l - b.l);
+                // Calculate standings with H2H tiebreaker
+                const standingsArr = computeGroupStandings(teamList, gMatches);
+                const hasTies = standingsArr.some(s => s.tieStatus === "speed");
 
                 return (
                   <Card key={groupName} style={{ padding: "12px 14px", marginBottom: 10 }}>
@@ -2084,10 +2151,11 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
                         <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
+                        <span style={{ width: 28 }} />
                       </div>
-                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 }))).map((s, idx) => {
+                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0, tieStatus: null }))).map((s, idx) => {
                         const groupDone = completed === gMatches.length && completed > 0;
-                        const advances = completed > 0 && idx < 2;
+                        const advances = completed > 0 && idx < 2 && !hasTies;
                         return (
                         <div key={s.team_id} style={{
                           display: "flex", alignItems: "center", gap: 4, padding: "5px 4px",
@@ -2107,14 +2175,21 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                           </span>
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                           <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.dim, textAlign: "center" }}>{s.l}</span>
-                          {groupDone && (
-                            <span style={{ width: 18, textAlign: "center", fontSize: 11, color: advances ? C.green : C.red }}>
-                              {advances ? "✓" : "✕"}
-                            </span>
-                          )}
+                          <span style={{ width: 28, textAlign: "center", fontSize: 10 }}>
+                            {groupDone && !hasTies && (advances ? <span style={{ color: C.green }}>✓</span> : <span style={{ color: C.red }}>✕</span>)}
+                            {s.tieStatus === "h2h" && <span style={{ fontFamily: F.m, fontSize: 7, color: C.blue }}>H2H</span>}
+                            {s.tieStatus === "speed" && <span style={{ fontFamily: F.m, fontSize: 7, color: C.red }}>TIE</span>}
+                          </span>
                         </div>
                         );
                       })}
+                      {hasTies && completed === gMatches.length && (
+                        <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 4, background: `${C.amber}10`, border: `1px solid ${C.amber}20` }}>
+                          <span style={{ fontFamily: F.m, fontSize: 9, color: C.amber }}>
+                            ⚡ Speed shuffle needed to break tie
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Match results */}
@@ -2185,56 +2260,67 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
             </div>
           </Card>
 
-          <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
-            Round of 16
-          </div>
-          {[
-            { match: 1, court: "Court 1", g1: "A", g2: "B" },
-            { match: 2, court: "Court 2", g1: "B", g2: "A" },
-            { match: 3, court: "Court 3", g1: "C", g2: "D" },
-            { match: 4, court: "Court 4", g1: "D", g2: "C" },
-            { match: 5, court: "Court 5", g1: "E", g2: "F" },
-            { match: 6, court: "Court 6", g1: "F", g2: "E" },
-            { match: 7, court: "Court 7", g1: "G", g2: "H" },
-            { match: 8, court: "Court 8", g1: "H", g2: "G" },
-          ].map(m => (
-            <Card key={m.match} style={{ padding: "10px 12px", marginBottom: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>{m.court}</span>
-                <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Match {m.match}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{
-                  flex: 1, padding: "8px 10px", borderRadius: 8,
-                  background: `${C.green}08`, border: `1px solid ${C.green}15`, textAlign: "center",
-                }}>
-                  <div style={{ fontFamily: F.b, fontSize: 11, color: C.text }}>
-                    Group {m.g1} Winner
-                  </div>
-                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.green }}>👑 1st Place</div>
-                </div>
-                <span style={{ fontFamily: F.d, fontSize: 11, color: C.dim, fontWeight: 700 }}>vs</span>
-                <div style={{
-                  flex: 1, padding: "8px 10px", borderRadius: 8,
-                  background: `${C.amber}08`, border: `1px solid ${C.amber}15`, textAlign: "center",
-                }}>
-                  <div style={{ fontFamily: F.b, fontSize: 11, color: C.text }}>
-                    Group {m.g2} Runner-up
-                  </div>
-                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.amber }}>2nd Place</div>
-                </div>
+          {(bracketMatches["R16"] || []).length === 0 ? (
+            <Card style={{ padding: "16px", textAlign: "center" }}>
+              <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>
+                Bracket populates when group stage completes
               </div>
             </Card>
-          ))}
-
-          <Card style={{ padding: "16px", marginTop: 10, textAlign: "center" }}>
-            <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>
-              Quarterfinals → Semifinals → Finals
-            </div>
-            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginTop: 4 }}>
-              Bracket populates as group stage completes
-            </div>
-          </Card>
+          ) : (
+            ["R16", "QF", "SF", "3RD", "F"].map(round => {
+              const matches = (bracketMatches[round] || []).sort((a, b) => a.match_number - b.match_number);
+              if (matches.length === 0) return null;
+              const roundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", F: "Final", "3RD": "3rd Place" };
+              return (
+                <div key={round} style={{ marginBottom: 14 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
+                    {roundNames[round]}
+                  </div>
+                  {matches.map(m => (
+                    <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{
+                          flex: 1, padding: "6px 8px", borderRadius: 6, textAlign: "center",
+                          background: m.winner_id === m.team1_id ? `${C.green}10` : "transparent",
+                          border: `1px solid ${m.winner_id === m.team1_id ? C.green + "25" : C.border}`,
+                        }}>
+                          <div style={{
+                            fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                            color: m.winner_id === m.team1_id ? C.green : m.team1_name ? C.text : C.dim,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {m.team1_name || "TBD"}
+                          </div>
+                          {m.team1_score != null && (
+                            <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team1_score}</div>
+                          )}
+                        </div>
+                        <span style={{ fontFamily: F.d, fontSize: 11, color: C.dim, fontWeight: 700 }}>
+                          {m.status === "completed" ? "" : "vs"}
+                        </span>
+                        <div style={{
+                          flex: 1, padding: "6px 8px", borderRadius: 6, textAlign: "center",
+                          background: m.winner_id === m.team2_id ? `${C.green}10` : "transparent",
+                          border: `1px solid ${m.winner_id === m.team2_id ? C.green + "25" : C.border}`,
+                        }}>
+                          <div style={{
+                            fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                            color: m.winner_id === m.team2_id ? C.green : m.team2_name ? C.text : C.dim,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {m.team2_name || "TBD"}
+                          </div>
+                          {m.team2_score != null && (
+                            <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team2_score}</div>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })
+          )}
         </>
       )}
       <Footer />
@@ -3505,6 +3591,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [existingGroups, setExistingGroups] = useState(null); // loaded from DB
   const [courtAssignments, setCourtAssignments] = useState({}); // groupName -> court number
   const [groupMatches, setGroupMatches] = useState({}); // groupName -> [{match_number, team1_id, team1_name, team2_id, team2_name, ...}]
+  const [bracketMatches, setBracketMatches] = useState({}); // "R16"->[], "QF"->[], "SF"->[], "F"->[], "3RD"->[]
   const [editingScore, setEditingScore] = useState(null); // {groupName, matchNumber}
   const [scoreInputs, setScoreInputs] = useState({ team1: "", team2: "" });
   const [success, setSuccess] = useState(null);
@@ -3607,15 +3694,23 @@ function AdminPostseasonTab({ seasonId, divisions }) {
             setCourtAssignments(courts);
             setGroupDrawStep("done");
 
-            // Load group matches
+            // Load group matches + bracket
             const gm = await q("group_matches", `season_id=eq.${seasonId}&order=group_name,match_number`);
             if (gm?.length > 0) {
               const matchMap = {};
+              const bracketMap = {};
+              const bracketRounds = ["R16", "QF", "SF", "F", "3RD"];
               gm.forEach(m => {
-                if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
-                matchMap[m.group_name].push(m);
+                if (bracketRounds.includes(m.group_name)) {
+                  if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
+                  bracketMap[m.group_name].push(m);
+                } else {
+                  if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+                  matchMap[m.group_name].push(m);
+                }
               });
               setGroupMatches(matchMap);
+              setBracketMatches(bracketMap);
             }
           }
         } catch {}
@@ -4088,7 +4183,9 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const saveMatchResult = async (groupName, matchNumber, winnerId, team1Score = null, team2Score = null) => {
     setSaving(`score-${groupName}-${matchNumber}`);
     try {
-      const match = (groupMatches[groupName] || []).find(m => m.match_number === matchNumber);
+      const isBracket = ["R16", "QF", "SF", "F", "3RD"].includes(groupName);
+      const source = isBracket ? bracketMatches : groupMatches;
+      const match = (source[groupName] || []).find(m => m.match_number === matchNumber);
       if (!match) return;
 
       const updates = { winner_id: winnerId, status: "completed" };
@@ -4102,18 +4199,132 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         "PATCH", updates
       );
 
-      setGroupMatches(prev => ({
+      const setter = isBracket ? setBracketMatches : setGroupMatches;
+      setter(prev => ({
         ...prev,
         [groupName]: (prev[groupName] || []).map(m =>
-          m.match_number === matchNumber
-            ? { ...m, ...updates }
-            : m
+          m.match_number === matchNumber ? { ...m, ...updates } : m
         ),
       }));
       setEditingScore(null);
       setScoreInputs({ team1: "", team2: "" });
+
+      // Auto-advance bracket: populate next round
+      if (isBracket) await advanceBracket(groupName, matchNumber, winnerId, match);
     } catch (e) { setError(e.message); }
     setSaving(null);
+  };
+
+  // R16 matchups: A1vB2, C1vD2, E1vF2, G1vH2, B1vA2, D1vC2, F1vE2, H1vG2
+  const R16_MATCHUPS = [
+    { m: 1, g1: "A", s1: 0, g2: "B", s2: 1 }, // A1 vs B2
+    { m: 2, g1: "C", s1: 0, g2: "D", s2: 1 }, // C1 vs D2
+    { m: 3, g1: "E", s1: 0, g2: "F", s2: 1 }, // E1 vs F2
+    { m: 4, g1: "G", s1: 0, g2: "H", s2: 1 }, // G1 vs H2
+    { m: 5, g1: "B", s1: 0, g2: "A", s2: 1 }, // B1 vs A2
+    { m: 6, g1: "D", s1: 0, g2: "C", s2: 1 }, // D1 vs C2
+    { m: 7, g1: "F", s1: 0, g2: "E", s2: 1 }, // F1 vs E2
+    { m: 8, g1: "H", s1: 0, g2: "G", s2: 1 }, // H1 vs G2
+  ];
+
+  const generateR16 = async () => {
+    if (!groups || !groupMatches) return;
+    setSaving("bracket");
+    setError(null);
+    try {
+      // Compute standings for each group
+      const groupStandings = {};
+      Object.entries(groups).forEach(([gName, teamList]) => {
+        groupStandings[gName] = computeGroupStandings(teamList, groupMatches[gName] || []);
+      });
+
+      // Check for unresolved ties
+      const hasSpeedTies = Object.values(groupStandings).some(st =>
+        st.some(s => s.tieStatus === "speed")
+      );
+      if (hasSpeedTies) {
+        setError("Cannot generate bracket: unresolved ties need speed shuffle first.");
+        setSaving(null);
+        return;
+      }
+
+      // Delete existing bracket matches
+      for (const round of ["R16", "QF", "SF", "F", "3RD"]) {
+        await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}`, "DELETE").catch(() => {});
+      }
+
+      const r16 = [];
+      for (const mu of R16_MATCHUPS) {
+        const t1 = groupStandings[mu.g1]?.[mu.s1];
+        const t2 = groupStandings[mu.g2]?.[mu.s2];
+        if (!t1 || !t2) { setError(`Missing team for match ${mu.m}`); setSaving(null); return; }
+        const matchData = {
+          season_id: seasonId,
+          group_name: "R16",
+          match_number: mu.m,
+          team1_id: t1.team_id,
+          team1_name: t1.team_name,
+          team2_id: t2.team_id,
+          team2_name: t2.team_name,
+          status: "scheduled",
+        };
+        await qAuth("group_matches", "", "POST", matchData);
+        r16.push(matchData);
+      }
+
+      setBracketMatches({ R16: r16 });
+      setSuccess("R16 bracket generated!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  // When a bracket match completes, auto-create next round match
+  const advanceBracket = async (round, matchNum, winnerId, match) => {
+    const winnerName = winnerId === match.team1_id ? match.team1_name : match.team2_name;
+    const loserId = winnerId === match.team1_id ? match.team2_id : match.team1_id;
+    const loserName = winnerId === match.team1_id ? match.team2_name : match.team1_name;
+
+    // R16 → QF: matches 1&5→QF1, 2&6→QF2, 3&7→QF3, 4&8→QF4
+    if (round === "R16") {
+      const qfMatch = matchNum <= 4 ? matchNum : matchNum - 4;
+      const isTeam1 = matchNum <= 4;
+      await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName);
+    }
+    // QF → SF: 1&2→SF1, 3&4→SF2
+    if (round === "QF") {
+      const sfMatch = matchNum <= 2 ? 1 : 2;
+      const isTeam1 = matchNum % 2 === 1;
+      await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName);
+    }
+    // SF → F + 3RD
+    if (round === "SF") {
+      await upsertBracketSlot("F", 1, matchNum === 1, winnerId, winnerName);
+      await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName);
+    }
+  };
+
+  const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName) => {
+    const existing = (bracketMatches[round] || []).find(m => m.match_number === matchNum);
+    if (existing) {
+      const field = isTeam1 ? { team1_id: teamId, team1_name: teamName } : { team2_id: teamId, team2_name: teamName };
+      await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`, "PATCH", field);
+      setBracketMatches(prev => ({
+        ...prev,
+        [round]: (prev[round] || []).map(m => m.match_number === matchNum ? { ...m, ...field } : m),
+      }));
+    } else {
+      const data = {
+        season_id: seasonId, group_name: round, match_number: matchNum, status: "scheduled",
+        team1_id: isTeam1 ? teamId : null, team1_name: isTeam1 ? teamName : null,
+        team2_id: isTeam1 ? null : teamId, team2_name: isTeam1 ? null : teamName,
+      };
+      await qAuth("group_matches", "", "POST", data);
+      setBracketMatches(prev => ({
+        ...prev,
+        [round]: [...(prev[round] || []), data],
+      }));
+    }
   };
 
   if (loading) return <Loader />;
@@ -4884,7 +5095,8 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                           else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
                         }
                       });
-                      const standingsArr = Object.values(gStandings).sort((a, b) => b.w - a.w || a.l - b.l);
+                      const standingsArr = computeGroupStandings(groups[gName] || [], gMatches);
+                      const hasTies = standingsArr.some(s => s.tieStatus === "speed");
 
                       return (
                         <Card key={gName} style={{ padding: "12px 14px", marginBottom: 10 }}>
@@ -4912,10 +5124,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                 <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
                                 <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
                                 <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
+                                <span style={{ width: 30 }} />
                               </div>
                               {standingsArr.map((s, idx) => (
                                 <div key={s.team_id} style={{
-                                  display: "flex", gap: 4, padding: "3px 0",
+                                  display: "flex", alignItems: "center", gap: 4, padding: "3px 0",
                                   borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
                                 }}>
                                   <span style={{
@@ -4927,8 +5140,20 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                   </span>
                                   <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
                                   <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
+                                  <span style={{ width: 30, fontFamily: F.m, fontSize: 7, textAlign: "center",
+                                    color: s.tieStatus === "h2h" ? C.blue : s.tieStatus === "speed" ? C.red : "transparent",
+                                  }}>
+                                    {s.tieStatus === "h2h" ? "H2H" : s.tieStatus === "speed" ? "TIE" : ""}
+                                  </span>
                                 </div>
                               ))}
+                              {hasTies && completed === gMatches.length && (
+                                <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 4, background: `${C.red}10`, border: `1px solid ${C.red}20` }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.red }}>
+                                    ⚡ Speed shuffle needed to break tie
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -5079,6 +5304,172 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   )}
                 </div>
               )}
+
+              {/* ── Bracket ── */}
+              {existingGroups && Object.keys(groupMatches).length > 0 && (() => {
+                const allGroupsDone = Object.keys(groups).every(gName => {
+                  const gm = groupMatches[gName] || [];
+                  return gm.length > 0 && gm.every(m => m.status === "completed");
+                });
+                const hasUnresolvedTies = Object.entries(groups).some(([gName, teamList]) => {
+                  const st = computeGroupStandings(teamList, groupMatches[gName] || []);
+                  return st.some(s => s.tieStatus === "speed");
+                });
+                const hasR16 = (bracketMatches["R16"] || []).length > 0;
+                const bracketRoundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", F: "Final", "3RD": "3rd Place" };
+
+                if (!allGroupsDone) return null;
+                return (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                        🏆 Bracket
+                      </div>
+                      {!hasR16 && !hasUnresolvedTies && (
+                        <button onClick={generateR16} disabled={saving === "bracket"}
+                          style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                          {saving === "bracket" ? "Generating..." : "🏆 Generate R16 Bracket"}
+                        </button>
+                      )}
+                      {hasR16 && (
+                        <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
+                          disabled={saving === "bracket"}
+                          style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                          🔄 Regenerate
+                        </button>
+                      )}
+                    </div>
+
+                    {hasUnresolvedTies && !hasR16 && (
+                      <Card style={{ padding: "12px 14px", marginBottom: 10 }}>
+                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.red }}>
+                          ⚡ Resolve all speed shuffle tiebreakers before generating bracket
+                        </div>
+                      </Card>
+                    )}
+
+                    {/* Bracket matches by round */}
+                    {["R16", "QF", "SF", "3RD", "F"].map(round => {
+                      const matches = bracketMatches[round] || [];
+                      if (matches.length === 0) return null;
+                      const completedCount = matches.filter(m => m.status === "completed").length;
+                      return (
+                        <div key={round} style={{ marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{bracketRoundNames[round]}</span>
+                            <Badge color={completedCount === matches.length ? C.green : C.amber} style={{ fontSize: 9 }}>
+                              {completedCount}/{matches.length}
+                            </Badge>
+                          </div>
+                          {matches.sort((a, b) => a.match_number - b.match_number).map(m => {
+                            const isEditing = editingScore?.groupName === round && editingScore?.matchNumber === m.match_number;
+                            const ready = m.team1_id && m.team2_id;
+                            return (
+                              <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14 }}>M{m.match_number}</span>
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 11,
+                                    color: m.winner_id === m.team1_id ? C.green : m.team1_name ? C.text : C.dim,
+                                    fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {m.team1_name || "TBD"}
+                                  </span>
+                                  {m.status === "completed" && m.team1_score != null ? (
+                                    <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 44, textAlign: "center" }}>
+                                      {m.team1_score}-{m.team2_score}
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, minWidth: 30, textAlign: "center" }}>
+                                      {m.status === "completed" ? "✓" : "vs"}
+                                    </span>
+                                  )}
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
+                                    color: m.winner_id === m.team2_id ? C.green : m.team2_name ? C.text : C.dim,
+                                    fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {m.team2_name || "TBD"}
+                                  </span>
+                                  {m.status === "completed" && !isEditing && (
+                                    <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
+                                      style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontSize: 9, cursor: "pointer" }}>
+                                      ✏️
+                                    </button>
+                                  )}
+                                </div>
+                                {/* Winner select buttons */}
+                                {m.status !== "completed" && ready && !isEditing && (
+                                  <div style={{ display: "flex", gap: 6, marginTop: 8, paddingLeft: 20 }}>
+                                    <button onClick={() => saveMatchResult(round, m.match_number, m.team1_id)}
+                                      disabled={!!saving}
+                                      style={{ flex: 1, padding: "7px 4px", borderRadius: 6, border: `1px solid ${C.green}30`, background: `${C.green}08`, color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      ✓ {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                    </button>
+                                    <button onClick={() => saveMatchResult(round, m.match_number, m.team2_id)}
+                                      disabled={!!saving}
+                                      style={{ flex: 1, padding: "7px 4px", borderRadius: 6, border: `1px solid ${C.green}30`, background: `${C.green}08`, color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      ✓ {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                    </button>
+                                    <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: "", team2: "" }); }}
+                                      style={{ padding: "7px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                      +Score
+                                    </button>
+                                  </div>
+                                )}
+                                {/* Score input */}
+                                {isEditing && (
+                                  <div style={{ padding: "6px 0 2px" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 20 }}>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team1}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team1: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }}
+                                          autoFocus />
+                                      </div>
+                                      <span style={{ fontFamily: F.d, fontSize: 14, color: C.dim, fontWeight: 700, paddingTop: 16 }}>—</span>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team2}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team2: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, marginTop: 8, paddingLeft: 20 }}>
+                                      <button onClick={() => {
+                                        const s1 = scoreInputs.team1 ? parseInt(scoreInputs.team1) : null;
+                                        const s2 = scoreInputs.team2 ? parseInt(scoreInputs.team2) : null;
+                                        const wId = s1 != null && s2 != null ? (s1 > s2 ? m.team1_id : m.team2_id) : null;
+                                        if (!wId) { setError("Enter scores for both teams"); return; }
+                                        saveMatchResult(round, m.match_number, wId, s1, s2);
+                                      }}
+                                        disabled={!!saving}
+                                        style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                        ✓ Save
+                                      </button>
+                                      <button onClick={() => setEditingScore(null)}
+                                        style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>
@@ -6995,11 +7386,13 @@ export default function TangTime() {
 
 function MainApp() {
   const validPages = ["home", "standings", "matches", "playoffs", "teams", "fame"];
-  const getPageFromHash = () => {
-    const hash = window.location.hash.replace("#", "").split("?")[0];
-    return validPages.includes(hash) ? hash : "home";
-  };
-  const [page, setPage] = useState(getPageFromHash);
+  const [page, setPageRaw] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("tt_tab");
+      if (stored && validPages.includes(stored)) return stored;
+    } catch {}
+    return "home";
+  });
   const [pageData, setPageData] = useState({});
   const [seasons, setSeasons] = useState([]);
   const [selectedSeason, setSelectedSeason] = useState(null);
@@ -7040,22 +7433,16 @@ function MainApp() {
     });
   }, [selectedSeason]);
 
+  const setPage = useCallback((p) => {
+    setPageRaw(p);
+    try { sessionStorage.setItem("tt_tab", p); } catch {}
+  }, []);
+
   const goPage = useCallback((p, data = {}) => {
     setPage(p);
     setPageData(data);
-    window.location.hash = p === "home" ? "" : p;
     mainRef.current?.scrollTo(0, 0);
-  }, []);
-
-  useEffect(() => {
-    const onHashChange = () => {
-      const p = getPageFromHash();
-      setPage(p);
-      setPageData({});
-    };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  }, [setPage]);
 
   const renderPage = () => {
     switch (page) {
