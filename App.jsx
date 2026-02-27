@@ -883,7 +883,7 @@ function SeasonSelector({ seasons, selected, onSelect }) {
 // ══════════════════════════════════════
 
 // ─── HOME ───
-function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
+function HomePage({ seasons, activeSeason, divisions, goPage, champs, hasPlayoffTab }) {
   const [leaders, setLeaders] = useState([]);
   const [recent, setRecent] = useState([]);
   const [allStandings, setAllStandings] = useState([]);
@@ -1029,8 +1029,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         </div>
       </div>
 
-      {/* PAST SEASON: Champion + Division Winners */}
-      {isPast && seasonChamp && (
+      {/* PAST SEASON: Champion (only show when no Playoffs tab — otherwise it's on Playoffs) */}
+      {isPast && !hasPlayoffTab && seasonChamp && (
         <div>
           <Card style={{
             background: `linear-gradient(135deg, #1a1520, ${C.surface})`,
@@ -1053,8 +1053,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         </div>
       )}
 
-      {/* PAST SEASON: Banquet Final 4 */}
-      {isPast && banquetTeams.some(bt => !bt._incomplete) && (
+      {/* PAST SEASON: Banquet Final 4 (only show when no Playoffs tab — otherwise it's on Playoffs) */}
+      {isPast && !hasPlayoffTab && banquetTeams.some(bt => !bt._incomplete) && (
         <div>
           <SectionTitle right="Final 4">Banquet</SectionTitle>
           {banquetTeams.map((bt, i) => {
@@ -4435,7 +4435,7 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
             {totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? "✓ Complete" : "In Progress"}
           </Badge>
         </div>
-        {/* Auto-confirm all clear winners + repair existing */}
+        {/* Auto-confirm all clear (untied) winners */}
         {(() => {
           const unconfirmed = activeDivs.filter(d => {
             if (confirmedDivWinners[d.id]) return false;
@@ -4443,28 +4443,21 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
             if (teams.length < 2) return false;
             return teams[0].wins !== teams[1].wins || teams[0].losses !== teams[1].losses;
           });
-          const allToConfirm = [
-            ...unconfirmed.map(d => ({ divId: d.id, teamId: (standings[d.id] || [])[0]?.team_id })).filter(x => x.teamId),
-            // Also re-confirm existing winners to repair missing division_id
-            ...activeDivs.filter(d => confirmedDivWinners[d.id]).map(d => ({ divId: d.id, teamId: confirmedDivWinners[d.id] })),
-          ];
-          if (allToConfirm.length === 0) return null;
-          const label = unconfirmed.length > 0
-            ? `👑 Confirm ${unconfirmed.length} Clear Winner${unconfirmed.length > 1 ? "s" : ""}${Object.keys(confirmedDivWinners).length > 0 ? " + Repair Existing" : ""}`
-            : "🔄 Repair Division Winners";
+          if (unconfirmed.length === 0) return null;
           return (
             <button onClick={async () => {
               setSaving("all-winners");
-              for (const { divId, teamId } of allToConfirm) {
-                await confirmDivisionWinner(divId, teamId);
+              for (const d of unconfirmed) {
+                const teams = standings[d.id] || [];
+                if (teams[0]) await confirmDivisionWinner(d.id, teams[0].team_id);
               }
               setSaving(null);
-              setSuccess(`${allToConfirm.length} division winners confirmed!`);
+              setSuccess(`${unconfirmed.length} division winners confirmed!`);
               setTimeout(() => setSuccess(null), 3000);
             }}
               disabled={!!saving}
               style={{ marginTop: 10, width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.green}30`, background: `${C.green}10`, color: C.green, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-              {saving === "all-winners" ? "Confirming..." : label}
+              {saving === "all-winners" ? "Confirming..." : `👑 Confirm ${unconfirmed.length} Clear Winner${unconfirmed.length > 1 ? "s" : ""}`}
             </button>
           );
         })()}
@@ -5752,14 +5745,7 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
                               {saving === "complete" ? "Writing data..." : "✓ Complete Season"}
                             </button>
                           ) : (
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                              <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
-                              <button onClick={completeSeason}
-                                disabled={!!saving}
-                                style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
-                                {saving === "complete" ? "Repairing..." : "🔄 Repair Season Data"}
-                              </button>
-                            </div>
+                            <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
                           )}
                         </Card>
                       );
@@ -7729,8 +7715,8 @@ function MainApp() {
     q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
-    q("playoff_appearances", `season_id=eq.${selectedSeason.id}&select=team_id&limit=1`).then(pa => {
-      setHasPlayoffData(pa?.length > 0);
+    q("playoff_groups", `season_id=eq.${selectedSeason.id}&select=team_id&limit=1`).then(pg => {
+      setHasPlayoffData(pg?.length > 0);
     });
   }, [selectedSeason]);
 
@@ -7748,7 +7734,7 @@ function MainApp() {
   const renderPage = () => {
     switch (page) {
       case "home":
-        return <HomePage seasons={seasons} activeSeason={selectedSeason} divisions={divisions} goPage={goPage} champs={champs} />;
+        return <HomePage seasons={seasons} activeSeason={selectedSeason} divisions={divisions} goPage={goPage} champs={champs} hasPlayoffTab={hasPlayoffData} />;
       case "standings":
         return <StandingsPage divisions={divisions} activeSeason={selectedSeason} goPage={goPage} />;
       case "matches":
