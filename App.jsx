@@ -1610,7 +1610,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       if (gm?.length > 0) {
         const matchMap = {};
         const bracketMap = {};
-        const bracketRounds = ["R16", "QF", "SF", "F", "3RD"];
+        const bracketRounds = ["R16", "QF", "SF", "FIN", "3RD"];
         gm.forEach(m => {
           if (bracketRounds.includes(m.group_name)) {
             if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
@@ -1642,7 +1642,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
         if (gm?.length > 0) {
           const matchMap = {};
           const bracketMap = {};
-          const bracketRounds = ["R16", "QF", "SF", "F", "3RD"];
+          const bracketRounds = ["R16", "QF", "SF", "FIN", "3RD"];
           gm.forEach(m => {
             if (bracketRounds.includes(m.group_name)) {
               if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
@@ -2251,10 +2251,10 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
               </div>
             </Card>
           ) : (
-            ["R16", "QF", "SF", "3RD", "F"].map(round => {
+            ["R16", "QF", "SF", "3RD", "FIN"].map(round => {
               const matches = (bracketMatches[round] || []).sort((a, b) => a.match_number - b.match_number);
               if (matches.length === 0) return null;
-              const roundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", F: "Final", "3RD": "3rd Place" };
+              const roundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", FIN: "Final", "3RD": "3rd Place" };
               return (
                 <div key={round} style={{ marginBottom: 14 }}>
                   <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
@@ -3575,7 +3575,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [existingGroups, setExistingGroups] = useState(null); // loaded from DB
   const [courtAssignments, setCourtAssignments] = useState({}); // groupName -> court number
   const [groupMatches, setGroupMatches] = useState({}); // groupName -> [{match_number, team1_id, team1_name, team2_id, team2_name, ...}]
-  const [bracketMatches, setBracketMatches] = useState({}); // "R16"->[], "QF"->[], "SF"->[], "F"->[], "3RD"->[]
+  const [bracketMatches, setBracketMatches] = useState({}); // "R16"->[], "QF"->[], "SF"->[], "FIN"->[], "3RD"->[]
   const [groupOverrides, setGroupOverrides] = useState({}); // groupName -> [team_id ordered]
   const [editingScore, setEditingScore] = useState(null); // {groupName, matchNumber}
   const [scoreInputs, setScoreInputs] = useState({ team1: "", team2: "" });
@@ -3684,7 +3684,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
             if (gm?.length > 0) {
               const matchMap = {};
               const bracketMap = {};
-              const bracketRounds = ["R16", "QF", "SF", "F", "3RD"];
+              const bracketRounds = ["R16", "QF", "SF", "FIN", "3RD"];
               gm.forEach(m => {
                 if (bracketRounds.includes(m.group_name)) {
                   if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
@@ -4172,7 +4172,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const saveMatchResult = async (groupName, matchNumber, winnerId, team1Score = null, team2Score = null) => {
     setSaving(`score-${groupName}-${matchNumber}`);
     try {
-      const isBracket = ["R16", "QF", "SF", "F", "3RD"].includes(groupName);
+      const isBracket = ["R16", "QF", "SF", "FIN", "3RD"].includes(groupName);
       const source = isBracket ? bracketMatches : groupMatches;
       const match = (source[groupName] || []).find(m => m.match_number === matchNumber);
       if (!match) return;
@@ -4238,7 +4238,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       }
 
       // Delete existing bracket matches
-      for (const round of ["R16", "QF", "SF", "F", "3RD"]) {
+      for (const round of ["R16", "QF", "SF", "FIN", "3RD"]) {
         await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}`, "DELETE").catch(() => {});
       }
 
@@ -4288,7 +4288,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     }
     // SF → F + 3RD
     if (round === "SF") {
-      await upsertBracketSlot("F", 1, matchNum === 1, winnerId, winnerName);
+      await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName);
       await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName);
     }
   };
@@ -5352,7 +5352,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   return st.some(s => s.crossesCutline) && !groupOverrides[gName];
                 });
                 const hasR16 = (bracketMatches["R16"] || []).length > 0;
-                const bracketRoundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", F: "Final", "3RD": "3rd Place" };
+                const bracketRoundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", FIN: "Final", "3RD": "3rd Place" };
 
                 return (
                   <div style={{ marginTop: 16 }}>
@@ -5399,7 +5399,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                     )}
 
                     {/* Bracket matches by round */}
-                    {["R16", "QF", "SF", "3RD", "F"].map(round => {
+                    {["R16", "QF", "SF", "3RD", "FIN"].map(round => {
                       const matches = bracketMatches[round] || [];
                       if (matches.length === 0) return null;
                       const completedCount = matches.filter(m => m.status === "completed").length;
