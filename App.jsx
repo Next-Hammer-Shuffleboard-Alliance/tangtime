@@ -3775,6 +3775,7 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
       await qAuth("championships", "", "POST", {
         team_id: teamId,
         season_id: seasonId,
+        division_id: divId,
         type: "division",
       });
 
@@ -4434,6 +4435,39 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
             {totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? "✓ Complete" : "In Progress"}
           </Badge>
         </div>
+        {/* Auto-confirm all clear winners + repair existing */}
+        {(() => {
+          const unconfirmed = activeDivs.filter(d => {
+            if (confirmedDivWinners[d.id]) return false;
+            const teams = standings[d.id] || [];
+            if (teams.length < 2) return false;
+            return teams[0].wins !== teams[1].wins || teams[0].losses !== teams[1].losses;
+          });
+          const allToConfirm = [
+            ...unconfirmed.map(d => ({ divId: d.id, teamId: (standings[d.id] || [])[0]?.team_id })).filter(x => x.teamId),
+            // Also re-confirm existing winners to repair missing division_id
+            ...activeDivs.filter(d => confirmedDivWinners[d.id]).map(d => ({ divId: d.id, teamId: confirmedDivWinners[d.id] })),
+          ];
+          if (allToConfirm.length === 0) return null;
+          const label = unconfirmed.length > 0
+            ? `👑 Confirm ${unconfirmed.length} Clear Winner${unconfirmed.length > 1 ? "s" : ""}${Object.keys(confirmedDivWinners).length > 0 ? " + Repair Existing" : ""}`
+            : "🔄 Repair Division Winners";
+          return (
+            <button onClick={async () => {
+              setSaving("all-winners");
+              for (const { divId, teamId } of allToConfirm) {
+                await confirmDivisionWinner(divId, teamId);
+              }
+              setSaving(null);
+              setSuccess(`${allToConfirm.length} division winners confirmed!`);
+              setTimeout(() => setSuccess(null), 3000);
+            }}
+              disabled={!!saving}
+              style={{ marginTop: 10, width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.green}30`, background: `${C.green}10`, color: C.green, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              {saving === "all-winners" ? "Confirming..." : label}
+            </button>
+          );
+        })()}
       </Card>
 
       {/* Division-by-division */}
