@@ -5661,14 +5661,14 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
 
                         // 3. Write championship entries
                         const champEntries = [
-                          { season_id: seasonId, team_id: champId, team_name: champName, type: "league" },
-                          { season_id: seasonId, team_id: finalistId, team_name: finalistName, type: "finalist" },
-                          ...banquetTeams.map(t => ({ season_id: seasonId, team_id: t.id, team_name: t.name, type: "banquet" })),
+                          { season_id: seasonId, team_id: champId, type: "league" },
+                          { season_id: seasonId, team_id: finalistId, type: "finalist" },
+                          ...banquetTeams.map(t => ({ season_id: seasonId, team_id: t.id, type: "banquet" })),
                         ];
                         for (const entry of champEntries) {
                           try {
                             await qAuth("championships", "", "POST", entry);
-                          } catch (e) { errors.push(`championship ${entry.type} ${entry.team_name}: ${e.message}`); }
+                          } catch (e) { errors.push(`championship ${entry.type}: ${e.message}`); }
                         }
 
                         // 4. Increment winner's championship count
