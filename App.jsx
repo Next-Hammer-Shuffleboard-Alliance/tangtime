@@ -5339,10 +5339,14 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
               {/* ── Bracket ── */}
               {existingGroups && Object.keys(groupMatches).length > 0 && (() => {
-                const allGroupsDone = Object.keys(groups).every(gName => {
+                const groupNames = Object.keys(groups);
+                const groupStatus = groupNames.map(gName => {
                   const gm = groupMatches[gName] || [];
-                  return gm.length > 0 && gm.every(m => m.status === "completed");
+                  const total = gm.length;
+                  const done = gm.filter(m => m.status === "completed").length;
+                  return { gName, total, done, allDone: total > 0 && done === total };
                 });
+                const allGroupsDone = groupStatus.every(g => g.allDone);
                 const hasUnresolvedTies = Object.entries(groups).some(([gName, teamList]) => {
                   const st = computeGroupStandings(teamList, groupMatches[gName] || [], groupOverrides[gName]);
                   return st.some(s => s.crossesCutline) && !groupOverrides[gName];
@@ -5350,14 +5354,13 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                 const hasR16 = (bracketMatches["R16"] || []).length > 0;
                 const bracketRoundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", F: "Final", "3RD": "3rd Place" };
 
-                if (!allGroupsDone) return null;
                 return (
                   <div style={{ marginTop: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                       <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
                         🏆 Bracket
                       </div>
-                      {!hasR16 && !hasUnresolvedTies && (
+                      {allGroupsDone && !hasR16 && !hasUnresolvedTies && (
                         <button onClick={generateR16} disabled={saving === "bracket"}
                           style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                           {saving === "bracket" ? "Generating..." : "🏆 Generate R16 Bracket"}
@@ -5375,7 +5378,22 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                     {hasUnresolvedTies && !hasR16 && (
                       <Card style={{ padding: "12px 14px", marginBottom: 10 }}>
                         <div style={{ fontFamily: F.m, fontSize: 11, color: C.red }}>
-                          ⚡ Resolve all speed shuffle tiebreakers before generating bracket
+                          ⚡ Resolve all tied groups before generating bracket
+                        </div>
+                      </Card>
+                    )}
+
+                    {!allGroupsDone && !hasR16 && (
+                      <Card style={{ padding: "12px 14px", marginBottom: 10 }}>
+                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginBottom: 6 }}>
+                          Group stage in progress:
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {groupStatus.map(g => (
+                            <Badge key={g.gName} color={g.allDone ? C.green : C.amber} style={{ fontSize: 9 }}>
+                              {g.gName}: {g.done}/{g.total}
+                            </Badge>
+                          ))}
                         </div>
                       </Card>
                     )}
