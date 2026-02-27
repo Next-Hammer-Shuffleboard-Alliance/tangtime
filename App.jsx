@@ -1369,8 +1369,8 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                 {t.playoffRound && (
                   <span style={{ fontSize: 10, flexShrink: 0 }}>{
                     t.playoffRound === "champion" ? "🏆" :
-                    t.playoffRound === "final" ? "🥈" :
-                    t.playoffRound === "semifinal" ? "🎖️" :
+                    t.playoffRound === "finalist" ? "🥈" :
+                    t.playoffRound === "banquet" ? "🎖️" :
                     "☆"
                   }</span>
                 )}</div>
@@ -2999,7 +2999,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
 
   const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
 
-  const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Banquet", round_2: "Round 2", round_1: "Round 1" };
+  const roundLabel = { champion: "🏆 Champion", finalist: "🥈 Final", banquet: "🏅 Banquet", qualified: "☆ Qualified", wildcard: "★ Wildcard", round_2: "Round 2", round_1: "Round 1" };
 
   const dataNote = tab === "banquet" ? "Banquet data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
     : tab === "playoffs" ? "Playoffs data is incomplete. Help us fill in the gaps!"
@@ -3600,7 +3600,7 @@ function AdminEditModal({ match, onClose, onSave }) {
 // ─── ADMIN POSTSEASON TAB ───
 // ══════════════════════════════════════
 
-function AdminPostseasonTab({ seasonId, divisions }) {
+function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
   const [standings, setStandings] = useState({});  // divId -> [{team_id, team_name, wins, losses}]
   const [existingChamps, setExistingChamps] = useState([]); // championships for this season
   const [existingPlayoffs, setExistingPlayoffs] = useState([]); // playoff_appearances for this season
@@ -5648,12 +5648,12 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                           <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginBottom: 12 }}>
                             Season Champion
                           </div>
-                          {activeSeason?.status !== "completed" && (
+                          {activeSeason?.is_active !== false && (
                             <button onClick={async () => {
                               if (!window.confirm("Mark this season as completed? This will finalize all results.")) return;
                               setSaving("complete");
                               try {
-                                await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { status: "completed" });
+                                await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { is_active: false });
                                 setSuccess("Season marked as completed!");
                                 setTimeout(() => { setSuccess(null); window.location.reload(); }, 2000);
                               } catch (e) { setError(e.message); }
@@ -5664,7 +5664,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                               {saving === "complete" ? "Completing..." : "✓ Complete Season"}
                             </button>
                           )}
-                          {activeSeason?.status === "completed" && (
+                          {activeSeason?.is_active === false && (
                             <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
                           )}
                         </Card>
@@ -6155,7 +6155,7 @@ function AdminApp({ user, myRole }) {
 
         {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
 
-        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} />}
+        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} seasonData={seasonData} />}
 
         {tab === "captains" && (
           <>
