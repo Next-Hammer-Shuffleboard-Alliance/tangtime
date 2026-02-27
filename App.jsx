@@ -1542,16 +1542,18 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
   const [showDraw, setShowDraw] = useState(false);
   const [drawComplete, setDrawComplete] = useState(false);
   const [lotteryData, setLotteryData] = useState(null);
-  const [lotteryReplay, setLotteryReplay] = useState(null); // { step: "wc1"|"wc2"|"done", showing: team_id }
+  const [lotteryReplay, setLotteryReplay] = useState(null);
   const [lotteryAnimating, setLotteryAnimating] = useState(false);
+  const [groupMatches, setGroupMatches] = useState({});
 
   useEffect(() => {
     if (!activeSeason) { setLoading(false); return; }
     Promise.all([
-      q("playoff_groups", `season_id=eq.${activeSeason.id}&select=group_name,team_id,team_name,seed_label,division_id&order=group_name,position`),
+      q("playoff_groups", `season_id=eq.${activeSeason.id}&select=group_name,team_id,team_name,seed_label,division_id,court&order=group_name,position`),
       q("playoff_appearances", `season_id=eq.${activeSeason.id}&select=team_id,seed_label,round_reached`),
       q("seasons", `id=eq.${activeSeason.id}&select=lottery_data`),
-    ]).then(([grps, pa, seasonInfo]) => {
+      q("group_matches", `season_id=eq.${activeSeason.id}&order=group_name,match_number`),
+    ]).then(([grps, pa, seasonInfo, gm]) => {
       if (grps?.length > 0) {
         const groupMap = {};
         grps.forEach(g => {
@@ -1562,6 +1564,14 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
       }
       setPlayoffTeams(pa || []);
       if (seasonInfo?.[0]?.lottery_data) setLotteryData(seasonInfo[0].lottery_data);
+      if (gm?.length > 0) {
+        const matchMap = {};
+        gm.forEach(m => {
+          if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+          matchMap[m.group_name].push(m);
+        });
+        setGroupMatches(matchMap);
+      }
       setLoading(false);
     });
   }, [activeSeason]);
@@ -1636,7 +1646,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
   };
 
   const divLabel = (code) => {
-    const map = { MH: "Mon Ham", MC: "Mon Cher", MP: "Mon Pil", TH: "Tue Ham", TC: "Tue Cher", TP: "Tue Pil", WC: "Wild Card" };
+    const map = { MH: "Mon Hammer", MC: "Mon Cherry", MP: "Mon Pilot", TH: "Tue Hammer", TC: "Tue Cherry", TP: "Tue Pilot", WC: "Wild Card" };
     const prefix = code?.replace(/[0-9]/g, "") || "";
     return map[prefix] || code;
   };
@@ -1947,58 +1957,186 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
           )}
 
           {/* Groups grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, minWidth: 0 }}>
-            {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => (
-              <Card key={groupName} style={{
-                padding: "10px 12px", minWidth: 0, overflow: "hidden",
-                border: `1px solid ${showDraw && !drawComplete ? C.amber + "25" : C.border}`,
-                transition: "border-color 0.15s",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <div style={{
-                    fontFamily: F.d, fontSize: 13, fontWeight: 800,
-                    width: 26, height: 26, borderRadius: 13,
-                    background: `${C.amber}18`, color: C.amber,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    {groupName}
-                  </div>
-                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Group {groupName}</span>
-                </div>
-                {[...teamList].sort((a, b) => {
-                  const aWC = a.seed_label?.startsWith("WC") ? 1 : 0;
-                  const bWC = b.seed_label?.startsWith("WC") ? 1 : 0;
-                  if (aWC !== bWC) return aWC - bWC;
-                  const aNum = parseInt(a.seed_label?.replace(/[^0-9]/g, "")) || 99;
-                  const bNum = parseInt(b.seed_label?.replace(/[^0-9]/g, "")) || 99;
-                  return aNum - bNum;
-                }).map((t, i) => (
-                  <div key={t.team_id} style={{
-                    display: "flex", alignItems: "center", gap: 6, padding: "5px 0",
-                    borderTop: i > 0 ? `1px solid ${C.border}` : "none",
-                    cursor: "pointer",
-                  }}
-                  onClick={() => goPage("teams", { teamId: t.team_id })}>
-                    <TeamAvatar name={t.team_name} size={20} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontFamily: F.b, fontSize: 11, color: C.text, fontWeight: 500,
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>
-                        {t.team_name}
-                      </div>
-                      <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>
-                        {divLabel(t.seed_label?.replace(/[0-9]/g, ""))}
-                      </div>
+          {Object.keys(groupMatches).length === 0 ? (
+            // No matches yet — show teams by seed
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, minWidth: 0 }}>
+              {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => (
+                <Card key={groupName} style={{
+                  padding: "10px 12px", minWidth: 0, overflow: "hidden",
+                  border: `1px solid ${showDraw && !drawComplete ? C.amber + "25" : C.border}`,
+                  transition: "border-color 0.15s",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{
+                      fontFamily: F.d, fontSize: 13, fontWeight: 800,
+                      width: 26, height: 26, borderRadius: 13,
+                      background: `${C.amber}18`, color: C.amber,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {groupName}
                     </div>
-                    <Badge color={seedColor(t.seed_label)} style={{ fontSize: 8, padding: "1px 5px" }}>
-                      {t.seed_label}
-                    </Badge>
+                    <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Group {groupName}</span>
                   </div>
-                ))}
-              </Card>
-            ))}
-          </div>
+                  {[...teamList].sort((a, b) => {
+                    const aWC = a.seed_label?.startsWith("WC") ? 1 : 0;
+                    const bWC = b.seed_label?.startsWith("WC") ? 1 : 0;
+                    if (aWC !== bWC) return aWC - bWC;
+                    const aNum = parseInt(a.seed_label?.replace(/[^0-9]/g, "")) || 99;
+                    const bNum = parseInt(b.seed_label?.replace(/[^0-9]/g, "")) || 99;
+                    return aNum - bNum;
+                  }).map((t, i) => (
+                    <div key={t.team_id} style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "5px 0",
+                      borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => goPage("teams", { teamId: t.team_id })}>
+                      <TeamAvatar name={t.team_name} size={20} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontFamily: F.b, fontSize: 11, color: C.text, fontWeight: 500,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {t.team_name}
+                        </div>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>
+                          {divLabel(t.seed_label?.replace(/[0-9]/g, ""))}
+                        </div>
+                      </div>
+                      <Badge color={seedColor(t.seed_label)} style={{ fontSize: 8, padding: "1px 5px" }}>
+                        {t.seed_label}
+                      </Badge>
+                    </div>
+                  ))}
+                </Card>
+              ))}
+            </div>
+          ) : (
+            // Matches exist — show standings + results per group
+            <div>
+              {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => {
+                const gMatches = groupMatches[groupName] || [];
+                const completed = gMatches.filter(m => m.status === "completed").length;
+                const court = teamList[0]?.court;
+
+                // Calculate standings
+                const gStandings = {};
+                teamList.forEach(t => {
+                  gStandings[t.team_id] = { team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 };
+                });
+                gMatches.filter(m => m.status === "completed").forEach(m => {
+                  if (gStandings[m.team1_id]) {
+                    if (m.winner_id === m.team1_id) gStandings[m.team1_id].w++;
+                    else if (m.winner_id === m.team2_id) gStandings[m.team1_id].l++;
+                  }
+                  if (gStandings[m.team2_id]) {
+                    if (m.winner_id === m.team2_id) gStandings[m.team2_id].w++;
+                    else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
+                  }
+                });
+                const standingsArr = Object.values(gStandings).sort((a, b) => b.w - a.w || a.l - b.l);
+
+                return (
+                  <Card key={groupName} style={{ padding: "12px 14px", marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{
+                          fontFamily: F.d, fontSize: 14, fontWeight: 800,
+                          width: 28, height: 28, borderRadius: 14,
+                          background: `${C.amber}18`, color: C.amber,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {groupName}
+                        </div>
+                        <div>
+                          <div style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>Group {groupName}</div>
+                          {court && <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Court {court}</div>}
+                        </div>
+                      </div>
+                      <Badge color={completed === gMatches.length && completed > 0 ? C.green : C.amber} style={{ fontSize: 9 }}>
+                        {completed}/{gMatches.length}
+                      </Badge>
+                    </div>
+
+                    {/* Standings table */}
+                    <div style={{ marginBottom: completed > 0 ? 10 : 0 }}>
+                      <div style={{ display: "flex", gap: 4, marginBottom: 4, padding: "0 4px" }}>
+                        <span style={{ width: 16 }} />
+                        <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
+                        <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
+                        <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
+                      </div>
+                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 }))).map((s, idx) => (
+                        <div key={s.team_id} style={{
+                          display: "flex", alignItems: "center", gap: 4, padding: "5px 4px",
+                          borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                          background: completed > 0 && idx < 2 ? `${C.green}06` : "transparent",
+                          borderRadius: idx < 2 ? 4 : 0,
+                          cursor: "pointer",
+                        }}
+                        onClick={() => goPage("teams", { teamId: s.team_id })}>
+                          <TeamAvatar name={s.team_name} size={18} />
+                          <span style={{
+                            flex: 1, fontFamily: F.b, fontSize: 11,
+                            color: completed > 0 && idx < 2 ? C.green : C.text,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {s.team_name}
+                          </span>
+                          <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
+                          <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.dim, textAlign: "center" }}>{s.l}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Match results */}
+                    {gMatches.length > 0 && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                        <div style={{ fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                          Matches
+                        </div>
+                        {gMatches.map((m, idx) => (
+                          <div key={m.match_number} style={{
+                            display: "flex", alignItems: "center", gap: 4, padding: "4px 0",
+                            borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                          }}>
+                            <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, width: 12, textAlign: "center" }}>{m.match_number}</span>
+                            <span style={{
+                              flex: 1, fontFamily: F.b, fontSize: 10,
+                              color: m.winner_id === m.team1_id ? C.green : m.status === "completed" ? C.muted : C.text,
+                              fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                              {m.team1_name}
+                            </span>
+                            {m.status === "completed" ? (
+                              m.team1_score != null ? (
+                                <span style={{ fontFamily: F.d, fontSize: 10, fontWeight: 700, color: C.text, minWidth: 36, textAlign: "center" }}>
+                                  {m.team1_score}-{m.team2_score}
+                                </span>
+                              ) : (
+                                <span style={{ fontFamily: F.m, fontSize: 8, color: C.green, minWidth: 36, textAlign: "center" }}>✓</span>
+                              )
+                            ) : (
+                              <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, minWidth: 36, textAlign: "center" }}>vs</span>
+                            )}
+                            <span style={{
+                              flex: 1, fontFamily: F.b, fontSize: 10, textAlign: "right",
+                              color: m.winner_id === m.team2_id ? C.green : m.status === "completed" ? C.muted : C.text,
+                              fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                              {m.team2_name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
           {/* Seed legend */}
           <Card style={{ marginTop: 12, padding: "10px 14px" }}>
@@ -3941,28 +4079,28 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   };
 
   // ── Score Entry ──
-  const saveMatchScore = async (groupName, matchNumber, team1Score, team2Score) => {
-    const s1 = parseInt(team1Score);
-    const s2 = parseInt(team2Score);
-    if (isNaN(s1) || isNaN(s2)) { setError("Please enter valid scores"); return; }
-
+  const saveMatchResult = async (groupName, matchNumber, winnerId, team1Score = null, team2Score = null) => {
     setSaving(`score-${groupName}-${matchNumber}`);
     try {
       const match = (groupMatches[groupName] || []).find(m => m.match_number === matchNumber);
       if (!match) return;
 
-      const winnerId = s1 > s2 ? match.team1_id : s2 > s1 ? match.team2_id : null;
+      const updates = { winner_id: winnerId, status: "completed" };
+      if (team1Score !== null && team2Score !== null) {
+        updates.team1_score = parseInt(team1Score);
+        updates.team2_score = parseInt(team2Score);
+      }
+
       await qAuth("group_matches",
         `season_id=eq.${seasonId}&group_name=eq.${groupName}&match_number=eq.${matchNumber}`,
-        "PATCH",
-        { team1_score: s1, team2_score: s2, winner_id: winnerId, status: "completed" }
+        "PATCH", updates
       );
 
       setGroupMatches(prev => ({
         ...prev,
         [groupName]: (prev[groupName] || []).map(m =>
           m.match_number === matchNumber
-            ? { ...m, team1_score: s1, team2_score: s2, winner_id: winnerId, status: "completed" }
+            ? { ...m, ...updates }
             : m
         ),
       }));
@@ -4728,23 +4866,19 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                       // Calculate group standings
                       const gStandings = {};
                       (groups[gName] || []).forEach(t => {
-                        gStandings[t.team_id] = { team_id: t.team_id, team_name: t.team_name, w: 0, l: 0, pf: 0, pa: 0 };
+                        gStandings[t.team_id] = { team_id: t.team_id, team_name: t.team_name, w: 0, l: 0 };
                       });
                       gMatches.filter(m => m.status === "completed").forEach(m => {
                         if (gStandings[m.team1_id]) {
-                          gStandings[m.team1_id].pf += m.team1_score || 0;
-                          gStandings[m.team1_id].pa += m.team2_score || 0;
                           if (m.winner_id === m.team1_id) gStandings[m.team1_id].w++;
                           else if (m.winner_id === m.team2_id) gStandings[m.team1_id].l++;
                         }
                         if (gStandings[m.team2_id]) {
-                          gStandings[m.team2_id].pf += m.team2_score || 0;
-                          gStandings[m.team2_id].pa += m.team1_score || 0;
                           if (m.winner_id === m.team2_id) gStandings[m.team2_id].w++;
                           else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
                         }
                       });
-                      const standingsArr = Object.values(gStandings).sort((a, b) => b.w - a.w || (b.pf - b.pa) - (a.pf - a.pa));
+                      const standingsArr = Object.values(gStandings).sort((a, b) => b.w - a.w || a.l - b.l);
 
                       return (
                         <Card key={gName} style={{ padding: "12px 14px", marginBottom: 10 }}>
@@ -4770,9 +4904,8 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                             <div style={{ marginBottom: 10, padding: "6px 8px", borderRadius: 6, background: C.bg }}>
                               <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
                                 <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
-                                <span style={{ width: 24, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
-                                <span style={{ width: 24, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
-                                <span style={{ width: 30, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>+/-</span>
+                                <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
+                                <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
                               </div>
                               {standingsArr.map((s, idx) => (
                                 <div key={s.team_id} style={{
@@ -4786,11 +4919,8 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                   }}>
                                     {idx < 2 ? "▲ " : ""}{s.team_name}
                                   </span>
-                                  <span style={{ width: 24, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
-                                  <span style={{ width: 24, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
-                                  <span style={{ width: 30, fontFamily: F.d, fontSize: 10, color: s.pf - s.pa > 0 ? C.green : s.pf - s.pa < 0 ? C.red : C.dim, textAlign: "center" }}>
-                                    {s.pf - s.pa > 0 ? "+" : ""}{s.pf - s.pa}
-                                  </span>
+                                  <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
+                                  <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
                                 </div>
                               ))}
                             </div>
@@ -4801,65 +4931,137 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                             const isEditing = editingScore?.groupName === gName && editingScore?.matchNumber === m.match_number;
                             return (
                               <div key={m.match_number} style={{
-                                padding: "7px 0",
+                                padding: "8px 0",
                                 borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
                               }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
-                                  <span style={{
-                                    flex: 1, fontFamily: F.b, fontSize: 11,
-                                    color: m.winner_id === m.team1_id ? C.green : m.status === "completed" ? C.muted : C.text,
-                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                  }}>
-                                    {m.team1_name}
-                                  </span>
-                                  {m.status === "completed" ? (
-                                    <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 50, textAlign: "center" }}>
-                                      {m.team1_score} - {m.team2_score}
+                                {/* Completed match display */}
+                                {m.status === "completed" && !isEditing && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                    <span style={{
+                                      fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                                      color: m.winner_id === m.team1_id ? C.green : C.muted,
+                                    }}>
+                                      {m.winner_id === m.team1_id ? "W " : ""}
                                     </span>
-                                  ) : (
-                                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, minWidth: 50, textAlign: "center" }}>vs</span>
-                                  )}
-                                  <span style={{
-                                    flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
-                                    color: m.winner_id === m.team2_id ? C.green : m.status === "completed" ? C.muted : C.text,
-                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                  }}>
-                                    {m.team2_name}
-                                  </span>
-                                  {m.status !== "completed" && !isEditing && (
-                                    <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: "", team2: "" }); }}
-                                      style={{ padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.amber}30`, background: `${C.amber}10`, color: C.amber, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
-                                      Score
-                                    </button>
-                                  )}
-                                  {m.status === "completed" && !isEditing && (
-                                    <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: String(m.team1_score), team2: String(m.team2_score) }); }}
+                                    <span style={{
+                                      flex: 1, fontFamily: F.b, fontSize: 11,
+                                      color: m.winner_id === m.team1_id ? C.text : C.muted,
+                                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    }}>
+                                      {m.team1_name}
+                                    </span>
+                                    {m.team1_score != null && (
+                                      <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 44, textAlign: "center" }}>
+                                        {m.team1_score}-{m.team2_score}
+                                      </span>
+                                    )}
+                                    <span style={{
+                                      flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
+                                      color: m.winner_id === m.team2_id ? C.text : C.muted,
+                                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    }}>
+                                      {m.team2_name}
+                                    </span>
+                                    <span style={{
+                                      fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                                      color: m.winner_id === m.team2_id ? C.green : C.muted,
+                                    }}>
+                                      {m.winner_id === m.team2_id ? " W" : ""}
+                                    </span>
+                                    <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
                                       style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
                                       ✏️
                                     </button>
-                                  )}
-                                </div>
-                                {/* Score input row */}
+                                  </div>
+                                )}
+
+                                {/* Pending match — tap to select winner */}
+                                {m.status !== "completed" && !isEditing && (
+                                  <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                      <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {m.team1_name}
+                                      </span>
+                                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>vs</span>
+                                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 11, color: C.text, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {m.team2_name}
+                                      </span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, paddingLeft: 20 }}>
+                                      <button onClick={() => saveMatchResult(gName, m.match_number, m.team1_id)}
+                                        disabled={!!saving}
+                                        style={{
+                                          flex: 1, padding: "7px 4px", borderRadius: 6,
+                                          border: `1px solid ${C.green}30`, background: `${C.green}08`,
+                                          color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600,
+                                          cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        }}>
+                                        ✓ {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                      </button>
+                                      <button onClick={() => saveMatchResult(gName, m.match_number, m.team2_id)}
+                                        disabled={!!saving}
+                                        style={{
+                                          flex: 1, padding: "7px 4px", borderRadius: 6,
+                                          border: `1px solid ${C.green}30`, background: `${C.green}08`,
+                                          color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600,
+                                          cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        }}>
+                                        ✓ {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                      </button>
+                                      <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: "", team2: "" }); }}
+                                        style={{ padding: "7px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                        +Score
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Score input expanded */}
                                 {isEditing && (
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, paddingLeft: 20 }}>
-                                    <input type="number" placeholder="0" value={scoreInputs.team1}
-                                      onChange={e => setScoreInputs(prev => ({ ...prev, team1: e.target.value }))}
-                                      style={{ width: 45, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" }}
-                                      autoFocus />
-                                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>-</span>
-                                    <input type="number" placeholder="0" value={scoreInputs.team2}
-                                      onChange={e => setScoreInputs(prev => ({ ...prev, team2: e.target.value }))}
-                                      style={{ width: 45, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" }} />
-                                    <button onClick={() => saveMatchScore(gName, m.match_number, scoreInputs.team1, scoreInputs.team2)}
-                                      disabled={!!saving}
-                                      style={{ padding: "5px 10px", borderRadius: 6, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                      ✓
-                                    </button>
-                                    <button onClick={() => setEditingScore(null)}
-                                      style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
-                                      ✕
-                                    </button>
+                                  <div style={{ padding: "6px 0 2px" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                      <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                      <span style={{ fontFamily: F.b, fontSize: 11, color: C.text }}>{m.team1_name} vs {m.team2_name}</span>
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 20 }}>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team1}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team1: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }}
+                                          autoFocus />
+                                      </div>
+                                      <span style={{ fontFamily: F.d, fontSize: 14, color: C.dim, fontWeight: 700, paddingTop: 16 }}>—</span>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team2}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team2: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, marginTop: 8, paddingLeft: 20 }}>
+                                      <button onClick={() => {
+                                        const s1 = scoreInputs.team1 ? parseInt(scoreInputs.team1) : null;
+                                        const s2 = scoreInputs.team2 ? parseInt(scoreInputs.team2) : null;
+                                        const winnerId = s1 != null && s2 != null ? (s1 > s2 ? m.team1_id : m.team2_id) : null;
+                                        if (!winnerId) { setError("Enter scores for both teams to determine winner"); return; }
+                                        saveMatchResult(gName, m.match_number, winnerId, s1, s2);
+                                      }}
+                                        disabled={!!saving}
+                                        style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                        ✓ Save Score
+                                      </button>
+                                      <button onClick={() => setEditingScore(null)}
+                                        style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>
+                                        ✕
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -5631,7 +5833,7 @@ function AdminApp({ user, myRole }) {
           );
         })()}
 
-        <div style={{ textAlign: "center", marginTop: 32 }}><a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a></div>
+        <div style={{ height: 32 }} />
       </main>
       {editing && <AdminEditModal match={editing} onClose={() => setEditing(null)} onSave={handleEditSave} />}
     </div>
