@@ -1053,8 +1053,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs, hasPlayoff
         </div>
       )}
 
-      {/* PAST SEASON: Banquet Final 4 (only show when no Playoffs tab — otherwise it's on Playoffs) */}
-      {isPast && !hasPlayoffTab && banquetTeams.some(bt => !bt._incomplete) && (
+      {/* PAST SEASON: Banquet Final 4 */}
+      {isPast && banquetTeams.some(bt => !bt._incomplete) && (
         <div>
           <SectionTitle right="Final 4">Banquet</SectionTitle>
           {banquetTeams.map((bt, i) => {
