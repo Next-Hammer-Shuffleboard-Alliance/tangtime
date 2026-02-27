@@ -3359,6 +3359,10 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [drawingTier, setDrawingTier] = useState(null); // current tier being drawn
   const [drawingTeam, setDrawingTeam] = useState(null); // current team being placed
   const [existingGroups, setExistingGroups] = useState(null); // loaded from DB
+  const [courtAssignments, setCourtAssignments] = useState({}); // groupName -> court number
+  const [groupMatches, setGroupMatches] = useState({}); // groupName -> [{match_number, team1_id, team1_name, team2_id, team2_name, ...}]
+  const [editingScore, setEditingScore] = useState(null); // {groupName, matchNumber}
+  const [scoreInputs, setScoreInputs] = useState({ team1: "", team2: "" });
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
   const DEFAULT_PLAYOFF_SPOTS = 5;
@@ -3445,16 +3449,30 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
         // Load existing group draw
         try {
-          const grps = await q("playoff_groups", `season_id=eq.${seasonId}&select=group_name,team_id,team_name,seed_label,division_id&order=group_name,position`);
+          const grps = await q("playoff_groups", `season_id=eq.${seasonId}&select=group_name,team_id,team_name,seed_label,division_id,court&order=group_name,position`);
           if (grps?.length > 0) {
             const groupMap = {};
+            const courts = {};
             grps.forEach(g => {
               if (!groupMap[g.group_name]) groupMap[g.group_name] = [];
               groupMap[g.group_name].push(g);
+              if (g.court && !courts[g.group_name]) courts[g.group_name] = g.court;
             });
             setExistingGroups(groupMap);
             setGroups(groupMap);
+            setCourtAssignments(courts);
             setGroupDrawStep("done");
+
+            // Load group matches
+            const gm = await q("group_matches", `season_id=eq.${seasonId}&order=group_name,match_number`);
+            if (gm?.length > 0) {
+              const matchMap = {};
+              gm.forEach(m => {
+                if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+                matchMap[m.group_name].push(m);
+              });
+              setGroupMatches(matchMap);
+            }
           }
         } catch {}
 
@@ -3815,12 +3833,143 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const clearGroups = async () => {
     if (!window.confirm("Clear the group draw? This cannot be undone.")) return;
     try {
+      await qAuth("group_matches", `season_id=eq.${seasonId}`, "DELETE").catch(() => {});
       await qAuth("playoff_groups", `season_id=eq.${seasonId}`, "DELETE");
       setGroups(null);
       setExistingGroups(null);
+      setGroupMatches({});
+      setCourtAssignments({});
       setGroupDrawStep("idle");
       setSuccess("Group draw cleared.");
     } catch (e) { setError(e.message); }
+  };
+
+  // ── Court Assignments ──
+  const assignCourtsRandomly = async () => {
+    if (!groups) return;
+    const groupNames = Object.keys(groups).sort();
+    const courts = [1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5);
+    const assignments = {};
+    groupNames.forEach((g, i) => { assignments[g] = courts[i]; });
+    setCourtAssignments(assignments);
+
+    // Save to DB
+    for (const [gName, court] of Object.entries(assignments)) {
+      await qAuth("playoff_groups", `season_id=eq.${seasonId}&group_name=eq.${gName}`, "PATCH", { court }).catch(() => {});
+    }
+    setSuccess("Courts assigned!");
+    setTimeout(() => setSuccess(null), 2000);
+  };
+
+  const updateCourt = async (groupName, court) => {
+    const num = parseInt(court);
+    if (isNaN(num) || num < 1 || num > 10) return;
+    setCourtAssignments(prev => ({ ...prev, [groupName]: num }));
+    await qAuth("playoff_groups", `season_id=eq.${seasonId}&group_name=eq.${groupName}`, "PATCH", { court: num }).catch(() => {});
+  };
+
+  // ── Match Schedule Generation ──
+  const generateRoundRobin = (teamList) => {
+    // All possible pairings for 4 teams (6 matches)
+    const pairings = [];
+    for (let i = 0; i < teamList.length; i++) {
+      for (let j = i + 1; j < teamList.length; j++) {
+        pairings.push([teamList[i], teamList[j]]);
+      }
+    }
+
+    // Shuffle and validate: no team plays 3 in a row
+    const isValid = (order) => {
+      for (let i = 0; i < order.length - 2; i++) {
+        const teams1 = [order[i][0].team_id, order[i][1].team_id];
+        const teams2 = [order[i + 1][0].team_id, order[i + 1][1].team_id];
+        const teams3 = [order[i + 2][0].team_id, order[i + 2][1].team_id];
+        // Check if any team appears in all 3 consecutive matches
+        const allTeams = [...teams1, ...teams2, ...teams3];
+        const counts = {};
+        allTeams.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+        if (Object.values(counts).some(c => c >= 3)) return false;
+      }
+      return true;
+    };
+
+    // Try shuffling up to 100 times to find valid order
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const shuffled = [...pairings].sort(() => Math.random() - 0.5);
+      if (isValid(shuffled)) return shuffled;
+    }
+    // Fallback: return shuffled anyway
+    return pairings.sort(() => Math.random() - 0.5);
+  };
+
+  const generateAllGroupMatches = async () => {
+    if (!groups || !existingGroups) return;
+    setSaving("matches");
+    setError(null);
+    try {
+      // Delete existing matches
+      await qAuth("group_matches", `season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+
+      const newMatches = {};
+      for (const [gName, teamList] of Object.entries(groups)) {
+        const schedule = generateRoundRobin(teamList);
+        const court = courtAssignments[gName] || null;
+        newMatches[gName] = [];
+
+        for (let i = 0; i < schedule.length; i++) {
+          const [t1, t2] = schedule[i];
+          const matchData = {
+            season_id: seasonId,
+            group_name: gName,
+            match_number: i + 1,
+            team1_id: t1.team_id,
+            team2_id: t2.team_id,
+            team1_name: t1.team_name,
+            team2_name: t2.team_name,
+            court: court,
+            status: "scheduled",
+          };
+          await qAuth("group_matches", "", "POST", matchData);
+          newMatches[gName].push(matchData);
+        }
+      }
+      setGroupMatches(newMatches);
+      setSuccess("Match schedules generated for all groups!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  // ── Score Entry ──
+  const saveMatchScore = async (groupName, matchNumber, team1Score, team2Score) => {
+    const s1 = parseInt(team1Score);
+    const s2 = parseInt(team2Score);
+    if (isNaN(s1) || isNaN(s2)) { setError("Please enter valid scores"); return; }
+
+    setSaving(`score-${groupName}-${matchNumber}`);
+    try {
+      const match = (groupMatches[groupName] || []).find(m => m.match_number === matchNumber);
+      if (!match) return;
+
+      const winnerId = s1 > s2 ? match.team1_id : s2 > s1 ? match.team2_id : null;
+      await qAuth("group_matches",
+        `season_id=eq.${seasonId}&group_name=eq.${groupName}&match_number=eq.${matchNumber}`,
+        "PATCH",
+        { team1_score: s1, team2_score: s2, winner_id: winnerId, status: "completed" }
+      );
+
+      setGroupMatches(prev => ({
+        ...prev,
+        [groupName]: (prev[groupName] || []).map(m =>
+          m.match_number === matchNumber
+            ? { ...m, team1_score: s1, team2_score: s2, winner_id: winnerId, status: "completed" }
+            : m
+        ),
+      }));
+      setEditingScore(null);
+      setScoreInputs({ team1: "", team2: "" });
+    } catch (e) { setError(e.message); }
+    setSaving(null);
   };
 
   if (loading) return <Loader />;
@@ -4500,6 +4649,228 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   </Card>
                 ))}
               </div>
+
+              {/* ── Court Assignments ── */}
+              {existingGroups && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                      🏟 Court Assignments
+                    </div>
+                    {Object.keys(courtAssignments).length === 0 ? (
+                      <button onClick={assignCourtsRandomly}
+                        style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                        🎲 Random Assign
+                      </button>
+                    ) : (
+                      <button onClick={assignCourtsRandomly}
+                        style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                        🔄 Reshuffle
+                      </button>
+                    )}
+                  </div>
+                  <Card style={{ padding: "10px 14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {Object.keys(groups).sort().map(gName => (
+                        <div key={gName} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{
+                            fontFamily: F.d, fontSize: 12, fontWeight: 800, color: C.amber,
+                            width: 22, height: 22, borderRadius: 11,
+                            background: `${C.amber}18`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>{gName}</div>
+                          <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginRight: 4 }}>→</span>
+                          <select
+                            value={courtAssignments[gName] || ""}
+                            onChange={e => updateCourt(gName, e.target.value)}
+                            style={{
+                              flex: 1, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`,
+                              background: C.bg, color: C.text, fontFamily: F.b, fontSize: 11, outline: "none",
+                            }}>
+                            <option value="">--</option>
+                            {[1,2,3,4,5,6,7,8,9,10].map(c => (
+                              <option key={c} value={c}>Court {c}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* ── Match Schedule ── */}
+              {existingGroups && Object.keys(courtAssignments).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                      📋 Group Matches
+                    </div>
+                    {Object.keys(groupMatches).length === 0 ? (
+                      <button onClick={generateAllGroupMatches} disabled={saving === "matches"}
+                        style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                        {saving === "matches" ? "Generating..." : "🎲 Generate Schedules"}
+                      </button>
+                    ) : (
+                      <button onClick={() => {
+                        if (window.confirm("Regenerate all match schedules? Existing scores will be lost.")) generateAllGroupMatches();
+                      }} disabled={saving === "matches"}
+                        style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                        🔄 Regenerate
+                      </button>
+                    )}
+                  </div>
+
+                  {Object.keys(groupMatches).length > 0 && (
+                    Object.entries(groupMatches).sort(([a], [b]) => a.localeCompare(b)).map(([gName, gMatches]) => {
+                      const court = courtAssignments[gName];
+                      const completed = gMatches.filter(m => m.status === "completed").length;
+                      // Calculate group standings
+                      const gStandings = {};
+                      (groups[gName] || []).forEach(t => {
+                        gStandings[t.team_id] = { team_id: t.team_id, team_name: t.team_name, w: 0, l: 0, pf: 0, pa: 0 };
+                      });
+                      gMatches.filter(m => m.status === "completed").forEach(m => {
+                        if (gStandings[m.team1_id]) {
+                          gStandings[m.team1_id].pf += m.team1_score || 0;
+                          gStandings[m.team1_id].pa += m.team2_score || 0;
+                          if (m.winner_id === m.team1_id) gStandings[m.team1_id].w++;
+                          else if (m.winner_id === m.team2_id) gStandings[m.team1_id].l++;
+                        }
+                        if (gStandings[m.team2_id]) {
+                          gStandings[m.team2_id].pf += m.team2_score || 0;
+                          gStandings[m.team2_id].pa += m.team1_score || 0;
+                          if (m.winner_id === m.team2_id) gStandings[m.team2_id].w++;
+                          else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
+                        }
+                      });
+                      const standingsArr = Object.values(gStandings).sort((a, b) => b.w - a.w || (b.pf - b.pa) - (a.pf - a.pa));
+
+                      return (
+                        <Card key={gName} style={{ padding: "12px 14px", marginBottom: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{
+                                fontFamily: F.d, fontSize: 14, fontWeight: 800, color: C.amber,
+                                width: 26, height: 26, borderRadius: 13, background: `${C.amber}18`,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                              }}>{gName}</div>
+                              <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
+                                Court {court}
+                              </span>
+                            </div>
+                            <Badge color={completed === gMatches.length ? C.green : C.amber}
+                              style={{ fontSize: 9 }}>
+                              {completed}/{gMatches.length} played
+                            </Badge>
+                          </div>
+
+                          {/* Mini standings */}
+                          {completed > 0 && (
+                            <div style={{ marginBottom: 10, padding: "6px 8px", borderRadius: 6, background: C.bg }}>
+                              <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                                <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
+                                <span style={{ width: 24, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
+                                <span style={{ width: 24, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
+                                <span style={{ width: 30, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>+/-</span>
+                              </div>
+                              {standingsArr.map((s, idx) => (
+                                <div key={s.team_id} style={{
+                                  display: "flex", gap: 4, padding: "3px 0",
+                                  borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                                }}>
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 10,
+                                    color: idx < 2 ? C.green : C.muted,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {idx < 2 ? "▲ " : ""}{s.team_name}
+                                  </span>
+                                  <span style={{ width: 24, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
+                                  <span style={{ width: 24, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
+                                  <span style={{ width: 30, fontFamily: F.d, fontSize: 10, color: s.pf - s.pa > 0 ? C.green : s.pf - s.pa < 0 ? C.red : C.dim, textAlign: "center" }}>
+                                    {s.pf - s.pa > 0 ? "+" : ""}{s.pf - s.pa}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Match list */}
+                          {gMatches.map((m, idx) => {
+                            const isEditing = editingScore?.groupName === gName && editingScore?.matchNumber === m.match_number;
+                            return (
+                              <div key={m.match_number} style={{
+                                padding: "7px 0",
+                                borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                              }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 11,
+                                    color: m.winner_id === m.team1_id ? C.green : m.status === "completed" ? C.muted : C.text,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {m.team1_name}
+                                  </span>
+                                  {m.status === "completed" ? (
+                                    <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 50, textAlign: "center" }}>
+                                      {m.team1_score} - {m.team2_score}
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, minWidth: 50, textAlign: "center" }}>vs</span>
+                                  )}
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
+                                    color: m.winner_id === m.team2_id ? C.green : m.status === "completed" ? C.muted : C.text,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {m.team2_name}
+                                  </span>
+                                  {m.status !== "completed" && !isEditing && (
+                                    <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: "", team2: "" }); }}
+                                      style={{ padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.amber}30`, background: `${C.amber}10`, color: C.amber, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                      Score
+                                    </button>
+                                  )}
+                                  {m.status === "completed" && !isEditing && (
+                                    <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: String(m.team1_score), team2: String(m.team2_score) }); }}
+                                      style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                      ✏️
+                                    </button>
+                                  )}
+                                </div>
+                                {/* Score input row */}
+                                {isEditing && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, paddingLeft: 20 }}>
+                                    <input type="number" placeholder="0" value={scoreInputs.team1}
+                                      onChange={e => setScoreInputs(prev => ({ ...prev, team1: e.target.value }))}
+                                      style={{ width: 45, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" }}
+                                      autoFocus />
+                                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>-</span>
+                                    <input type="number" placeholder="0" value={scoreInputs.team2}
+                                      onChange={e => setScoreInputs(prev => ({ ...prev, team2: e.target.value }))}
+                                      style={{ width: 45, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" }} />
+                                    <button onClick={() => saveMatchScore(gName, m.match_number, scoreInputs.team1, scoreInputs.team2)}
+                                      disabled={!!saving}
+                                      style={{ padding: "5px 10px", borderRadius: 6, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                                      ✓
+                                    </button>
+                                    <button onClick={() => setEditingScore(null)}
+                                      style={{ padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </Card>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
