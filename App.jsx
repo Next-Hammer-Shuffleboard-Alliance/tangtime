@@ -1,4 +1,4 @@
-// App v26 — v22 base + week fix + auth + captain/admin routes (no external deps)
+// App v28bg26 — registration free agents, auto-provision, admin reg details
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -669,7 +669,6 @@ function Footer() {
         <NHSALogo size={20} />
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
       </div>
-      <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, opacity: 0.4 }}>v28bg18</span>
     </div>
   );
 }
@@ -884,7 +883,7 @@ function SeasonSelector({ seasons, selected, onSelect }) {
 // ══════════════════════════════════════
 
 // ─── HOME ───
-function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
+function HomePage({ seasons, activeSeason, divisions, goPage, champs, hasPlayoffTab }) {
   const [leaders, setLeaders] = useState([]);
   const [recent, setRecent] = useState([]);
   const [allStandings, setAllStandings] = useState([]);
@@ -1030,8 +1029,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         </div>
       </div>
 
-      {/* PAST SEASON: Champion + Division Winners */}
-      {isPast && seasonChamp && (
+      {/* PAST SEASON: Champion (only show when no Playoffs tab — otherwise it's on Playoffs) */}
+      {isPast && !hasPlayoffTab && seasonChamp && (
         <div>
           <Card style={{
             background: `linear-gradient(135deg, #1a1520, ${C.surface})`,
@@ -1370,8 +1369,8 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                 {t.playoffRound && (
                   <span style={{ fontSize: 10, flexShrink: 0 }}>{
                     t.playoffRound === "champion" ? "🏆" :
-                    t.playoffRound === "final" ? "🥈" :
-                    t.playoffRound === "semifinal" ? "🎖️" :
+                    t.playoffRound === "finalist" ? "🥈" :
+                    t.playoffRound === "banquet" ? "🎖️" :
                     "☆"
                   }</span>
                 )}</div>
@@ -2261,7 +2260,29 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
               </div>
             </Card>
           ) : (
-            ["R16", "QF", "SF", "3RD", "FIN"].map(round => {
+            <>
+            {/* Champion banner */}
+            {(() => {
+              const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
+              if (!fin) return null;
+              const champName = String(fin.winner_id) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+              return (
+                <Card style={{
+                  padding: "20px 16px", textAlign: "center", marginBottom: 14,
+                  background: `linear-gradient(135deg, ${C.surface}, ${C.amber}15)`,
+                  border: `1px solid ${C.amber}30`,
+                }}>
+                  <div style={{ fontSize: 36, marginBottom: 6 }}>🏆</div>
+                  <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber, marginBottom: 4 }}>
+                    {champName}
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>
+                    Season {activeSeason?.number || ""} Champions
+                  </div>
+                </Card>
+              );
+            })()}
+            {["R16", "QF", "SF", "3RD", "FIN"].map(round => {
               const matches = (bracketMatches[round] || []).sort((a, b) => a.match_number - b.match_number);
               if (matches.length === 0) return null;
               const roundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", FIN: "Final", "3RD": "3rd Place" };
@@ -2274,6 +2295,11 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                     const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
                     const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
                     const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                    const mIcon = (teamId) => {
+                      if (round === "FIN" && m.status === "completed") return String(m.winner_id) === String(teamId) ? "🏆 " : "🥈 ";
+                      if (["SF", "FIN", "3RD"].includes(round)) return "🎖️ ";
+                      return "";
+                    };
                     return (
                     <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
                       {m.court && (
@@ -2293,7 +2319,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                             color: t1Wins ? C.green : m.team1_name ? C.text : C.dim,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
-                            {m.team1_name || "TBD"}
+                            {m.team1_id ? mIcon(m.team1_id) : ""}{m.team1_name || "TBD"}
                           </div>
                           {m.team1_score != null && (
                             <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team1_score}</div>
@@ -2313,7 +2339,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                             color: t2Wins ? C.green : m.team2_name ? C.text : C.dim,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
-                            {m.team2_name || "TBD"}
+                            {m.team2_id ? mIcon(m.team2_id) : ""}{m.team2_name || "TBD"}
                           </div>
                           {m.team2_score != null && (
                             <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team2_score}</div>
@@ -2325,7 +2351,8 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                   })}
                 </div>
               );
-            })
+            })}
+            </>
           )}
         </>
       )}
@@ -2972,7 +2999,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
 
   const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
 
-  const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Banquet", round_2: "Round 2", round_1: "Round 1" };
+  const roundLabel = { champion: "🏆 Champion", finalist: "🥈 Final", banquet: "🏅 Banquet", qualified: "☆ Qualified", wildcard: "★ Wildcard", round_2: "Round 2", round_1: "Round 1" };
 
   const dataNote = tab === "banquet" ? "Banquet data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
     : tab === "playoffs" ? "Playoffs data is incomplete. Help us fill in the gaps!"
@@ -3573,7 +3600,7 @@ function AdminEditModal({ match, onClose, onSave }) {
 // ─── ADMIN POSTSEASON TAB ───
 // ══════════════════════════════════════
 
-function AdminPostseasonTab({ seasonId, divisions }) {
+function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
   const [standings, setStandings] = useState({});  // divId -> [{team_id, team_name, wins, losses}]
   const [existingChamps, setExistingChamps] = useState([]); // championships for this season
   const [existingPlayoffs, setExistingPlayoffs] = useState([]); // playoff_appearances for this season
@@ -3748,6 +3775,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       await qAuth("championships", "", "POST", {
         team_id: teamId,
         season_id: seasonId,
+        division_id: divId,
         type: "division",
       });
 
@@ -4221,7 +4249,9 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       setScoreInputs({ team1: "", team2: "" });
 
       // Auto-advance bracket: populate next round
-      if (isBracket) await advanceBracket(groupName, matchNumber, winnerId, match);
+      if (isBracket) {
+        await advanceBracket(groupName, matchNumber, winnerId, match);
+      }
     } catch (e) { setError(e.message); }
     setSaving(null);
   };
@@ -4313,14 +4343,23 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         const sfMatch = matchNum <= 2 ? 1 : 2;
         const isTeam1 = matchNum % 2 === 1;
         await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.SF[sfMatch - 1] || sfMatch);
+        // Update playoff_appearances: this team reached the banquet (Final 4)
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "banquet" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances to banquet:", e.message); }
       }
       // SF → FIN + 3RD
       if (round === "SF") {
         await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName, BRACKET_COURTS.FIN[0]);
         await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName, BRACKET_COURTS["3RD"][0]);
       }
+      // FIN complete → update playoff_appearances only (championships written at season complete)
+      if (round === "FIN") {
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "champion" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances champion:", e.message); }
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${loserId}`, "PATCH", { round_reached: "finalist" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances finalist:", e.message); }
+      }
     } catch (e) {
-      console.error("advanceBracket error:", e);
       setError("Bracket advance failed: " + e.message);
     }
   };
@@ -4362,11 +4401,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         team2_id: isTeam1 ? null : teamId, team2_name: isTeam1 ? null : teamName,
         court: court || null,
       };
-      await qAuth("group_matches", "", "POST", data);
-      setBracketMatches(prev => ({
-        ...prev,
-        [round]: [...(prev[round] || []), data],
-      }));
+      const result = await qAuth("group_matches", "", "POST", data);
+      setBracketMatches(prev => {
+        const updated = { ...prev, [round]: [...(prev[round] || []), data] };
+        return updated;
+      });
     }
   };
 
@@ -4396,6 +4435,32 @@ function AdminPostseasonTab({ seasonId, divisions }) {
             {totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? "✓ Complete" : "In Progress"}
           </Badge>
         </div>
+        {/* Auto-confirm all clear (untied) winners */}
+        {(() => {
+          const unconfirmed = activeDivs.filter(d => {
+            if (confirmedDivWinners[d.id]) return false;
+            const teams = standings[d.id] || [];
+            if (teams.length < 2) return false;
+            return teams[0].wins !== teams[1].wins || teams[0].losses !== teams[1].losses;
+          });
+          if (unconfirmed.length === 0) return null;
+          return (
+            <button onClick={async () => {
+              setSaving("all-winners");
+              for (const d of unconfirmed) {
+                const teams = standings[d.id] || [];
+                if (teams[0]) await confirmDivisionWinner(d.id, teams[0].team_id);
+              }
+              setSaving(null);
+              setSuccess(`${unconfirmed.length} division winners confirmed!`);
+              setTimeout(() => setSuccess(null), 3000);
+            }}
+              disabled={!!saving}
+              style={{ marginTop: 10, width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.green}30`, background: `${C.green}10`, color: C.green, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              {saving === "all-winners" ? "Confirming..." : `👑 Confirm ${unconfirmed.length} Clear Winner${unconfirmed.length > 1 ? "s" : ""}`}
+            </button>
+          );
+        })()}
       </Card>
 
       {/* Division-by-division */}
@@ -5408,7 +5473,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                         <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
                           disabled={saving === "bracket"}
                           style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
-                          🔄 Regenerate
+                          ♻️ Regenerate
                         </button>
                       )}
                     </div>
@@ -5455,6 +5520,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                             const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
                             const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
                             const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                            const milestoneIcon = (teamId) => {
+                              if (round === "FIN" && m.status === "completed") return String(m.winner_id) === String(teamId) ? "🏆 " : "🥈 ";
+                              if (["SF", "FIN", "3RD"].includes(round)) return "🎖️ ";
+                              return "";
+                            };
                             return (
                               <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
                                 {/* Court row */}
@@ -5483,7 +5553,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                     fontWeight: t1Wins ? 700 : 400,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
-                                    {m.team1_name || "TBD"}
+                                    {m.team1_id ? milestoneIcon(m.team1_id) : ""}{m.team1_name || "TBD"}
                                   </span>
                                   {m.status === "completed" && m.team1_score != null ? (
                                     <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 44, textAlign: "center" }}>
@@ -5500,7 +5570,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                     fontWeight: t2Wins ? 700 : 400,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
-                                    {m.team2_name || "TBD"}
+                                    {m.team2_name || "TBD"}{m.team2_id ? ` ${milestoneIcon(m.team2_id).trim()}` : ""}
                                   </span>
                                   {m.status === "completed" && !isEditing && (
                                     <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
@@ -5576,6 +5646,110 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                         </div>
                       );
                     })}
+
+                    {/* Complete Season button when FIN is done */}
+                    {(() => {
+                      const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
+                      if (!fin) return null;
+                      const champId = fin.winner_id;
+                      const champName = String(champId) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+                      const finalistId = String(champId) === String(fin.team1_id) ? fin.team2_id : fin.team1_id;
+                      const finalistName = String(champId) === String(fin.team1_id) ? fin.team2_name : fin.team1_name;
+                      // Collect SF teams (banquet = Final 4 who lost in SF)
+                      const sfMatches = bracketMatches["SF"] || [];
+                      const banquetTeams = sfMatches.filter(m => m.status === "completed").map(m => {
+                        const loserId = String(m.winner_id) === String(m.team1_id) ? m.team2_id : m.team1_id;
+                        const loserName = String(m.winner_id) === String(m.team1_id) ? m.team2_name : m.team1_name;
+                        return { id: loserId, name: loserName };
+                      });
+
+                      const completeSeason = async () => {
+                        if (!window.confirm("Mark this season as completed? This will write championship data and finalize all results.")) return;
+                        setSaving("complete");
+                        setError(null);
+                        const errors = [];
+
+                        // 1. Update playoff_appearances round_reached
+                        const roundUpdates = [
+                          { teamId: champId, round: "champion" },
+                          { teamId: finalistId, round: "finalist" },
+                          ...banquetTeams.map(t => ({ teamId: t.id, round: "banquet" })),
+                        ];
+                        for (const { teamId, round } of roundUpdates) {
+                          try {
+                            await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${teamId}`, "PATCH", { round_reached: round });
+                          } catch (e) { errors.push(`playoff_appearances ${round}: ${e.message}`); }
+                        }
+
+                        // 2. Clear any existing championship entries for this season (idempotent)
+                        try {
+                          await qAuth("championships", `season_id=eq.${seasonId}&type=in.(league,finalist,banquet)`, "DELETE");
+                        } catch (e) { errors.push(`clear old champs: ${e.message}`); }
+
+                        // 3. Write championship entries
+                        const champEntries = [
+                          { season_id: seasonId, team_id: champId, type: "league" },
+                          { season_id: seasonId, team_id: finalistId, type: "finalist" },
+                          ...banquetTeams.map(t => ({ season_id: seasonId, team_id: t.id, type: "banquet" })),
+                        ];
+                        for (const entry of champEntries) {
+                          try {
+                            await qAuth("championships", "", "POST", entry);
+                          } catch (e) { errors.push(`championship ${entry.type}: ${e.message}`); }
+                        }
+
+                        // 4. Increment winner's championship count
+                        try {
+                          const teamData = await q("teams", `id=eq.${champId}&select=championship_count`);
+                          const currentCount = teamData?.[0]?.championship_count || 0;
+                          await qAuth("teams", `id=eq.${champId}`, "PATCH", { championship_count: currentCount + 1 });
+                        } catch (e) { errors.push(`championship_count: ${e.message}`); }
+
+                        // 5. Mark season as completed
+                        try {
+                          await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { is_active: false });
+                        } catch (e) { errors.push(`season is_active: ${e.message}`); }
+
+                        if (errors.length) {
+                          setError("Some writes failed:\n" + errors.join("\n"));
+                          console.error("Complete season errors:", errors);
+                        } else {
+                          setSuccess("Season completed! Reloading...");
+                          setTimeout(() => { window.location.reload(); }, 2000);
+                        }
+                        setSaving(null);
+                      };
+
+                      return (
+                        <Card style={{
+                          padding: "16px", textAlign: "center", marginTop: 10,
+                          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}10)`,
+                          border: `1px solid ${C.amber}25`,
+                        }}>
+                          <div style={{ fontSize: 28, marginBottom: 4 }}>🏆</div>
+                          <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800, color: C.amber, marginBottom: 2 }}>
+                            {champName}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginBottom: 4 }}>
+                            🥈 {finalistName}
+                          </div>
+                          {banquetTeams.length > 0 && (
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginBottom: 10 }}>
+                              🎖️ {banquetTeams.map(t => t.name).join(" · ")}
+                            </div>
+                          )}
+                          {activeSeason?.is_active !== false ? (
+                            <button onClick={completeSeason}
+                              disabled={!!saving}
+                              style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: C.green, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              {saving === "complete" ? "Writing data..." : "✓ Complete Season"}
+                            </button>
+                          ) : (
+                            <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
+                          )}
+                        </Card>
+                      );
+                    })()}
                   </div>
                 );
               })()}
@@ -5622,11 +5796,17 @@ function AdminApp({ user, myRole }) {
   const [newDivPrice, setNewDivPrice] = useState("650");
   const [newDivMax, setNewDivMax] = useState("16");
   const [seasonsSaving, setSeasonsSaving] = useState(false);
+  const [seasonRegs, setSeasonRegs] = useState([]); // registrations for selected manage-season
+  const [assigningFA, setAssigningFA] = useState(false);
 
   // Load season + divisions once on mount
   useEffect(() => {
     (async () => {
-      const seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date&limit=1");
+      let seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date,is_active&limit=1");
+      if (!seasons?.length) {
+        // No active season - load most recent
+        seasons = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active&limit=1");
+      }
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
       setSeasonData(seasons[0]);
@@ -5781,7 +5961,7 @@ function AdminApp({ user, myRole }) {
 
   const loadSeasonDivisions = async (sId) => {
     try {
-      const d = await q("divisions", `season_id=eq.${sId}&order=day_of_week,level&select=id,name,day_of_week,level,time_slot,price_cents,max_teams,registration_open,playoff_spots`);
+      const d = await q("divisions", `season_id=eq.${sId}&order=day_of_week,level&select=id,name,day_of_week,level,time_slot,price_cents,max_teams,registration_open,playoff_spots,free_agent_price_cents`);
       setAllDivisions(d || []);
     } catch (e) { setError(e.message); }
   };
@@ -5819,6 +5999,7 @@ function AdminApp({ user, myRole }) {
           price_cents: 65000,
           max_teams: 16,
           registration_open: false,
+          free_agent_price_cents: level === "pilot" ? 10000 : null,
         });
       }
 
@@ -6061,7 +6242,7 @@ function AdminApp({ user, myRole }) {
 
         {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
 
-        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} />}
+        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} seasonData={seasonData} />}
 
         {tab === "captains" && (
           <>
@@ -6163,8 +6344,15 @@ function AdminApp({ user, myRole }) {
                       background: isSelected ? `${C.amber}08` : C.surface,
                     }}
                       onClick={async () => {
-                        if (isSelected) { setSelectedManageSeason(null); setAllDivisions([]); }
-                        else { setSelectedManageSeason(s.id); await loadSeasonDivisions(s.id); }
+                        if (isSelected) { setSelectedManageSeason(null); setAllDivisions([]); setSeasonRegs([]); }
+                        else {
+                          setSelectedManageSeason(s.id);
+                          await loadSeasonDivisions(s.id);
+                          try {
+                            const regs = await q("registrations", `season_id=eq.${s.id}&select=id,division_id,team_name,captain_email,is_free_agent,player_name,partner_request,payment_status,roster,amount_cents,provisioned,is_new_team,team_id,created_at&order=created_at.desc`);
+                            setSeasonRegs(regs || []);
+                          } catch(e) { setSeasonRegs([]); }
+                        }
                       }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <div>
@@ -6198,6 +6386,204 @@ function AdminApp({ user, myRole }) {
                     {/* Expanded: divisions for this season */}
                     {isSelected && (
                       <div style={{ padding: "10px 0 0 12px", borderLeft: `2px solid ${C.amber}30`, marginLeft: 16 }}>
+
+                        {/* Registration Summary */}
+                        {(() => {
+                          const paidRegs = seasonRegs.filter(r => r.payment_status === "paid");
+                          const teamRegs = paidRegs.filter(r => !r.is_free_agent);
+                          const faRegs = paidRegs.filter(r => r.is_free_agent);
+                          const totalRevenue = paidRegs.reduce((s, r) => s + (r.amount_cents || 0), 0);
+                          if (!paidRegs.length) return null;
+                          return (
+                            <Card style={{ padding: "12px 14px", marginBottom: 10, border: `1px solid ${C.green}20`, background: `${C.green}05` }}>
+                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Registration Summary</div>
+                              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.amber }}>{teamRegs.length}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Teams</div>
+                                </div>
+                                {faRegs.length > 0 && (
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.blue }}>{faRegs.length}</div>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Free Agents</div>
+                                  </div>
+                                )}
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.green }}>{teamRegs.reduce((s, r) => {
+                                    const roster = Array.isArray(r.roster) ? r.roster : [];
+                                    return s + roster.filter(m => m.name?.trim()).length;
+                                  }, 0) + faRegs.length}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Players</div>
+                                </div>
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.text }}>${(totalRevenue / 100).toLocaleString()}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Revenue</div>
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })()}
+
+                        {/* Per-division registration details */}
+                        {allDivisions.map(d => {
+                          const divRegs = seasonRegs.filter(r => r.division_id === d.id && r.payment_status === "paid");
+                          const divTeams = divRegs.filter(r => !r.is_free_agent);
+                          const divFA = divRegs.filter(r => r.is_free_agent);
+                          if (!divRegs.length) return null;
+                          return (
+                            <Card key={`reg-${d.id}`} style={{ padding: "10px 14px", marginBottom: 8, border: `1px solid ${C.border}` }}>
+                              <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6 }}>
+                                {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)} — {divRegs.length} registered
+                              </div>
+
+                              {/* Registered teams */}
+                              {divTeams.length > 0 && (
+                                <div style={{ marginBottom: divFA.length > 0 ? 8 : 0 }}>
+                                  {divTeams.map(r => (
+                                    <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}15` }}>
+                                      <div>
+                                        <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.team_name}</span>
+                                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
+                                      </div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                        {r.is_new_team && <Badge color={C.blue} style={{ fontSize: 8 }}>New</Badge>}
+                                        {r.provisioned && <Badge color={C.green} style={{ fontSize: 8 }}>✓ Active</Badge>}
+                                        {!r.provisioned && <Badge color={C.amber} style={{ fontSize: 8 }}>Pending</Badge>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Free agents */}
+                              {divFA.length > 0 && (
+                                <div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.blue, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, marginTop: divTeams.length > 0 ? 4 : 0 }}>
+                                    🧑 Free Agents ({divFA.length})
+                                  </div>
+                                  {divFA.map(r => (
+                                    <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}10` }}>
+                                      <div>
+                                        <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.player_name || "—"}</span>
+                                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
+                                      </div>
+                                      {r.partner_request && (
+                                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>🤝 {r.partner_request}</span>
+                                      )}
+                                    </div>
+                                  ))}
+
+                                  {/* Assign FA teams button */}
+                                  {divFA.length >= 4 && !d.registration_open && (
+                                    <button onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!confirm(`Assign ${divFA.length} free agents into teams of 4+? This will create new teams and team_seasons entries.`)) return;
+                                      setAssigningFA(true);
+                                      try {
+                                        // Group by partner requests
+                                        const withPartner = divFA.filter(r => r.partner_request?.trim());
+                                        const noPartner = divFA.filter(r => !r.partner_request?.trim());
+
+                                        // Build partner groups
+                                        const partnerGroups = [];
+                                        const used = new Set();
+                                        for (const r of withPartner) {
+                                          if (used.has(r.id)) continue;
+                                          const partnerName = r.partner_request.trim().toLowerCase();
+                                          const match = divFA.find(f => f.id !== r.id && !used.has(f.id) && f.player_name?.toLowerCase().includes(partnerName));
+                                          if (match) {
+                                            partnerGroups.push([r, match]);
+                                            used.add(r.id);
+                                            used.add(match.id);
+                                          }
+                                        }
+
+                                        // Pool remaining
+                                        const remaining = divFA.filter(r => !used.has(r.id));
+                                        const allToAssign = [...partnerGroups.flat(), ...remaining];
+
+                                        // Determine team sizes (min 4)
+                                        const numTeams = Math.max(1, Math.floor(allToAssign.length / 4));
+                                        const teams = Array.from({ length: numTeams }, () => []);
+
+                                        // Place partner pairs first
+                                        let teamIdx = 0;
+                                        for (const pair of partnerGroups) {
+                                          teams[teamIdx % numTeams].push(...pair);
+                                          teamIdx++;
+                                        }
+
+                                        // Fill remaining
+                                        const unplaced = remaining.filter(r => !partnerGroups.flat().includes(r));
+                                        for (const r of unplaced) {
+                                          // Find smallest team
+                                          const smallest = teams.reduce((min, t, i) => t.length < teams[min].length ? i : min, 0);
+                                          teams[smallest].push(r);
+                                        }
+
+                                        // Create teams
+                                        const seasonName = s.name;
+                                        const existing = await q("seasons", "select=venue_id&limit=1");
+                                        const venueId = existing?.[0]?.venue_id;
+
+                                        for (let i = 0; i < teams.length; i++) {
+                                          const teamName = `${seasonName} Free Agents ${i + 1}`;
+                                          // Create team
+                                          const newTeam = await qAuth("teams", "", "POST", {
+                                            name: teamName,
+                                            venue_id: venueId,
+                                            championship_count: 0,
+                                          });
+                                          if (newTeam?.[0]?.id) {
+                                            const teamId = newTeam[0].id;
+                                            // Create team_season
+                                            await qAuth("team_seasons", "", "POST", {
+                                              team_id: teamId,
+                                              season_id: s.id,
+                                              division_id: d.id,
+                                            });
+                                            // Mark registrations as provisioned
+                                            for (const r of teams[i]) {
+                                              await qAuth("registrations", `id=eq.${r.id}`, "PATCH", { provisioned: true, team_id: teamId });
+                                            }
+                                          }
+                                        }
+
+                                        setSuccess(`Created ${teams.length} free agent teams for ${cap(d.day_of_week)} ${cap(d.level)}`);
+                                        // Reload registrations
+                                        const regs = await q("registrations", `season_id=eq.${s.id}&select=id,division_id,team_name,captain_email,is_free_agent,player_name,partner_request,payment_status,roster,amount_cents,provisioned,is_new_team,team_id,created_at&order=created_at.desc`);
+                                        setSeasonRegs(regs || []);
+                                      } catch (err) {
+                                        setError(`FA assignment failed: ${err.message}`);
+                                      }
+                                      setAssigningFA(false);
+                                    }}
+                                      style={{
+                                        marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 8, border: "none",
+                                        background: C.blue, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 600,
+                                        cursor: assigningFA ? "wait" : "pointer", opacity: assigningFA ? 0.6 : 1,
+                                      }}
+                                      disabled={assigningFA}>
+                                      {assigningFA ? "Assigning..." : `🎲 Assign ${divFA.length} Free Agents to Teams`}
+                                    </button>
+                                  )}
+                                  {divFA.length < 4 && (
+                                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>
+                                      Need at least 4 free agents to form teams
+                                    </div>
+                                  )}
+                                  {d.registration_open && divFA.length >= 4 && (
+                                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.amber, marginTop: 4 }}>
+                                      Close registration before assigning teams
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </Card>
+                          );
+                        })}
+
+                        {/* Division cards for editing */}
                         {allDivisions.length === 0 ? (
                           <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim, marginBottom: 10 }}>No divisions yet</div>
                         ) : allDivisions.map(d => {
@@ -6232,6 +6618,7 @@ function AdminApp({ user, myRole }) {
                               )}
                             </div>
                             {!readOnly && (
+                            <>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                               <div>
                                 <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Time</div>
@@ -6252,6 +6639,20 @@ function AdminApp({ user, myRole }) {
                                   style={editInputStyle} />
                               </div>
                             </div>
+                            {d.level === "pilot" && (
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8, marginTop: 8 }}>
+                                <div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>FA Price ($)</div>
+                                  <input type="number" value={((d.free_agent_price_cents || 10000) / 100)} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, free_agent_price_cents: parseInt(e.target.value) * 100 || 10000 } : x))}
+                                    onBlur={e => updateDivField(d.id, "free_agent_price_cents", parseInt(e.target.value) * 100 || 10000)}
+                                    style={editInputStyle} />
+                                </div>
+                                <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>🧑 Free agent registration enabled for Pilot</span>
+                                </div>
+                              </div>
+                            )}
+                            </>
                             )}
                           </Card>
                           );
@@ -6956,11 +7357,15 @@ function RegisterPage() {
   const [teams, setTeams] = useState([]);
   const [regCounts, setRegCounts] = useState({});
   const [regTeams, setRegTeams] = useState({}); // divId -> [{team_name}]
+  const [freeAgentCounts, setFreeAgentCounts] = useState({}); // divId -> count
   const [selectedDiv, setSelectedDiv] = useState(null);
+  const [regMode, setRegMode] = useState("team"); // "team" | "freeagent"
   const [teamMode, setTeamMode] = useState("existing"); // "existing" | "new"
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [newTeamName, setNewTeamName] = useState("");
   const [email, setEmail] = useState("");
+  const [playerName, setPlayerName] = useState("");
+  const [partnerRequest, setPartnerRequest] = useState("");
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [wantRename, setWantRename] = useState(false);
   const [renameName, setRenameName] = useState("");
@@ -7002,24 +7407,35 @@ function RegisterPage() {
     async function load() {
       try {
         const [divs, seas, tms, regs] = await Promise.all([
-          q("divisions", "registration_open=eq.true&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot"),
+          q("divisions", "registration_open=eq.true&order=day_of_week,time_slot&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot,free_agent_price_cents"),
           q("seasons", "order=start_date.desc&limit=5"),
           q("teams", "primary_team_id=is.null&order=name.asc&limit=500&select=id,name"),
-          q("registrations", "payment_status=eq.paid&select=division_id,team_name"),
+          q("registrations", "payment_status=eq.paid&select=division_id,team_name,is_free_agent,player_name"),
         ]);
-        setDivisions(divs);
+        setDivisions((divs || []).sort((a, b) => {
+          const dayOrd = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5 };
+          const lvlOrd = { pilot: 1, cherry: 2, hammer: 3, party: 4 };
+          const dd = (dayOrd[a.day_of_week] || 9) - (dayOrd[b.day_of_week] || 9);
+          return dd !== 0 ? dd : (lvlOrd[a.level] || 9) - (lvlOrd[b.level] || 9);
+        }));
         setSeasons(seas);
         setTeams(tms);
-        // Count registrations per division + collect team names
+        // Count registrations per division + collect team names + free agents
         const counts = {};
         const teams_by_div = {};
+        const fa_counts = {};
         (regs || []).forEach(r => {
-          counts[r.division_id] = (counts[r.division_id] || 0) + 1;
-          if (!teams_by_div[r.division_id]) teams_by_div[r.division_id] = [];
-          teams_by_div[r.division_id].push(r.team_name);
+          if (r.is_free_agent) {
+            fa_counts[r.division_id] = (fa_counts[r.division_id] || 0) + 1;
+          } else {
+            counts[r.division_id] = (counts[r.division_id] || 0) + 1;
+            if (!teams_by_div[r.division_id]) teams_by_div[r.division_id] = [];
+            teams_by_div[r.division_id].push(r.team_name);
+          }
         });
         setRegCounts(counts);
         setRegTeams(teams_by_div);
+        setFreeAgentCounts(fa_counts);
       } catch (e) { console.error(e); }
       setLoading(false);
     }
@@ -7030,17 +7446,27 @@ function RegisterPage() {
 
   const handleSubmit = async () => {
     setError("");
-    const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
-    const teamName = teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName);
-    if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
-    if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
-    if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
-
-    // Validate roster — at least captain email, others optional
-    const validRoster = rosterMembers.filter(m => m.name.trim() || m.email.trim());
-
     const div = divisions.find(d => d.id === selectedDiv);
     if (!div) return;
+
+    const isFreeAgent = regMode === "freeagent";
+
+    if (isFreeAgent) {
+      if (!playerName.trim()) { setError("Enter your name"); return; }
+      if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
+      if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+    } else {
+      const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
+      const teamName = teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName);
+      if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
+      if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
+      if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+    }
+
+    const validRoster = rosterMembers.filter(m => m.name.trim() || m.email.trim());
+    const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
+    const teamName = isFreeAgent ? null : (teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName));
+    const priceCents = isFreeAgent ? (div.free_agent_price_cents || 10000) : (div.price_cents || 65000);
 
     setSubmitting(true);
     try {
@@ -7052,12 +7478,15 @@ function RegisterPage() {
           division_name: `${cap(div.day_of_week)} ${cap(div.level)}${div.time_slot ? ` · ${div.time_slot}` : ""}`,
           season_name: getSeasonName(div.season_id),
           team_name: teamName,
-          team_id: teamMode === "existing" ? selectedTeamId : null,
+          team_id: (!isFreeAgent && teamMode === "existing") ? selectedTeamId : null,
           captain_email: email.trim(),
-          is_new_team: teamMode === "new",
-          rename_from: (teamMode === "existing" && wantRename && renameName.trim()) ? existingTeamName : null,
-          roster: validRoster,
-          amount_cents: div.price_cents || 65000,
+          is_new_team: !isFreeAgent && teamMode === "new",
+          is_free_agent: isFreeAgent,
+          player_name: isFreeAgent ? playerName.trim() : null,
+          partner_request: isFreeAgent ? partnerRequest.trim() || null : null,
+          rename_from: (!isFreeAgent && teamMode === "existing" && wantRename && renameName.trim()) ? existingTeamName : null,
+          roster: isFreeAgent ? [] : validRoster,
+          amount_cents: priceCents,
         }),
       });
       const text = await res.text();
@@ -7201,38 +7630,89 @@ function RegisterPage() {
               Open Divisions
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-              {divisions.map(d => {
+              {(() => {
+                let lastDay = null;
+                return divisions.map(d => {
                 const sName = getSeasonName(d.season_id);
                 const regCount = regCounts[d.id] || 0;
+                const faCount = freeAgentCounts[d.id] || 0;
                 const spotsLeft = (d.max_teams || 16) - regCount;
                 const selected = selectedDiv === d.id;
+                const isPilot = d.level === "pilot";
+                const teamPrice = ((d.price_cents || 65000) / 100).toFixed(0);
+                const faPrice = ((d.free_agent_price_cents || 10000) / 100).toFixed(0);
+                const showDayHeader = d.day_of_week !== lastDay;
+                lastDay = d.day_of_week;
                 return (
-                  <Card key={d.id} onClick={() => { setSelectedDiv(selected ? null : d.id); setError(""); }}
+                  <div key={d.id}>
+                    {showDayHeader && (
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginTop: 6, marginBottom: 2 }}>
+                        {cap(d.day_of_week)}
+                      </div>
+                    )}
+                  <Card key={d.id}
                     style={{
                       border: `1px solid ${selected ? C.amber : C.border}`,
                       background: selected ? `${C.amber}08` : C.surface,
-                      cursor: "pointer",
                     }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
-                          {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                    <div onClick={() => { setSelectedDiv(selected ? null : d.id); setRegMode("team"); setError(""); }}
+                      style={{ cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
+                            {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
+                            {sName}{d.time_slot ? ` · ${d.time_slot}` : ""}
+                          </div>
                         </div>
-                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
-                          {sName}{d.time_slot ? ` · ${d.time_slot}` : ""}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
-                          ${((d.price_cents || 65000) / 100).toFixed(0)}
-                        </div>
-                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
-                        <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
-                          {regCount > 0 ? `${regCount}/${d.max_teams || 16} teams` : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
+                            ${teamPrice}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
+                          {isPilot && (
+                            <div style={{ fontFamily: F.m, fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 2 }}>
+                              ${faPrice} <span style={{ fontSize: 9, fontWeight: 400, color: C.dim }}>free agent</span>
+                            </div>
+                          )}
+                          <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
+                            {regCount > 0 ? `${regCount}/${d.max_teams || 16} teams` : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
+                          </div>
+                          {faCount > 0 && (
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>
+                              {faCount} free agent{faCount !== 1 ? "s" : ""}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
-                    {selected && <div style={{ marginTop: 4, fontSize: 10, color: C.amber }}>▼ Complete form below</div>}
+
+                    {/* Register buttons */}
+                    {selected && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                        <button onClick={() => { setRegMode("team"); setError(""); }}
+                          style={{
+                            flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${regMode === "team" ? C.amber : C.border}`,
+                            background: regMode === "team" ? `${C.amber}15` : "transparent",
+                            color: regMode === "team" ? C.amber : C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          }}>
+                          🏆 Team — ${teamPrice}
+                        </button>
+                        {isPilot && (
+                          <button onClick={() => { setRegMode("freeagent"); setError(""); }}
+                            style={{
+                              flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${regMode === "freeagent" ? C.blue : C.border}`,
+                              background: regMode === "freeagent" ? `${C.blue}15` : "transparent",
+                              color: regMode === "freeagent" ? C.blue : C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                            }}>
+                            🧑 Free Agent — ${faPrice}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Registered teams */}
                     {(regTeams[d.id] || []).length > 0 && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
                         <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
@@ -7248,16 +7728,65 @@ function RegisterPage() {
                       </div>
                     )}
                   </Card>
+                  </div>
                 );
-              })}
+              });
+              })()}
             </div>
 
             {/* Registration Form */}
             {selectedDiv && (
               <div style={{ animation: "fadeIn 0.3s ease" }}>
-                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
-                  Team Information
-                </div>
+
+                {/* FREE AGENT FORM */}
+                {regMode === "freeagent" ? (
+                  <>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+                      Free Agent Registration
+                    </div>
+                    <div style={{ padding: "10px 14px", borderRadius: 10, background: `${C.blue}08`, border: `1px solid ${C.blue}20`, marginBottom: 14, fontFamily: F.m, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+                      Sign up as an individual player. Royal Palms will group free agents into teams of 4+ before the season starts.
+                    </div>
+
+                    {/* Player Name */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                        Your Name
+                      </div>
+                      <input type="text" placeholder="First Last"
+                        value={playerName} onChange={e => setPlayerName(e.target.value)}
+                        style={inputStyle} />
+                    </div>
+
+                    {/* Email */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                        Email
+                      </div>
+                      <input type="email" placeholder="you@example.com"
+                        value={email} onChange={e => setEmail(e.target.value)}
+                        style={inputStyle} />
+                    </div>
+
+                    {/* Partner Request */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                        Partner Request <span style={{ textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+                      </div>
+                      <input type="text" placeholder="Want to play with someone? Enter their name"
+                        value={partnerRequest} onChange={e => setPartnerRequest(e.target.value)}
+                        style={inputStyle} />
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>
+                        We'll try to place you on the same team — not guaranteed
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* TEAM FORM (existing) */}
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+                      Team Information
+                    </div>
 
                 {/* Team Mode Toggle */}
                 <div style={{ display: "flex", gap: 0, marginBottom: 14, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
@@ -7388,8 +7917,10 @@ function RegisterPage() {
                     Roster can also be updated later in the Captain Portal
                   </div>
                 </div>
+                  </>
+                )}
 
-                {/* Waiver */}
+                {/* Waiver — shared between team and free agent */}
                 <div
                   onClick={() => setWaiverAccepted(!waiverAccepted)}
                   style={{
@@ -7428,7 +7959,13 @@ function RegisterPage() {
                     color: C.bg,
                     opacity: submitting ? 0.7 : 1,
                   }}>
-                  {submitting ? "Redirecting to payment..." : `Register & Pay $${((divisions.find(d => d.id === selectedDiv)?.price_cents || 65000) / 100).toFixed(0)}`}
+                  {submitting ? "Redirecting to payment..." : (() => {
+                    const div = divisions.find(d => d.id === selectedDiv);
+                    const price = regMode === "freeagent"
+                      ? ((div?.free_agent_price_cents || 10000) / 100).toFixed(0)
+                      : ((div?.price_cents || 65000) / 100).toFixed(0);
+                    return regMode === "freeagent" ? `Sign Up & Pay $${price}` : `Register & Pay $${price}`;
+                  })()}
                 </button>
 
                 <div style={{ textAlign: "center", marginTop: 10 }}>
@@ -7537,8 +8074,8 @@ function MainApp() {
     q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
-    q("playoff_appearances", `season_id=eq.${selectedSeason.id}&select=team_id&limit=1`).then(pa => {
-      setHasPlayoffData(pa?.length > 0);
+    q("playoff_groups", `season_id=eq.${selectedSeason.id}&select=team_id&limit=1`).then(pg => {
+      setHasPlayoffData(pg?.length > 0);
     });
   }, [selectedSeason]);
 
@@ -7556,7 +8093,7 @@ function MainApp() {
   const renderPage = () => {
     switch (page) {
       case "home":
-        return <HomePage seasons={seasons} activeSeason={selectedSeason} divisions={divisions} goPage={goPage} champs={champs} />;
+        return <HomePage seasons={seasons} activeSeason={selectedSeason} divisions={divisions} goPage={goPage} champs={champs} hasPlayoffTab={hasPlayoffData} />;
       case "standings":
         return <StandingsPage divisions={divisions} activeSeason={selectedSeason} goPage={goPage} />;
       case "matches":
@@ -7614,7 +8151,7 @@ function MainApp() {
       }}>
         {(() => {
           const sp = getSeasonProgress(selectedSeason);
-          const showPlayoffs = sp.status === "postseason" || sp.status === "completed" || hasPlayoffData;
+          const showPlayoffs = hasPlayoffData;
           return [
             ["home", "⌂", "Home"],
             ["standings", "☰", "Standings"],
