@@ -669,7 +669,6 @@ function Footer() {
         <NHSALogo size={20} />
         <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Built by Next Hammer SA</span>
       </div>
-      <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, opacity: 0.4 }}>v28bg19</span>
     </div>
   );
 }
@@ -2261,7 +2260,29 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
               </div>
             </Card>
           ) : (
-            ["R16", "QF", "SF", "3RD", "FIN"].map(round => {
+            <>
+            {/* Champion banner */}
+            {(() => {
+              const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
+              if (!fin) return null;
+              const champName = String(fin.winner_id) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+              return (
+                <Card style={{
+                  padding: "20px 16px", textAlign: "center", marginBottom: 14,
+                  background: `linear-gradient(135deg, ${C.surface}, ${C.amber}15)`,
+                  border: `1px solid ${C.amber}30`,
+                }}>
+                  <div style={{ fontSize: 36, marginBottom: 6 }}>🏆</div>
+                  <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber, marginBottom: 4 }}>
+                    {champName}
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>
+                    Season {activeSeason?.number || ""} Champions
+                  </div>
+                </Card>
+              );
+            })()}
+            {["R16", "QF", "SF", "3RD", "FIN"].map(round => {
               const matches = (bracketMatches[round] || []).sort((a, b) => a.match_number - b.match_number);
               if (matches.length === 0) return null;
               const roundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", FIN: "Final", "3RD": "3rd Place" };
@@ -2274,6 +2295,11 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                     const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
                     const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
                     const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                    const mIcon = (teamId) => {
+                      if (round === "FIN" && m.status === "completed") return String(m.winner_id) === String(teamId) ? "🏆 " : "🥈 ";
+                      if (["SF", "FIN", "3RD"].includes(round)) return "🎖️ ";
+                      return "";
+                    };
                     return (
                     <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
                       {m.court && (
@@ -2293,7 +2319,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                             color: t1Wins ? C.green : m.team1_name ? C.text : C.dim,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
-                            {m.team1_name || "TBD"}
+                            {m.team1_id ? mIcon(m.team1_id) : ""}{m.team1_name || "TBD"}
                           </div>
                           {m.team1_score != null && (
                             <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team1_score}</div>
@@ -2313,7 +2339,7 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                             color: t2Wins ? C.green : m.team2_name ? C.text : C.dim,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
-                            {m.team2_name || "TBD"}
+                            {m.team2_id ? mIcon(m.team2_id) : ""}{m.team2_name || "TBD"}
                           </div>
                           {m.team2_score != null && (
                             <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team2_score}</div>
@@ -2325,7 +2351,8 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                   })}
                 </div>
               );
-            })
+            })}
+            </>
           )}
         </>
       )}
@@ -4222,9 +4249,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
       // Auto-advance bracket: populate next round
       if (isBracket) {
-        console.log("[TT-SAVE] About to call advanceBracket:", { groupName, matchNumber, winnerId, matchTeam1: match?.team1_id, matchTeam2: match?.team2_id });
         await advanceBracket(groupName, matchNumber, winnerId, match);
-        console.log("[TT-SAVE] advanceBracket returned successfully");
       }
     } catch (e) { setError(e.message); }
     setSaving(null);
@@ -4305,33 +4330,45 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     const loserId = String(match.team1_id) === wId ? match.team2_id : match.team1_id;
     const loserName = String(match.team1_id) === wId ? match.team2_name : match.team1_name;
 
-    console.log("[TT-ADV] advanceBracket called:", { round, matchNum, winnerId: wId, winnerName, loserId, loserName });
-    console.log("[TT-ADV] match object:", JSON.stringify(match));
-
     try {
       // R16 → QF: matches 1&5→QF1, 2&6→QF2, 3&7→QF3, 4&8→QF4
       if (round === "R16") {
         const qfMatch = matchNum <= 4 ? matchNum : matchNum - 4;
         const isTeam1 = matchNum <= 4;
-        console.log("[TT-ADV] R16→QF: qfMatch=", qfMatch, "isTeam1=", isTeam1);
         await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.QF[qfMatch - 1] || qfMatch);
-        console.log("[TT-ADV] QF upsert complete");
       }
       // QF → SF: 1&2→SF1, 3&4→SF2
+      // When reaching SF, mark team as "banquet" (Final 4) in playoff_appearances
       if (round === "QF") {
         const sfMatch = matchNum <= 2 ? 1 : 2;
         const isTeam1 = matchNum % 2 === 1;
-        console.log("[TT-ADV] QF→SF: sfMatch=", sfMatch, "isTeam1=", isTeam1);
         await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.SF[sfMatch - 1] || sfMatch);
+        // Update playoff_appearances: this team reached the banquet (Final 4)
+        await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "banquet" }).catch(() => {});
+        // Add banquet championship entry
+        await qAuth("championships", "", "POST", { season_id: seasonId, team_id: winnerId, team_name: winnerName, type: "banquet" }).catch(() => {});
       }
       // SF → FIN + 3RD
       if (round === "SF") {
-        console.log("[TT-ADV] SF→FIN+3RD");
         await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName, BRACKET_COURTS.FIN[0]);
         await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName, BRACKET_COURTS["3RD"][0]);
       }
+      // FIN complete → champion + finalist designations
+      if (round === "FIN") {
+        await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "champion" }).catch(() => {});
+        await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${loserId}`, "PATCH", { round_reached: "finalist" }).catch(() => {});
+        // Remove banquet entries for finalists (they get upgraded)
+        await qAuth("championships", `season_id=eq.${seasonId}&team_id=eq.${winnerId}&type=eq.banquet`, "DELETE").catch(() => {});
+        await qAuth("championships", `season_id=eq.${seasonId}&team_id=eq.${loserId}&type=eq.banquet`, "DELETE").catch(() => {});
+        // Add champion + finalist entries
+        await qAuth("championships", "", "POST", { season_id: seasonId, team_id: winnerId, team_name: winnerName, type: "league" }).catch(() => {});
+        await qAuth("championships", "", "POST", { season_id: seasonId, team_id: loserId, team_name: loserName, type: "finalist" }).catch(() => {});
+        // Increment winner's championship count
+        const teamData = await q("teams", `id=eq.${winnerId}&select=championship_count`);
+        const currentCount = teamData?.[0]?.championship_count || 0;
+        await qAuth("teams", `id=eq.${winnerId}`, "PATCH", { championship_count: currentCount + 1 }).catch(() => {});
+      }
     } catch (e) {
-      console.error("[TT-ADV] advanceBracket error:", e);
       setError("Bracket advance failed: " + e.message);
     }
   };
@@ -4353,23 +4390,19 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   };
 
   const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName, court) => {
-    console.log("[TT-UPS] upsertBracketSlot:", { round, matchNum, isTeam1, teamId, teamName, court });
     // Query DB for existing match (don't rely on React state which may be stale)
     const existing = await q("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`);
     const match = existing?.[0];
-    console.log("[TT-UPS] existing match from DB:", match ? "FOUND" : "NOT FOUND", match);
 
     if (match) {
       const field = isTeam1
         ? { team1_id: teamId, team1_name: teamName }
         : { team2_id: teamId, team2_name: teamName };
-      console.log("[TT-UPS] PATCHing existing:", field);
       await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`, "PATCH", field);
       setBracketMatches(prev => ({
         ...prev,
         [round]: (prev[round] || []).map(m => m.match_number === matchNum ? { ...m, ...field } : m),
       }));
-      console.log("[TT-UPS] PATCH + state update done");
     } else {
       const data = {
         season_id: seasonId, group_name: round, match_number: matchNum, status: "scheduled",
@@ -4377,12 +4410,9 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         team2_id: isTeam1 ? null : teamId, team2_name: isTeam1 ? null : teamName,
         court: court || null,
       };
-      console.log("[TT-UPS] POSTing new:", data);
       const result = await qAuth("group_matches", "", "POST", data);
-      console.log("[TT-UPS] POST result:", result);
       setBracketMatches(prev => {
         const updated = { ...prev, [round]: [...(prev[round] || []), data] };
-        console.log("[TT-UPS] Updated bracketMatches keys:", Object.keys(updated), "QF count:", (updated.QF || []).length);
         return updated;
       });
     }
@@ -5423,24 +5453,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                         </button>
                       )}
                       {hasR16 && (
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <button onClick={async () => {
-                            const gm = await q("group_matches", `season_id=eq.${seasonId}&order=group_name,match_number`);
-                            const bracketMap = {};
-                            const bracketRoundsList = ["R16", "QF", "SF", "FIN", "3RD"];
-                            gm.forEach(m => { if (bracketRoundsList.includes(m.group_name)) { if (!bracketMap[m.group_name]) bracketMap[m.group_name] = []; bracketMap[m.group_name].push(m); } });
-                            setBracketMatches(bracketMap);
-                            console.log("[TT-REFRESH] Bracket data refreshed:", Object.keys(bracketMap).map(k => `${k}:${bracketMap[k].length}`).join(", "));
-                          }}
-                            style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
-                            🔄 Refresh
-                          </button>
-                          <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
-                            disabled={saving === "bracket"}
-                            style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
-                            ♻️ Regenerate
-                          </button>
-                        </div>
+                        <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
+                          disabled={saving === "bracket"}
+                          style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                          ♻️ Regenerate
+                        </button>
                       )}
                     </div>
 
@@ -5486,6 +5503,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                             const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
                             const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
                             const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                            const milestoneIcon = (teamId) => {
+                              if (round === "FIN" && m.status === "completed") return String(m.winner_id) === String(teamId) ? "🏆 " : "🥈 ";
+                              if (["SF", "FIN", "3RD"].includes(round)) return "🎖️ ";
+                              return "";
+                            };
                             return (
                               <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
                                 {/* Court row */}
@@ -5514,7 +5536,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                     fontWeight: t1Wins ? 700 : 400,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
-                                    {m.team1_name || "TBD"}
+                                    {m.team1_id ? milestoneIcon(m.team1_id) : ""}{m.team1_name || "TBD"}
                                   </span>
                                   {m.status === "completed" && m.team1_score != null ? (
                                     <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 44, textAlign: "center" }}>
@@ -5531,7 +5553,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                     fontWeight: t2Wins ? 700 : 400,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
-                                    {m.team2_name || "TBD"}
+                                    {m.team2_name || "TBD"}{m.team2_id ? ` ${milestoneIcon(m.team2_id).trim()}` : ""}
                                   </span>
                                   {m.status === "completed" && !isEditing && (
                                     <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
@@ -5607,6 +5629,47 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                         </div>
                       );
                     })}
+
+                    {/* Complete Season button when FIN is done */}
+                    {(() => {
+                      const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
+                      if (!fin) return null;
+                      const champName = String(fin.winner_id) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+                      return (
+                        <Card style={{
+                          padding: "16px", textAlign: "center", marginTop: 10,
+                          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}10)`,
+                          border: `1px solid ${C.amber}25`,
+                        }}>
+                          <div style={{ fontSize: 28, marginBottom: 4 }}>🏆</div>
+                          <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800, color: C.amber, marginBottom: 6 }}>
+                            {champName}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginBottom: 12 }}>
+                            Season Champion
+                          </div>
+                          {activeSeason?.status !== "completed" && (
+                            <button onClick={async () => {
+                              if (!window.confirm("Mark this season as completed? This will finalize all results.")) return;
+                              setSaving("complete");
+                              try {
+                                await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { status: "completed" });
+                                setSuccess("Season marked as completed!");
+                                setTimeout(() => { setSuccess(null); window.location.reload(); }, 2000);
+                              } catch (e) { setError(e.message); }
+                              setSaving(null);
+                            }}
+                              disabled={!!saving}
+                              style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: C.green, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              {saving === "complete" ? "Completing..." : "✓ Complete Season"}
+                            </button>
+                          )}
+                          {activeSeason?.status === "completed" && (
+                            <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
+                          )}
+                        </Card>
+                      );
+                    })()}
                   </div>
                 );
               })()}
