@@ -2290,18 +2290,25 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                   </div>
                   {matches.map(m => {
                     const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
+                    const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
+                    const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
                     return (
                     <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
+                      {m.court && (
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 4 }}>
+                          Court {m.court}{r16L ? ` · ${r16L.t1} vs ${r16L.t2}` : ""}
+                        </div>
+                      )}
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{
                           flex: 1, padding: "6px 8px", borderRadius: 6, textAlign: "center",
-                          background: m.winner_id === m.team1_id ? `${C.green}10` : "transparent",
-                          border: `1px solid ${m.winner_id === m.team1_id ? C.green + "25" : C.border}`,
+                          background: t1Wins ? `${C.green}10` : "transparent",
+                          border: `1px solid ${t1Wins ? C.green + "25" : C.border}`,
                         }}>
-                          {r16L && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t1}</div>}
+                          {r16L && !m.court && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t1}</div>}
                           <div style={{
-                            fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team1_id ? 700 : 400,
-                            color: m.winner_id === m.team1_id ? C.green : m.team1_name ? C.text : C.dim,
+                            fontFamily: F.b, fontSize: 11, fontWeight: t1Wins ? 700 : 400,
+                            color: t1Wins ? C.green : m.team1_name ? C.text : C.dim,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
                             {m.team1_name || "TBD"}
@@ -2315,13 +2322,13 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
                         </span>
                         <div style={{
                           flex: 1, padding: "6px 8px", borderRadius: 6, textAlign: "center",
-                          background: m.winner_id === m.team2_id ? `${C.green}10` : "transparent",
-                          border: `1px solid ${m.winner_id === m.team2_id ? C.green + "25" : C.border}`,
+                          background: t2Wins ? `${C.green}10` : "transparent",
+                          border: `1px solid ${t2Wins ? C.green + "25" : C.border}`,
                         }}>
-                          {r16L && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t2}</div>}
+                          {r16L && !m.court && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t2}</div>}
                           <div style={{
-                            fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team2_id ? 700 : 400,
-                            color: m.winner_id === m.team2_id ? C.green : m.team2_name ? C.text : C.dim,
+                            fontFamily: F.b, fontSize: 11, fontWeight: t2Wins ? 700 : 400,
+                            color: t2Wins ? C.green : m.team2_name ? C.text : C.dim,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
                             {m.team2_name || "TBD"}
@@ -4288,6 +4295,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
           team1_name: t1.team_name,
           team2_id: t2.team_id,
           team2_name: t2.team_name,
+          court: mu.m, // Courts 1-8
           status: "scheduled",
         };
         await qAuth("group_matches", "", "POST", matchData);
@@ -4301,28 +4309,37 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     setSaving(null);
   };
 
+  // Default courts per round
+  const BRACKET_COURTS = { R16: [1,2,3,4,5,6,7,8], QF: [1,2,3,4], SF: [1,2], FIN: [3], "3RD": [4] };
+
   // When a bracket match completes, auto-create next round match
   const advanceBracket = async (round, matchNum, winnerId, match) => {
-    const winnerName = winnerId === match.team1_id ? match.team1_name : match.team2_name;
-    const loserId = winnerId === match.team1_id ? match.team2_id : match.team1_id;
-    const loserName = winnerId === match.team1_id ? match.team2_name : match.team1_name;
+    const wId = String(winnerId);
+    const winnerName = String(match.team1_id) === wId ? match.team1_name : match.team2_name;
+    const loserId = String(match.team1_id) === wId ? match.team2_id : match.team1_id;
+    const loserName = String(match.team1_id) === wId ? match.team2_name : match.team1_name;
 
-    // R16 → QF: matches 1&5→QF1, 2&6→QF2, 3&7→QF3, 4&8→QF4
-    if (round === "R16") {
-      const qfMatch = matchNum <= 4 ? matchNum : matchNum - 4;
-      const isTeam1 = matchNum <= 4;
-      await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName);
-    }
-    // QF → SF: 1&2→SF1, 3&4→SF2
-    if (round === "QF") {
-      const sfMatch = matchNum <= 2 ? 1 : 2;
-      const isTeam1 = matchNum % 2 === 1;
-      await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName);
-    }
-    // SF → F + 3RD
-    if (round === "SF") {
-      await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName);
-      await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName);
+    try {
+      // R16 → QF: matches 1&5→QF1, 2&6→QF2, 3&7→QF3, 4&8→QF4
+      if (round === "R16") {
+        const qfMatch = matchNum <= 4 ? matchNum : matchNum - 4;
+        const isTeam1 = matchNum <= 4;
+        await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.QF[qfMatch - 1] || qfMatch);
+      }
+      // QF → SF: 1&2→SF1, 3&4→SF2
+      if (round === "QF") {
+        const sfMatch = matchNum <= 2 ? 1 : 2;
+        const isTeam1 = matchNum % 2 === 1;
+        await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.SF[sfMatch - 1] || sfMatch);
+      }
+      // SF → FIN + 3RD
+      if (round === "SF") {
+        await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName, BRACKET_COURTS.FIN[0]);
+        await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName, BRACKET_COURTS["3RD"][0]);
+      }
+    } catch (e) {
+      console.error("advanceBracket error:", e);
+      setError("Bracket advance failed: " + e.message);
     }
   };
 
@@ -4342,10 +4359,15 @@ function AdminPostseasonTab({ seasonId, divisions }) {
     } catch (e) { setError(e.message); }
   };
 
-  const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName) => {
-    const existing = (bracketMatches[round] || []).find(m => m.match_number === matchNum);
-    if (existing) {
-      const field = isTeam1 ? { team1_id: teamId, team1_name: teamName } : { team2_id: teamId, team2_name: teamName };
+  const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName, court) => {
+    // Query DB for existing match (don't rely on React state which may be stale)
+    const existing = await q("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`);
+    const match = existing?.[0];
+
+    if (match) {
+      const field = isTeam1
+        ? { team1_id: teamId, team1_name: teamName }
+        : { team2_id: teamId, team2_name: teamName };
       await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`, "PATCH", field);
       setBracketMatches(prev => ({
         ...prev,
@@ -4356,6 +4378,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         season_id: seasonId, group_name: round, match_number: matchNum, status: "scheduled",
         team1_id: isTeam1 ? teamId : null, team1_name: isTeam1 ? teamName : null,
         team2_id: isTeam1 ? null : teamId, team2_name: isTeam1 ? null : teamName,
+        court: court || null,
       };
       await qAuth("group_matches", "", "POST", data);
       setBracketMatches(prev => ({
@@ -5448,14 +5471,34 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                             const isEditing = editingScore?.groupName === round && editingScore?.matchNumber === m.match_number;
                             const ready = m.team1_id && m.team2_id;
                             const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
+                            const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
+                            const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
                             return (
                               <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
+                                {/* Court row */}
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Court</span>
+                                    <select value={m.court || ""} onChange={async (e) => {
+                                      const val = e.target.value ? parseInt(e.target.value) : null;
+                                      await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${m.match_number}`, "PATCH", { court: val });
+                                      setBracketMatches(prev => ({
+                                        ...prev,
+                                        [round]: (prev[round] || []).map(x => x.match_number === m.match_number ? { ...x, court: val } : x),
+                                      }));
+                                    }}
+                                      style={{ padding: "2px 4px", borderRadius: 4, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 10, width: 40 }}>
+                                      <option value="">—</option>
+                                      {[1,2,3,4,5,6,7,8,9,10].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  </div>
+                                  {r16L && <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>{r16L.t1} vs {r16L.t2}</span>}
+                                </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  {r16L && <span style={{ fontFamily: F.d, fontSize: 9, color: C.amber, width: 18, fontWeight: 700 }}>{r16L.t1}</span>}
                                   <span style={{
                                     flex: 1, fontFamily: F.b, fontSize: 11,
-                                    color: m.winner_id === m.team1_id ? C.green : m.team1_name ? C.text : C.dim,
-                                    fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                                    color: t1Wins ? C.green : m.team1_name ? C.text : C.dim,
+                                    fontWeight: t1Wins ? 700 : 400,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
                                     {m.team1_name || "TBD"}
@@ -5471,13 +5514,12 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                                   )}
                                   <span style={{
                                     flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
-                                    color: m.winner_id === m.team2_id ? C.green : m.team2_name ? C.text : C.dim,
-                                    fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                                    color: t2Wins ? C.green : m.team2_name ? C.text : C.dim,
+                                    fontWeight: t2Wins ? 700 : 400,
                                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   }}>
                                     {m.team2_name || "TBD"}
                                   </span>
-                                  {r16L && <span style={{ fontFamily: F.d, fontSize: 9, color: C.amber, width: 18, fontWeight: 700, textAlign: "right" }}>{r16L.t2}</span>}
                                   {m.status === "completed" && !isEditing && (
                                     <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
                                       style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontSize: 9, cursor: "pointer" }}>
