@@ -1628,7 +1628,6 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
             matchMap[m.group_name].push(m);
           }
         });
-        console.log("[TT] group_matches loaded:", gm.length, "total. Groups:", Object.keys(matchMap), "Bracket:", Object.keys(bracketMap), "All group_names:", [...new Set(gm.map(m => m.group_name))]);
         setGroupMatches(matchMap);
         setBracketMatches(bracketMap);
       }
@@ -2254,9 +2253,6 @@ function PlayoffsPage({ activeSeason, divisions, goPage }) {
             <Card style={{ padding: "16px", textAlign: "center" }}>
               <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim }}>
                 Bracket populates when group stage completes
-              </div>
-              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginTop: 8 }}>
-                Debug: bracketMatches keys: [{Object.keys(bracketMatches).join(", ")}] · groupMatches keys: [{Object.keys(groupMatches).join(", ")}]
               </div>
             </Card>
           ) : (
