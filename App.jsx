@@ -1,4 +1,4 @@
-// App v28c2 — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
+// App v28c3 — FA registered count color, FA assignment: shuffle + naming (Mon Pilot Free Agents 1)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6662,10 +6662,20 @@ function AdminApp({ user, myRole }) {
                                         if (!confirm(`Assign ${divFA.length} free agents into teams of 4+?`)) return;
                                         setAssigningFA(true);
                                         try {
+                                          const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
                                           const members = divFA.map(r => ({ name: r.player_name, email: r.captain_email, partner: r.partner_request, reg_id: r.id }));
-                                          const withPartner = members.filter(m => m.partner);
-                                          const without = members.filter(m => !m.partner);
-                                          const all = [...withPartner, ...without];
+                                          // Group partner requests together, shuffle the rest
+                                          const partnerGroups = {};
+                                          const noPartner = [];
+                                          for (const m of members) {
+                                            if (m.partner) {
+                                              const key = m.partner.toLowerCase().trim();
+                                              if (!partnerGroups[key]) partnerGroups[key] = [];
+                                              partnerGroups[key].push(m);
+                                            } else { noPartner.push(m); }
+                                          }
+                                          const shuffled = shuffle(noPartner);
+                                          const all = [...Object.values(partnerGroups).flat(), ...shuffled];
                                           const teams = [];
                                           for (let i = 0; i < all.length; i += 4) {
                                             teams.push(all.slice(i, Math.min(i + 4, all.length)));
@@ -6678,8 +6688,9 @@ function AdminApp({ user, myRole }) {
                                           const seasonId2 = divArr2?.[0]?.season_id;
                                           const venueArr2 = await q("seasons", "select=venue_id&limit=1");
                                           const venueId2 = venueArr2?.[0]?.venue_id;
+                                          const dayLabel = cap(d.day_of_week).substring(0, 3) === "Tue" ? "Tues" : cap(d.day_of_week).substring(0, 3);
                                           for (let i = 0; i < teams.length; i++) {
-                                            const teamName2 = `FA Team ${cap(d.day_of_week).charAt(0)}${cap(d.level).charAt(0)}-${i + 1}`;
+                                            const teamName2 = `${dayLabel} ${cap(d.level)} Free Agents ${i + 1}`;
                                             const newTeam = await qAuth("teams", null, "POST", { name: teamName2, venue_id: venueId2, championship_count: 0 });
                                             const teamId2 = newTeam?.[0]?.id;
                                             if (!teamId2) continue;
@@ -6697,7 +6708,7 @@ function AdminApp({ user, myRole }) {
                                       }}
                                         style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 8, border: "none", background: C.blue, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 600, cursor: assigningFA ? "wait" : "pointer", opacity: assigningFA ? 0.6 : 1 }}
                                         disabled={assigningFA}>
-                                        {assigningFA ? "Assigning..." : `🎲 Assign ${divFA.length} Free Agents to Teams`}
+                                        {assigningFA ? "Assigning..." : `🎲 Randomly Assign ${divFA.length} Free Agents`}
                                       </button>
                                     )}
                                   </div>
@@ -7758,7 +7769,7 @@ function RegisterPage() {
                             </div>
                           )}
                           {isPilot && faCount > 0 && (
-                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>
                               {faCount} registered
                             </div>
                           )}
