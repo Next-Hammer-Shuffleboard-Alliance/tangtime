@@ -6491,8 +6491,14 @@ function AdminApp({ user, myRole }) {
                           if (!paidRegs.length && totalMaxTeams === 0) return null;
                           return (
                             <Card style={{ padding: "12px 14px", marginBottom: 10, border: `1px solid ${C.green}20`, background: `${C.green}05` }}>
-                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Registration Summary</div>
-                              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>Registration Summary</div>
+                                <div style={{ textAlign: "right" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.text }}>${(totalRevenue / 100).toLocaleString()}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Revenue</div>
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
                                 <div style={{ textAlign: "center" }}>
                                   <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.amber }}>{teamCount}<span style={{ fontSize: 12, color: C.dim }}>/{totalMaxTeams}</span></div>
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Teams</div>
@@ -6508,198 +6514,16 @@ function AdminApp({ user, myRole }) {
                                   }, 0) + faRegs.length}</div>
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Players</div>
                                 </div>
-                                <div style={{ textAlign: "center" }}>
-                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.text }}>${(totalRevenue / 100).toLocaleString()}</div>
-                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Revenue</div>
-                                </div>
                               </div>
                               {/* Progress bar */}
-                              <div style={{ marginTop: 8, height: 6, borderRadius: 3, background: `${C.border}40`, overflow: "hidden" }}>
-                                <div style={{ height: "100%", borderRadius: 3, background: pct >= 90 ? C.green : C.amber, width: `${pct}%`, transition: "width 0.3s" }} />
+                              <div style={{ height: 6, borderRadius: 3, background: `${C.border}40`, overflow: "hidden" }}>
+                                <div style={{ height: "100%", borderRadius: 3, background: pct >= 90 ? C.green : C.amber, minWidth: pct > 0 ? 8 : 0, width: `${pct}%`, transition: "width 0.3s" }} />
                               </div>
-                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginTop: 3, textAlign: "right" }}>{pct}% filled</div>
+                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginTop: 3, textAlign: "right" }}>{pct}% filled</div>
                             </Card>
                           );
                         })()}
 
-                        {/* Per-division registration details */}
-                        {allDivisions.map(d => {
-                          const divRegs = seasonRegs.filter(r => r.division_id === d.id && r.payment_status === "paid");
-                          const divTeams = divRegs.filter(r => !r.is_free_agent);
-                          const divFA = divRegs.filter(r => r.is_free_agent);
-                          if (!divRegs.length) return null;
-                          return (
-                            <Card key={`reg-${d.id}`} style={{ padding: "10px 14px", marginBottom: 8, border: `1px solid ${C.border}` }}>
-                              <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <span>{levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)} — {divTeams.length}/{d.max_teams || 16} teams{divFA.length > 0 ? ` · ${divFA.length} FA` : ""}</span>
-                              </div>
-
-                              {/* Registered teams */}
-                              {divTeams.length > 0 && (
-                                <div style={{ marginBottom: divFA.length > 0 ? 8 : 0 }}>
-                                  {(() => {
-                                    const MAX_SHOW = 3;
-                                    const expanded = expandedRegDivs[d.id];
-                                    const showTeams = expanded ? divTeams : divTeams.slice(0, MAX_SHOW);
-                                    const hiddenCount = divTeams.length - MAX_SHOW;
-                                    return (
-                                      <>
-                                        {showTeams.map(r => (
-                                          <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}15` }}>
-                                            <div>
-                                              <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.team_name}</span>
-                                              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
-                                            </div>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                              {r.is_new_team && <Badge color={C.blue} style={{ fontSize: 8 }}>New</Badge>}
-                                            </div>
-                                          </div>
-                                        ))}
-                                        {hiddenCount > 0 && !expanded && (
-                                          <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: true }))}
-                                            style={{ background: "none", border: "none", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
-                                            + {hiddenCount} more team{hiddenCount > 1 ? "s" : ""}
-                                          </button>
-                                        )}
-                                        {expanded && hiddenCount > 0 && (
-                                          <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: false }))}
-                                            style={{ background: "none", border: "none", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
-                                            Show less
-                                          </button>
-                                        )}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              )}
-
-                              {/* Free agents */}
-                              {divFA.length > 0 && (
-                                <div>
-                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.blue, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, marginTop: divTeams.length > 0 ? 4 : 0 }}>
-                                    * Free Agents ({divFA.length})
-                                  </div>
-                                  {divFA.map(r => (
-                                    <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}10` }}>
-                                      <div>
-                                        <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.player_name || "—"}</span>
-                                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
-                                      </div>
-                                      {r.partner_request && (
-                                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>🤝 {r.partner_request}</span>
-                                      )}
-                                    </div>
-                                  ))}
-
-                                  {/* Assign FA teams button */}
-                                  {divFA.length >= 4 && !d.registration_open && (
-                                    <button onClick={async (e) => {
-                                      e.stopPropagation();
-                                      if (!confirm(`Assign ${divFA.length} free agents into teams of 4+? This will create new teams and team_seasons entries.`)) return;
-                                      setAssigningFA(true);
-                                      try {
-                                        // Group by partner requests
-                                        const withPartner = divFA.filter(r => r.partner_request?.trim());
-                                        const noPartner = divFA.filter(r => !r.partner_request?.trim());
-
-                                        // Build partner groups
-                                        const partnerGroups = [];
-                                        const used = new Set();
-                                        for (const r of withPartner) {
-                                          if (used.has(r.id)) continue;
-                                          const partnerName = r.partner_request.trim().toLowerCase();
-                                          const match = divFA.find(f => f.id !== r.id && !used.has(f.id) && f.player_name?.toLowerCase().includes(partnerName));
-                                          if (match) {
-                                            partnerGroups.push([r, match]);
-                                            used.add(r.id);
-                                            used.add(match.id);
-                                          }
-                                        }
-
-                                        // Pool remaining
-                                        const remaining = divFA.filter(r => !used.has(r.id));
-                                        const allToAssign = [...partnerGroups.flat(), ...remaining];
-
-                                        // Determine team sizes (min 4)
-                                        const numTeams = Math.max(1, Math.floor(allToAssign.length / 4));
-                                        const teams = Array.from({ length: numTeams }, () => []);
-
-                                        // Place partner pairs first
-                                        let teamIdx = 0;
-                                        for (const pair of partnerGroups) {
-                                          teams[teamIdx % numTeams].push(...pair);
-                                          teamIdx++;
-                                        }
-
-                                        // Fill remaining
-                                        const unplaced = remaining.filter(r => !partnerGroups.flat().includes(r));
-                                        for (const r of unplaced) {
-                                          // Find smallest team
-                                          const smallest = teams.reduce((min, t, i) => t.length < teams[min].length ? i : min, 0);
-                                          teams[smallest].push(r);
-                                        }
-
-                                        // Create teams
-                                        const seasonName = s.name;
-                                        const existing = await q("seasons", "select=venue_id&limit=1");
-                                        const venueId = existing?.[0]?.venue_id;
-
-                                        for (let i = 0; i < teams.length; i++) {
-                                          const teamName = `${seasonName} Free Agents ${i + 1}`;
-                                          // Create team
-                                          const newTeam = await qAuth("teams", "", "POST", {
-                                            name: teamName,
-                                            venue_id: venueId,
-                                            championship_count: 0,
-                                          });
-                                          if (newTeam?.[0]?.id) {
-                                            const teamId = newTeam[0].id;
-                                            // Create team_season
-                                            await qAuth("team_seasons", "", "POST", {
-                                              team_id: teamId,
-                                              season_id: s.id,
-                                              division_id: d.id,
-                                            });
-                                            // Mark registrations as provisioned
-                                            for (const r of teams[i]) {
-                                              await qAuth("registrations", `id=eq.${r.id}`, "PATCH", { provisioned: true, team_id: teamId });
-                                            }
-                                          }
-                                        }
-
-                                        setSuccess(`Created ${teams.length} free agent teams for ${cap(d.day_of_week)} ${cap(d.level)}`);
-                                        // Reload registrations
-                                        const regs = await q("registrations", `season_id=eq.${s.id}&select=id,division_id,team_name,captain_email,is_free_agent,player_name,partner_request,payment_status,roster,amount_cents,provisioned,is_new_team,team_id,created_at&order=created_at.desc`);
-                                        setSeasonRegs(regs || []);
-                                      } catch (err) {
-                                        setError(`FA assignment failed: ${err.message}`);
-                                      }
-                                      setAssigningFA(false);
-                                    }}
-                                      style={{
-                                        marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 8, border: "none",
-                                        background: C.blue, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 600,
-                                        cursor: assigningFA ? "wait" : "pointer", opacity: assigningFA ? 0.6 : 1,
-                                      }}
-                                      disabled={assigningFA}>
-                                      {assigningFA ? "Assigning..." : `🎲 Assign ${divFA.length} Free Agents to Teams`}
-                                    </button>
-                                  )}
-                                  {divFA.length < 4 && (
-                                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>
-                                      Need at least 4 free agents to form teams
-                                    </div>
-                                  )}
-                                  {d.registration_open && divFA.length >= 4 && (
-                                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.amber, marginTop: 4 }}>
-                                      Close registration before assigning teams
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </Card>
-                          );
-                        })}
 
                         {/* Division cards for editing */}
                         {allDivisions.length === 0 ? (
@@ -6707,11 +6531,21 @@ function AdminApp({ user, myRole }) {
                         ) : allDivisions.map(d => {
                           const editInputStyle = { padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.m, fontSize: 11, outline: "none", width: "100%" };
                           const readOnly = isPast || isActive;
+                          const divRegs = seasonRegs.filter(r => r.division_id === d.id && r.payment_status === "paid");
+                          const divTeams = divRegs.filter(r => !r.is_free_agent);
+                          const divFA = divRegs.filter(r => r.is_free_agent);
                           return (
                           <Card key={d.id} style={{ padding: "12px 14px", marginBottom: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: readOnly ? 0 : 8 }}>
-                              <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
-                                {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: readOnly ? (divRegs.length > 0 ? 8 : 0) : 8 }}>
+                              <div>
+                                <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
+                                  {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                                </div>
+                                {divRegs.length > 0 && (
+                                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginTop: 1 }}>
+                                    {divTeams.length}/{d.max_teams || 16} teams{divFA.length > 0 ? ` · ${divFA.length} FA` : ""}
+                                  </div>
+                                )}
                               </div>
                               {readOnly ? (
                                 <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
@@ -6771,6 +6605,114 @@ function AdminApp({ user, myRole }) {
                               </div>
                             )}
                             </>
+                            )}
+
+                            {/* Registration details for this division */}
+                            {divRegs.length > 0 && (
+                              <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}30` }}>
+                                {/* Registered teams */}
+                                {divTeams.length > 0 && (
+                                  <div style={{ marginBottom: divFA.length > 0 ? 8 : 0 }}>
+                                    {(() => {
+                                      const MAX_SHOW = 3;
+                                      const expanded = expandedRegDivs[d.id];
+                                      const showTeams = expanded ? divTeams : divTeams.slice(0, MAX_SHOW);
+                                      const hiddenCount = divTeams.length - MAX_SHOW;
+                                      return (
+                                        <>
+                                          {showTeams.map(r => (
+                                            <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}15` }}>
+                                              <div>
+                                                <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.team_name}</span>
+                                                <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
+                                              </div>
+                                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                                {r.is_new_team && <Badge color={C.blue} style={{ fontSize: 8 }}>New</Badge>}
+                                              </div>
+                                            </div>
+                                          ))}
+                                          {hiddenCount > 0 && !expanded && (
+                                            <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: true }))}
+                                              style={{ background: "none", border: "none", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
+                                              + {hiddenCount} more team{hiddenCount > 1 ? "s" : ""}
+                                            </button>
+                                          )}
+                                          {expanded && hiddenCount > 0 && (
+                                            <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: false }))}
+                                              style={{ background: "none", border: "none", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
+                                              Show less
+                                            </button>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+
+                                {/* Free agents */}
+                                {divFA.length > 0 && (
+                                  <div>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.blue, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, marginTop: divTeams.length > 0 ? 4 : 0 }}>
+                                      Free Agents ({divFA.length})
+                                    </div>
+                                    {divFA.map(r => (
+                                      <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}10` }}>
+                                        <div>
+                                          <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.player_name || "—"}</span>
+                                          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
+                                        </div>
+                                        {r.partner_request && (
+                                          <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>🤝 {r.partner_request}</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                    {divFA.length >= 4 && !d.registration_open && (
+                                      <button onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (!confirm(`Assign ${divFA.length} free agents into teams of 4+?`)) return;
+                                        setAssigningFA(true);
+                                        try {
+                                          const members = divFA.map(r => ({ name: r.player_name, email: r.captain_email, partner: r.partner_request, reg_id: r.id }));
+                                          const withPartner = members.filter(m => m.partner);
+                                          const without = members.filter(m => !m.partner);
+                                          const all = [...withPartner, ...without];
+                                          const teams = [];
+                                          for (let i = 0; i < all.length; i += 4) {
+                                            teams.push(all.slice(i, Math.min(i + 4, all.length)));
+                                          }
+                                          if (teams.length > 1 && teams[teams.length - 1].length < 4) {
+                                            const last = teams.pop();
+                                            teams[teams.length - 1].push(...last);
+                                          }
+                                          const divArr2 = await q("divisions", `id=eq.${d.id}&select=id,season_id&limit=1`);
+                                          const seasonId2 = divArr2?.[0]?.season_id;
+                                          const venueArr2 = await q("seasons", "select=venue_id&limit=1");
+                                          const venueId2 = venueArr2?.[0]?.venue_id;
+                                          for (let i = 0; i < teams.length; i++) {
+                                            const teamName2 = `FA Team ${cap(d.day_of_week).charAt(0)}${cap(d.level).charAt(0)}-${i + 1}`;
+                                            const newTeam = await qAuth("teams", null, "POST", { name: teamName2, venue_id: venueId2, championship_count: 0 });
+                                            const teamId2 = newTeam?.[0]?.id;
+                                            if (!teamId2) continue;
+                                            await qAuth("team_seasons", null, "POST", { team_id: teamId2, season_id: seasonId2, division_id: d.id });
+                                            for (const member of teams[i]) {
+                                              await qAuth("roster_members", null, "POST", { team_id: teamId2, season_id: seasonId2, name: member.name, email: member.email });
+                                              await qAuth("registrations", `id=eq.${member.reg_id}`, "PATCH", { provisioned: true, team_id: teamId2 });
+                                            }
+                                          }
+                                          setSuccess(`Created ${teams.length} free agent teams`);
+                                          const regs = await q("registrations", `season_id=eq.${s.id}&select=id,division_id,team_name,captain_email,is_free_agent,player_name,partner_request,payment_status,roster,amount_cents,provisioned,is_new_team,team_id,created_at&order=created_at.desc`);
+                                          setSeasonRegs(regs || []);
+                                        } catch (err) { setError(`FA assignment failed: ${err.message}`); }
+                                        setAssigningFA(false);
+                                      }}
+                                        style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 8, border: "none", background: C.blue, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 600, cursor: assigningFA ? "wait" : "pointer", opacity: assigningFA ? 0.6 : 1 }}
+                                        disabled={assigningFA}>
+                                        {assigningFA ? "Assigning..." : `🎲 Assign ${divFA.length} Free Agents to Teams`}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </Card>
                           );
@@ -7663,7 +7605,7 @@ function RegisterPage() {
           </h1>
           <p style={{ color: C.muted, fontSize: 15, lineHeight: 1.6, marginBottom: 24 }}>
             {isFASuccess
-              ? "Payment confirmed. You're signed up as a free agent! You'll be assigned to a team when registration closes."
+              ? "Payment confirmed. We'll send confirmation details to your email. You will be assigned a team once registration ends."
               : "Payment confirmed. Your team is locked in for the season. We'll send confirmation details to your email."}
           </p>
           <Card style={{ textAlign: "left", marginBottom: 24 }}>
@@ -7677,11 +7619,11 @@ function RegisterPage() {
                 <>
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                     <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
-                    <span style={{ color: C.muted, fontSize: 14 }}>Royal Palms will group free agents into teams when registration closes</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Information about your teammates will be emailed after registration closes</span>
                   </div>
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                     <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
-                    <span style={{ color: C.muted, fontSize: 14 }}>You'll be notified of your team assignment before Week 1</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
                   </div>
                 </>
               ) : (
