@@ -179,7 +179,7 @@ export default async function handler(req, res) {
     });
     steps.push("9-reg-done");
 
-    return res.status(200).json({ success: true, provisioned, team_id: finalTeamId, steps });
+    return res.status(200).json({ success: true, provisioned, team_id: finalTeamId, is_free_agent: isFreeAgent, steps });
   } catch (err) {
     return res.status(500).json({ error: err.message, steps });
   }
