@@ -3551,7 +3551,7 @@ function CaptainApp({ user, myRole }) {
 }
 
 // ─── ELO Helper ───
-const ELO_K = 32;
+const ELO_K = 16;
 async function calculateElo(winnerId, loserId, divisionId) {
   try {
     const [wTs, lTs] = await Promise.all([
