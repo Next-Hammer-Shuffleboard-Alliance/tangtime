@@ -1,4 +1,4 @@
-// App v28bg26 — registration free agents, auto-provision, admin reg details
+// App v28bg27 — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -5874,6 +5874,7 @@ function AdminApp({ user, myRole }) {
   const [newDivMax, setNewDivMax] = useState("16");
   const [seasonsSaving, setSeasonsSaving] = useState(false);
   const [seasonRegs, setSeasonRegs] = useState([]); // registrations for selected manage-season
+  const [expandedRegDivs, setExpandedRegDivs] = useState({}); // divId -> bool for show all teams
   const [assigningFA, setAssigningFA] = useState(false);
 
   // Load season + divisions once on mount
@@ -6460,6 +6461,15 @@ function AdminApp({ user, myRole }) {
                               {isActive ? "✓ Active" : "Set Active"}
                             </button>
                           )}
+                          {!isActive && (
+                            <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
+                              style={{
+                                padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.red}30`,
+                                background: "transparent", color: C.red, fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                              }}>
+                              ✕
+                            </button>
+                          )}
                           <span style={{ color: C.dim, fontSize: 16 }}>{isSelected ? "▾" : "▸"}</span>
                         </div>
                       </div>
@@ -6475,21 +6485,22 @@ function AdminApp({ user, myRole }) {
                           const teamRegs = paidRegs.filter(r => !r.is_free_agent);
                           const faRegs = paidRegs.filter(r => r.is_free_agent);
                           const totalRevenue = paidRegs.reduce((s, r) => s + (r.amount_cents || 0), 0);
-                          if (!paidRegs.length) return null;
+                          const totalMaxTeams = allDivisions.reduce((s, d) => s + (d.max_teams || 16), 0);
+                          const teamCount = teamRegs.length;
+                          const pct = totalMaxTeams > 0 ? Math.min(100, Math.round((teamCount / totalMaxTeams) * 100)) : 0;
+                          if (!paidRegs.length && totalMaxTeams === 0) return null;
                           return (
                             <Card style={{ padding: "12px 14px", marginBottom: 10, border: `1px solid ${C.green}20`, background: `${C.green}05` }}>
                               <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Registration Summary</div>
-                              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                                 <div style={{ textAlign: "center" }}>
-                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.amber }}>{teamRegs.length}</div>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.amber }}>{teamCount}<span style={{ fontSize: 12, color: C.dim }}>/{totalMaxTeams}</span></div>
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Teams</div>
                                 </div>
-                                {faRegs.length > 0 && (
-                                  <div style={{ textAlign: "center" }}>
-                                    <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.blue }}>{faRegs.length}</div>
-                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Free Agents</div>
-                                  </div>
-                                )}
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.blue }}>{faRegs.length}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Free Agents</div>
+                                </div>
                                 <div style={{ textAlign: "center" }}>
                                   <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.green }}>{teamRegs.reduce((s, r) => {
                                     const roster = Array.isArray(r.roster) ? r.roster : [];
@@ -6502,6 +6513,11 @@ function AdminApp({ user, myRole }) {
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Revenue</div>
                                 </div>
                               </div>
+                              {/* Progress bar */}
+                              <div style={{ marginTop: 8, height: 6, borderRadius: 3, background: `${C.border}40`, overflow: "hidden" }}>
+                                <div style={{ height: "100%", borderRadius: 3, background: pct >= 90 ? C.green : C.amber, width: `${pct}%`, transition: "width 0.3s" }} />
+                              </div>
+                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginTop: 3, textAlign: "right" }}>{pct}% filled</div>
                             </Card>
                           );
                         })()}
@@ -6514,26 +6530,46 @@ function AdminApp({ user, myRole }) {
                           if (!divRegs.length) return null;
                           return (
                             <Card key={`reg-${d.id}`} style={{ padding: "10px 14px", marginBottom: 8, border: `1px solid ${C.border}` }}>
-                              <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6 }}>
-                                {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)} — {divRegs.length} registered
+                              <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span>{levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)} — {divTeams.length}/{d.max_teams || 16} teams{divFA.length > 0 ? ` · ${divFA.length} FA` : ""}</span>
                               </div>
 
                               {/* Registered teams */}
                               {divTeams.length > 0 && (
                                 <div style={{ marginBottom: divFA.length > 0 ? 8 : 0 }}>
-                                  {divTeams.map(r => (
-                                    <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}15` }}>
-                                      <div>
-                                        <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.team_name}</span>
-                                        <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
-                                      </div>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                        {r.is_new_team && <Badge color={C.blue} style={{ fontSize: 8 }}>New</Badge>}
-                                        {r.provisioned && <Badge color={C.green} style={{ fontSize: 8 }}>✓ Active</Badge>}
-                                        {!r.provisioned && <Badge color={C.amber} style={{ fontSize: 8 }}>Pending</Badge>}
-                                      </div>
-                                    </div>
-                                  ))}
+                                  {(() => {
+                                    const MAX_SHOW = 3;
+                                    const expanded = expandedRegDivs[d.id];
+                                    const showTeams = expanded ? divTeams : divTeams.slice(0, MAX_SHOW);
+                                    const hiddenCount = divTeams.length - MAX_SHOW;
+                                    return (
+                                      <>
+                                        {showTeams.map(r => (
+                                          <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}15` }}>
+                                            <div>
+                                              <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.team_name}</span>
+                                              <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                              {r.is_new_team && <Badge color={C.blue} style={{ fontSize: 8 }}>New</Badge>}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {hiddenCount > 0 && !expanded && (
+                                          <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: true }))}
+                                            style={{ background: "none", border: "none", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
+                                            + {hiddenCount} more team{hiddenCount > 1 ? "s" : ""}
+                                          </button>
+                                        )}
+                                        {expanded && hiddenCount > 0 && (
+                                          <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: false }))}
+                                            style={{ background: "none", border: "none", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
+                                            Show less
+                                          </button>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               )}
 
@@ -7464,6 +7500,7 @@ function RegisterPage() {
   const sessionId = urlParams.get("session_id");
   const isCanceled = urlParams.get("canceled") === "true";
   const [verified, setVerified] = useState(false);
+  const [regType, setRegType] = useState(null); // "team" | "freeagent"
 
   // Verify payment on success
   useEffect(() => {
@@ -7474,7 +7511,12 @@ function RegisterPage() {
         body: JSON.stringify({ session_id: sessionId }),
       })
         .then(r => r.json())
-        .then(d => { if (d.success) setVerified(true); })
+        .then(d => {
+          if (d.success) {
+            setVerified(true);
+            setRegType(d.is_free_agent ? "freeagent" : "team");
+          }
+        })
         .catch(() => {});
     }
   }, [isSuccess, sessionId, verified]);
@@ -7611,6 +7653,7 @@ function RegisterPage() {
 
   // ─── Success Screen ───
   if (isSuccess) {
+    const isFASuccess = regType === "freeagent";
     return (
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ textAlign: "center", maxWidth: 420 }}>
@@ -7619,7 +7662,9 @@ function RegisterPage() {
             You're <span style={{ color: C.green }}>Registered!</span>
           </h1>
           <p style={{ color: C.muted, fontSize: 15, lineHeight: 1.6, marginBottom: 24 }}>
-            Payment confirmed. Your team is locked in for the season. We'll send confirmation details to your email.
+            {isFASuccess
+              ? "Payment confirmed. You're signed up as a free agent! You'll be assigned to a team when registration closes."
+              : "Payment confirmed. Your team is locked in for the season. We'll send confirmation details to your email."}
           </p>
           <Card style={{ textAlign: "left", marginBottom: 24 }}>
             <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 6 }}>WHAT'S NEXT</div>
@@ -7628,14 +7673,29 @@ function RegisterPage() {
                 <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>1.</span>
                 <span style={{ color: C.muted, fontSize: 14 }}>Check your email for the confirmation receipt</span>
               </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
-                <span style={{ color: C.muted, fontSize: 14 }}>Add your roster in the Captain Portal before Week 1</span>
-              </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
-                <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
-              </div>
+              {isFASuccess ? (
+                <>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Royal Palms will group free agents into teams when registration closes</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>You'll be notified of your team assignment before Week 1</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Add your roster in the Captain Portal before Week 1</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
+                  </div>
+                </>
+              )}
             </div>
           </Card>
           <a href="/" style={{ ...btnStyle, display: "block", background: C.amber, color: C.bg, textDecoration: "none", textAlign: "center" }}>
