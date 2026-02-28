@@ -1,6 +1,5 @@
 // Vercel Serverless Function — /api/verify-checkout.js
 // Verifies Stripe payment and auto-provisions team registration
-// Uses raw Supabase REST calls (no SDK required)
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -13,17 +12,18 @@ export default async function handler(req, res) {
   if (!session_id) return res.status(400).json({ error: "Missing session_id" });
 
   const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
-  const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const SB_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/+$/, "");
   const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!STRIPE_SECRET || !SB_URL || !SB_KEY) {
     const missing = [];
     if (!STRIPE_SECRET) missing.push("STRIPE_SECRET_KEY");
-    if (!SB_URL) missing.push("VITE_SUPABASE_URL / SUPABASE_URL");
+    if (!SB_URL) missing.push("VITE_SUPABASE_URL");
     if (!SB_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-    console.error("Missing env vars:", missing.join(", "));
     return res.status(500).json({ error: "Server not configured", missing });
   }
+
+  const steps = [];
 
   // Helper: Supabase REST call
   async function sb(table, query = "", method = "GET", body = null) {
@@ -46,14 +46,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Retrieve Stripe session
+    // Step 1: Retrieve Stripe session
+    steps.push("1-stripe-start");
     const stripeRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${session_id}`, {
       headers: { "Authorization": `Bearer ${STRIPE_SECRET}` },
     });
     const session = await stripeRes.json();
+    steps.push("1-stripe-done");
 
     if (!stripeRes.ok || session.payment_status !== "paid") {
-      return res.status(400).json({ error: "Payment not confirmed" });
+      return res.status(400).json({ error: "Payment not confirmed", steps });
     }
 
     const meta = session.metadata || {};
@@ -69,29 +71,35 @@ export default async function handler(req, res) {
     let roster = [];
     try { roster = JSON.parse(meta.roster || "[]"); } catch {}
 
-    // 2. Check for existing registration (idempotent)
+    steps.push("2-meta-parsed");
+
+    // Step 2: Check for existing registration
+    steps.push("3-check-existing");
     const existing = await sb("registrations", `stripe_session_id=eq.${session_id}&select=id&limit=1`);
     if (existing?.length) {
-      return res.status(200).json({ success: true, message: "Already processed" });
+      return res.status(200).json({ success: true, message: "Already processed", steps });
     }
+    steps.push("3-check-done");
 
-    // 3. Get division → season_id
+    // Step 3: Get division
+    steps.push("4-get-division");
     const divArr = await sb("divisions", `id=eq.${divisionId}&select=id,season_id&limit=1`);
-    if (!divArr?.length) return res.status(400).json({ error: "Division not found" });
+    if (!divArr?.length) return res.status(400).json({ error: "Division not found", steps, divisionId });
     const seasonId = divArr[0].season_id;
+    steps.push("4-division-done");
 
-    // 4. Get venue_id
+    // Step 4: Get venue_id
+    steps.push("5-get-venue");
     const venueArr = await sb("seasons", "select=venue_id&limit=1");
     const venueId = venueArr?.[0]?.venue_id;
+    steps.push("5-venue-done");
 
     let finalTeamId = existingTeamId;
     let provisioned = false;
 
     if (!isFreeAgent) {
-      // === TEAM REGISTRATION ===
-
       if (isNewTeam) {
-        // Create new team
+        steps.push("6-create-team");
         try {
           const newTeam = await sb("teams", "", "POST", {
             name: teamName,
@@ -99,22 +107,23 @@ export default async function handler(req, res) {
             championship_count: 0,
           });
           if (newTeam?.[0]?.id) finalTeamId = newTeam[0].id;
+          steps.push("6-team-created:" + finalTeamId);
         } catch (e) {
-          console.error("Team creation error:", e.message);
+          steps.push("6-team-error:" + e.message);
         }
       } else if (renameFrom && existingTeamId) {
-        // Rename team
+        steps.push("6-rename-team");
         try {
           await sb("teams", `id=eq.${existingTeamId}`, "PATCH", { name: teamName });
+          steps.push("6-rename-done");
         } catch (e) {
-          console.error("Team rename error:", e.message);
+          steps.push("6-rename-error:" + e.message);
         }
       }
 
-      // Create team_seasons entry
       if (finalTeamId) {
+        steps.push("7-team-seasons");
         try {
-          // Check if already exists
           const existing_ts = await sb("team_seasons", `team_id=eq.${finalTeamId}&season_id=eq.${seasonId}&select=id&limit=1`);
           if (!existing_ts?.length) {
             await sb("team_seasons", "", "POST", {
@@ -124,13 +133,14 @@ export default async function handler(req, res) {
             });
           }
           provisioned = true;
+          steps.push("7-team-seasons-done");
         } catch (e) {
-          console.error("team_seasons error:", e.message);
+          steps.push("7-ts-error:" + e.message);
         }
       }
 
-      // Seed roster members (best-effort)
       if (finalTeamId && roster.length > 0) {
+        steps.push("8-roster");
         for (const member of roster) {
           if (member.name?.trim()) {
             try {
@@ -143,10 +153,12 @@ export default async function handler(req, res) {
             } catch {}
           }
         }
+        steps.push("8-roster-done");
       }
     }
 
-    // 5. Create registration record
+    // Step 5: Create registration record
+    steps.push("9-create-reg");
     await sb("registrations", "", "POST", {
       division_id: divisionId,
       season_id: seasonId,
@@ -165,10 +177,10 @@ export default async function handler(req, res) {
       roster: roster,
       provisioned: provisioned,
     });
+    steps.push("9-reg-done");
 
-    return res.status(200).json({ success: true, provisioned, team_id: finalTeamId });
+    return res.status(200).json({ success: true, provisioned, team_id: finalTeamId, steps });
   } catch (err) {
-    console.error("Verify error:", err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message, steps });
   }
 }
