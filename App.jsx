@@ -1,4 +1,4 @@
-// App v28bg28 — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
+// App v28c — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6649,17 +6649,13 @@ function AdminApp({ user, myRole }) {
                                     <div style={{ fontFamily: F.m, fontSize: 9, color: C.blue, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, marginTop: divTeams.length > 0 ? 4 : 0 }}>
                                       Free Agents ({divFA.length})
                                     </div>
-                                    {divFA.map(r => (
-                                      <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}10` }}>
-                                        <div>
-                                          <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.player_name || "—"}</span>
-                                          <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
-                                        </div>
-                                        {r.partner_request && (
-                                          <span style={{ fontFamily: F.m, fontSize: 10, color: C.amber }}>🤝 {r.partner_request}</span>
-                                        )}
-                                      </div>
-                                    ))}
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                      {divFA.map(r => (
+                                        <span key={r.id} style={{ fontFamily: F.m, fontSize: 10, color: C.muted, background: `${C.blue}10`, border: `1px solid ${C.blue}15`, borderRadius: 5, padding: "2px 7px" }}>
+                                          {r.player_name || "—"}{r.partner_request ? ` 🤝` : ""}
+                                        </span>
+                                      ))}
+                                    </div>
                                     {divFA.length >= 4 && !d.registration_open && (
                                       <button onClick={async (e) => {
                                         e.stopPropagation();
@@ -7756,14 +7752,14 @@ function RegisterPage() {
                           <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
                             {regCount > 0 ? `${regCount}/${d.max_teams || 16} teams` : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
                           </div>
-                          {faCount > 0 && (
-                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>
-                              {faCount} free agent{faCount !== 1 ? "s" : ""}
-                            </div>
-                          )}
                           {isPilot && (
                             <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
                               * Free agents · ${faPrice}
+                            </div>
+                          )}
+                          {isPilot && faCount > 0 && (
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>
+                              {faCount} signed up
                             </div>
                           )}
                         </div>
