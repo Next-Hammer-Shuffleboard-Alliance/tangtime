@@ -1,4 +1,4 @@
-// App v28c — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
+// App v28c2 — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -7749,8 +7749,8 @@ function RegisterPage() {
                             ${teamPrice}
                           </div>
                           <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
-                          <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
-                            {regCount > 0 ? `${regCount}/${d.max_teams || 16} teams` : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
+                          <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 0 ? C.red : spotsLeft <= 3 ? C.red : C.muted }}>
+                            {spotsLeft <= 0 ? "Filled" : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
                           </div>
                           {isPilot && (
                             <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
@@ -7759,7 +7759,7 @@ function RegisterPage() {
                           )}
                           {isPilot && faCount > 0 && (
                             <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>
-                              {faCount} signed up
+                              {faCount} registered
                             </div>
                           )}
                         </div>
