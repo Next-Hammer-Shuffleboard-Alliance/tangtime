@@ -17,7 +17,12 @@ export default async function handler(req, res) {
   const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!STRIPE_SECRET || !SB_URL || !SB_KEY) {
-    return res.status(500).json({ error: "Server not configured" });
+    const missing = [];
+    if (!STRIPE_SECRET) missing.push("STRIPE_SECRET_KEY");
+    if (!SB_URL) missing.push("VITE_SUPABASE_URL / SUPABASE_URL");
+    if (!SB_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+    console.error("Missing env vars:", missing.join(", "));
+    return res.status(500).json({ error: "Server not configured", missing });
   }
 
   // Helper: Supabase REST call
