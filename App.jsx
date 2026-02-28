@@ -7461,9 +7461,10 @@ function RegisterPage() {
       if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
       if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
       if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+      if (rosterMembers.filter(m => m.name.trim()).length === 0) { setError("Add at least one team member name"); return; }
     }
 
-    const validRoster = rosterMembers.filter(m => m.name.trim() || m.email.trim());
+    const validRoster = rosterMembers.filter(m => m.name.trim()).map(m => ({ name: m.name.trim(), email: m.email.trim() || null }));
     const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
     const teamName = isFreeAgent ? null : (teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName));
     const priceCents = isFreeAgent ? (div.free_agent_price_cents || 10000) : (div.price_cents || 65000);
@@ -7671,17 +7672,17 @@ function RegisterPage() {
                             ${teamPrice}
                           </div>
                           <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
-                          {isPilot && (
-                            <div style={{ fontFamily: F.m, fontSize: 11, color: C.blue, fontWeight: 600, marginBottom: 2 }}>
-                              ${faPrice} <span style={{ fontSize: 9, fontWeight: 400, color: C.dim }}>free agent</span>
-                            </div>
-                          )}
                           <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
                             {regCount > 0 ? `${regCount}/${d.max_teams || 16} teams` : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
                           </div>
                           {faCount > 0 && (
                             <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>
                               {faCount} free agent{faCount !== 1 ? "s" : ""}
+                            </div>
+                          )}
+                          {isPilot && (
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
+                              🧑 Free agents · ${faPrice}
                             </div>
                           )}
                         </div>
@@ -7884,7 +7885,7 @@ function RegisterPage() {
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
-                      Team Members <span style={{ textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+                      Team Members <span style={{ textTransform: "none", letterSpacing: 0 }}>(names required, emails optional)</span>
                     </div>
                     <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
                       {rosterMembers.filter(m => m.name.trim()).length} added
@@ -7894,10 +7895,10 @@ function RegisterPage() {
                     {rosterMembers.map((m, i) => (
                       <div key={i} style={{ display: "flex", gap: 6, padding: "8px 10px", borderBottom: i < rosterMembers.length - 1 ? `1px solid ${C.border}` : "none", alignItems: "center" }}>
                         <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim, width: 18, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
-                        <input type="text" placeholder="Name" value={m.name}
+                        <input type="text" placeholder="Name *" value={m.name}
                           onChange={e => setRosterMembers(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
                           style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", minWidth: 0 }} />
-                        <input type="email" placeholder="Email" value={m.email}
+                        <input type="email" placeholder="Email (optional)" value={m.email}
                           onChange={e => setRosterMembers(prev => prev.map((r, j) => j === i ? { ...r, email: e.target.value } : r))}
                           style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", minWidth: 0 }} />
                         {rosterMembers.length > 2 && (
@@ -8146,7 +8147,7 @@ function MainApp() {
         position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
         width: "100%", maxWidth: 520, display: "flex", justifyContent: "space-around",
         padding: "8px 4px 16px", zIndex: 100,
-        background: `linear-gradient(180deg, transparent 0%, ${C.bg} 25%)`,
+        background: C.bg,
         borderTop: `1px solid ${C.border}`,
       }}>
         {(() => {
