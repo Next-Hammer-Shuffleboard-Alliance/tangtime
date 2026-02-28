@@ -1,4 +1,4 @@
-// App v28d2 — FA count color, FA shuffle+naming, auto-close reg when full, greyed-out filled divisions, delete only unused seasons
+// App v28d2 — FA count color, FA shuffle+naming, auto-close reg, greyed filled divs, delete only unused seasons (bulk query)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6051,15 +6051,16 @@ function AdminApp({ user, myRole }) {
     setSeasonsLoading(true);
     try {
       const s = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active");
-      // Tag each season with whether it's been used (has matches or team_seasons)
-      const enriched = await Promise.all((s || []).map(async (sn) => {
-        const [m, ts] = await Promise.all([
-          q("matches", `season_id=eq.${sn.id}&select=id&limit=1`),
-          q("team_seasons", `season_id=eq.${sn.id}&select=id&limit=1`),
-        ]);
-        return { ...sn, has_activity: !!(m?.length || ts?.length) };
-      }));
-      setAllSeasons(enriched);
+      // Get season IDs that have any activity (team_seasons or matches)
+      const [tsAll, mAll] = await Promise.all([
+        q("team_seasons", "select=season_id"),
+        q("matches", "select=season_id"),
+      ]);
+      const usedIds = new Set([
+        ...(tsAll || []).map(r => r.season_id),
+        ...(mAll || []).map(r => r.season_id),
+      ]);
+      setAllSeasons((s || []).map(sn => ({ ...sn, has_activity: usedIds.has(sn.id) })));
     } catch (e) { setError(e.message); }
     setSeasonsLoading(false);
   };
