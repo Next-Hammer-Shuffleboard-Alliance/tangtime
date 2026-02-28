@@ -1,4 +1,4 @@
-// App v28c3 — FA registered count color, FA assignment: shuffle + naming (Mon Pilot Free Agents 1)
+// App v28d — FA count color, FA shuffle+naming, auto-close reg when full, greyed-out filled divisions
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -5877,6 +5877,25 @@ function AdminApp({ user, myRole }) {
   const [expandedRegDivs, setExpandedRegDivs] = useState({}); // divId -> bool for show all teams
   const [assigningFA, setAssigningFA] = useState(false);
 
+  // Auto-close registration when team spots fill
+  useEffect(() => {
+    if (!seasonRegs.length || !allDivisions.length) return;
+    (async () => {
+      for (const d of allDivisions) {
+        if (!d.registration_open) continue;
+        const maxTeams = d.max_teams || 16;
+        const teamCount = seasonRegs.filter(r => r.division_id === d.id && !r.is_free_agent).length;
+        if (teamCount >= maxTeams) {
+          try {
+            await qAuth("divisions", `id=eq.${d.id}`, "PATCH", { registration_open: false });
+            setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, registration_open: false } : x));
+            setSuccess(`${cap(d.day_of_week)} ${cap(d.level)} auto-closed — ${teamCount}/${maxTeams} teams filled`);
+          } catch (e) { console.error("Auto-close failed:", e); }
+        }
+      }
+    })();
+  }, [seasonRegs, allDivisions.length]);
+
   // Load season + divisions once on mount
   useEffect(() => {
     (async () => {
@@ -7476,12 +7495,15 @@ function RegisterPage() {
     async function load() {
       try {
         const [divs, seas, tms, regs] = await Promise.all([
-          q("divisions", "registration_open=eq.true&order=day_of_week,time_slot&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot,free_agent_price_cents"),
-          q("seasons", "order=start_date.desc&limit=5"),
+          q("divisions", "order=day_of_week,time_slot&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot,free_agent_price_cents,registration_open"),
+          q("seasons", "order=start_date.desc&limit=5&select=id,name,start_date,end_date,is_active"),
           q("teams", "primary_team_id=is.null&order=name.asc&limit=500&select=id,name"),
           q("registrations", "payment_status=eq.paid&select=division_id,team_name,is_free_agent,player_name"),
         ]);
-        setDivisions((divs || []).sort((a, b) => {
+        // Filter to active season (or most recent if none active)
+        const activeSeason = (seas || []).find(s => s.is_active) || (seas || [])[0];
+        const activeSeasonId = activeSeason?.id;
+        setDivisions((divs || []).filter(d => d.season_id === activeSeasonId).sort((a, b) => {
           const dayOrd = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5 };
           const lvlOrd = { pilot: 1, cherry: 2, hammer: 3, party: 4 };
           const dd = (dayOrd[a.day_of_week] || 9) - (dayOrd[b.day_of_week] || 9);
@@ -7716,7 +7738,7 @@ function RegisterPage() {
           <>
             {/* Division Cards */}
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
-              Open Divisions
+              Divisions
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
               {(() => {
@@ -7730,6 +7752,7 @@ function RegisterPage() {
                 const isPilot = d.level === "pilot";
                 const teamPrice = ((d.price_cents || 65000) / 100).toFixed(0);
                 const faPrice = ((d.free_agent_price_cents || 10000) / 100).toFixed(0);
+                const isClosed = !d.registration_open || spotsLeft <= 0;
                 const showDayHeader = d.day_of_week !== lastDay;
                 lastDay = d.day_of_week;
                 return (
@@ -7741,11 +7764,12 @@ function RegisterPage() {
                     )}
                   <Card key={d.id}
                     style={{
-                      border: `1px solid ${selected ? C.amber : C.border}`,
-                      background: selected ? `${C.amber}08` : C.surface,
+                      border: `1px solid ${isClosed ? C.border : selected ? C.amber : C.border}`,
+                      background: isClosed ? `${C.bg}` : selected ? `${C.amber}08` : C.surface,
+                      opacity: isClosed ? 0.5 : 1,
                     }}>
-                    <div onClick={() => { setSelectedDiv(selected ? null : d.id); setRegMode("team"); setError(""); }}
-                      style={{ cursor: "pointer" }}>
+                    <div onClick={() => { if (isClosed) return; setSelectedDiv(selected ? null : d.id); setRegMode("team"); setError(""); }}
+                      style={{ cursor: isClosed ? "default" : "pointer" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                         <div>
                           <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
@@ -7756,22 +7780,30 @@ function RegisterPage() {
                           </div>
                         </div>
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
-                            ${teamPrice}
-                          </div>
-                          <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
-                          <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 0 ? C.red : spotsLeft <= 3 ? C.red : C.muted }}>
-                            {spotsLeft <= 0 ? "Filled" : `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
-                          </div>
-                          {isPilot && (
-                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
-                              * Free agents · ${faPrice}
+                          {isClosed ? (
+                            <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 700, color: C.dim, background: `${C.dim}20`, borderRadius: 6, padding: "4px 12px" }}>
+                              Filled
                             </div>
-                          )}
-                          {isPilot && faCount > 0 && (
-                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>
-                              {faCount} registered
-                            </div>
+                          ) : (
+                            <>
+                              <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
+                                ${teamPrice}
+                              </div>
+                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
+                              <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
+                                {`${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
+                              </div>
+                              {isPilot && (
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
+                                  * Free agents · ${faPrice}
+                                </div>
+                              )}
+                              {isPilot && faCount > 0 && (
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>
+                                  {faCount} registered
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
