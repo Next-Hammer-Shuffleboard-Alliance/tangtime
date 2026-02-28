@@ -1,4 +1,4 @@
-// App v28bg27 — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
+// App v28bg28 — registration fixes: FA confirmation, admin badges, delete season, progress tracker, truncation
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6498,10 +6498,10 @@ function AdminApp({ user, myRole }) {
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Revenue</div>
                                 </div>
                               </div>
-                              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
+                              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                                 <div style={{ textAlign: "center" }}>
                                   <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.amber }}>{teamCount}<span style={{ fontSize: 12, color: C.dim }}>/{totalMaxTeams}</span></div>
-                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Teams</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Teams ({pct}%)</div>
                                 </div>
                                 <div style={{ textAlign: "center" }}>
                                   <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.blue }}>{faRegs.length}</div>
@@ -6515,11 +6515,6 @@ function AdminApp({ user, myRole }) {
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Players</div>
                                 </div>
                               </div>
-                              {/* Progress bar */}
-                              <div style={{ height: 6, borderRadius: 3, background: `${C.border}40`, overflow: "hidden" }}>
-                                <div style={{ height: "100%", borderRadius: 3, background: pct >= 90 ? C.green : C.amber, minWidth: pct > 0 ? 8 : 0, width: `${pct}%`, transition: "width 0.3s" }} />
-                              </div>
-                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginTop: 3, textAlign: "right" }}>{pct}% filled</div>
                             </Card>
                           );
                         })()}
@@ -6613,28 +6608,27 @@ function AdminApp({ user, myRole }) {
                                 {/* Registered teams */}
                                 {divTeams.length > 0 && (
                                   <div style={{ marginBottom: divFA.length > 0 ? 8 : 0 }}>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                                      Registered ({divTeams.length}/{d.max_teams || 16})
+                                    </div>
                                     {(() => {
-                                      const MAX_SHOW = 3;
+                                      const MAX_SHOW = 6;
                                       const expanded = expandedRegDivs[d.id];
                                       const showTeams = expanded ? divTeams : divTeams.slice(0, MAX_SHOW);
                                       const hiddenCount = divTeams.length - MAX_SHOW;
                                       return (
                                         <>
-                                          {showTeams.map(r => (
-                                            <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}15` }}>
-                                              <div>
-                                                <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{r.team_name}</span>
-                                                <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginLeft: 8 }}>{r.captain_email}</span>
-                                              </div>
-                                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                                {r.is_new_team && <Badge color={C.blue} style={{ fontSize: 8 }}>New</Badge>}
-                                              </div>
-                                            </div>
-                                          ))}
+                                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                            {showTeams.map(r => (
+                                              <span key={r.id} style={{ fontFamily: F.m, fontSize: 10, color: C.muted, background: `${C.amber}10`, border: `1px solid ${C.amber}15`, borderRadius: 5, padding: "2px 7px" }}>
+                                                {r.team_name}{r.is_new_team ? " ✦" : ""}
+                                              </span>
+                                            ))}
+                                          </div>
                                           {hiddenCount > 0 && !expanded && (
                                             <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: true }))}
                                               style={{ background: "none", border: "none", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
-                                              + {hiddenCount} more team{hiddenCount > 1 ? "s" : ""}
+                                              + {hiddenCount} more
                                             </button>
                                           )}
                                           {expanded && hiddenCount > 0 && (
@@ -7442,7 +7436,9 @@ function RegisterPage() {
   const sessionId = urlParams.get("session_id");
   const isCanceled = urlParams.get("canceled") === "true";
   const [verified, setVerified] = useState(false);
-  const [regType, setRegType] = useState(null); // "team" | "freeagent"
+  const [regType, setRegType] = useState(() => {
+    try { return sessionStorage.getItem("tt_reg_mode"); } catch { return null; }
+  }); // "team" | "freeagent"
 
   // Verify payment on success
   useEffect(() => {
@@ -7565,6 +7561,7 @@ function RegisterPage() {
         return;
       }
       if (data.url) {
+        try { sessionStorage.setItem("tt_reg_mode", isFreeAgent ? "freeagent" : "team"); } catch {}
         window.location.href = data.url;
       } else {
         setError(data.error || "Something went wrong");
