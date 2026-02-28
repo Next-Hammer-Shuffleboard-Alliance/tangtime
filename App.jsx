@@ -1246,9 +1246,12 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       q("division_standings", `division_id=eq.${divId}&order=calculated_rank`),
       q("matches", `division_id=eq.${divId}&status=eq.completed&winner_id=not.is.null&order=scheduled_date.desc,scheduled_time.desc`),
       seasonIdForPlayoffs ? q("playoff_appearances", `season_id=eq.${seasonIdForPlayoffs}`) : Promise.resolve([]),
-    ]).then(([d, matches, playoffData]) => {
+      selDiv?.season_id ? q("team_seasons", `division_id=eq.${divId}&select=team_id,elo_rating`) : Promise.resolve([]),
+    ]).then(([d, matches, playoffData, eloData]) => {
       const playoffMap = {};
       (playoffData || []).forEach(p => { playoffMap[p.team_id] = p.round_reached; });
+      const eloMap = {};
+      (eloData || []).forEach(e => { if (e.elo_rating) eloMap[e.team_id] = e.elo_rating; });
       // Compute streaks from matches if not in standings view
       const streakMap = {};
       if (matches?.length) {
@@ -1270,6 +1273,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
         ...s,
         streak: s.streak || s.current_streak || streakMap[s.team_id] || null,
         playoffRound: playoffMap[s.team_id] || null,
+        elo: eloMap[s.team_id] || null,
       }));
       setStandings(enriched);
       setLoading(false);
@@ -1332,15 +1336,16 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
 
       {loading ? <Loader /> : !rows.length ? <Empty msg="No standings data" /> : (() => {
         const hasPlayoffData = rows.some(t => t.playoffRound);
+        const hasElo = rows.some(t => t.elo && t.elo !== 1500);
         return (
         <div style={{ position: "relative" }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <Card style={{ padding: 0, overflow: "hidden", minWidth: 380 }}>
+        <Card style={{ padding: 0, overflow: "hidden", minWidth: hasElo ? 420 : 380 }}>
           <div style={{
-            display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
+            display: "grid", gridTemplateColumns: hasElo ? "30px 1fr 32px 32px 34px 42px 44px" : "30px 1fr 32px 32px 34px 42px 38px",
             alignItems: "center", padding: "10px 12px", background: C.hover, borderBottom: `1px solid ${C.border}`,
           }}>
-            {["#", "Team", "W", "L", "GB", "STRK", "OT"].map(h => (
+            {["#", "Team", "W", "L", "GB", "STRK", ...(hasElo ? ["ELO"] : ["OT"])].map(h => (
               <span key={h} style={{
                 fontFamily: F.m, fontSize: 9, fontWeight: 700, color: C.dim,
                 textTransform: "uppercase", letterSpacing: 1,
@@ -1355,7 +1360,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             const lastTopNIdx = useTopN ? rows.reduce((last, r, j) => r.displayRank <= playoffSpots ? j : last, -1) : -1;
             return (
             <div key={t.team_id || i} onClick={() => goPage("teams", { teamId: t.team_id })} style={{
-              display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
+              display: "grid", gridTemplateColumns: hasElo ? "30px 1fr 32px 32px 34px 42px 44px" : "30px 1fr 32px 32px 34px 42px 38px",
               alignItems: "center", padding: "12px 12px", cursor: "pointer",
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
               background: useTopN && isTopN ? C.amberGlow : "transparent", position: "relative",
@@ -1382,9 +1387,15 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                   <Badge color={(t._streak || t.streak).startsWith("W") ? C.green : C.red} style={{ fontSize: 10, padding: "2px 7px" }}>{t._streak || t.streak}</Badge>
                 ) : <span style={{ color: C.dim }}>—</span>}
               </span>
-              <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.dim }}>
-                {(t.ot_wins || 0) + (t.ot_losses || 0) > 0 ? `${t.ot_wins}-${t.ot_losses}` : "—"}
-              </span>
+              {hasElo ? (
+                <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, fontWeight: 600, color: t.elo > 1500 ? C.green : t.elo < 1500 ? C.red : C.muted }}>
+                  {t.elo || "—"}
+                </span>
+              ) : (
+                <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.dim }}>
+                  {(t.ot_wins || 0) + (t.ot_losses || 0) > 0 ? `${t.ot_wins}-${t.ot_losses}` : "—"}
+                </span>
+              )}
             </div>
           )})}
         </Card>
@@ -3533,7 +3544,43 @@ function CaptainApp({ user, myRole }) {
   );
 }
 
-function AdminEditModal({ match, onClose, onSave }) {
+// ─── ELO Helper ───
+const ELO_K = 32;
+async function calculateElo(winnerId, loserId, divisionId) {
+  try {
+    const [wTs, lTs] = await Promise.all([
+      q("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}&select=elo_rating`),
+      q("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}&select=elo_rating`),
+    ]);
+    const wRating = wTs?.[0]?.elo_rating || 1500;
+    const lRating = lTs?.[0]?.elo_rating || 1500;
+    const expected = 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
+    const delta = Math.round(ELO_K * (1 - expected));
+    await Promise.all([
+      qAuth("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: wRating + delta }),
+      qAuth("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: lRating - delta }),
+    ]);
+    return delta;
+  } catch (e) { console.error("ELO calc error:", e); return 0; }
+}
+
+async function reverseElo(winnerId, loserId, eloChange, divisionId) {
+  if (!eloChange) return;
+  try {
+    const [wTs, lTs] = await Promise.all([
+      q("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}&select=elo_rating`),
+      q("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}&select=elo_rating`),
+    ]);
+    const wRating = wTs?.[0]?.elo_rating || 1500;
+    const lRating = lTs?.[0]?.elo_rating || 1500;
+    await Promise.all([
+      qAuth("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: wRating - eloChange }),
+      qAuth("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: lRating + eloChange }),
+    ]);
+  } catch (e) { console.error("ELO reverse error:", e); }
+}
+
+function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
   const [winnerId, setWinnerId] = useState(match.winner_id || "");
   const [isOT, setIsOT] = useState(match.went_to_ot || false);
   const [saving, setSaving] = useState(false);
@@ -3543,7 +3590,25 @@ function AdminEditModal({ match, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
+      const oldWinnerId = match.winner_id;
+      const oldLoserId = oldWinnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
+      const newLoserId = winnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
+
       await rpc("admin_update_match_result", { match_id: match.id, new_winner_id: winnerId || null, is_ot: isOT });
+
+      // ELO calculation
+      if (winnerId && divisionId) {
+        // If there was a previous winner, reverse old ELO first
+        if (oldWinnerId && oldWinnerId !== winnerId && match.elo_change) {
+          await reverseElo(oldWinnerId, oldLoserId, match.elo_change, divisionId);
+        }
+        // Calculate new ELO (skip if same winner — no change needed)
+        if (!oldWinnerId || oldWinnerId !== winnerId) {
+          const delta = await calculateElo(winnerId, newLoserId, divisionId);
+          await qAuth("matches", `id=eq.${match.id}`, "PATCH", { elo_change: delta });
+        }
+      }
+
       onSave();
     } catch (e) { setError(e.message); setSaving(false); }
   };
@@ -3552,7 +3617,13 @@ function AdminEditModal({ match, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
+      // Reverse ELO before clearing
+      if (match.winner_id && match.elo_change && divisionId) {
+        const loserId = match.winner_id === match.team_a_id ? match.team_b_id : match.team_a_id;
+        await reverseElo(match.winner_id, loserId, match.elo_change, divisionId);
+      }
       await rpc("admin_clear_match_result", { match_id: match.id });
+      await qAuth("matches", `id=eq.${match.id}`, "PATCH", { elo_change: null });
       onSave();
     } catch (e) { setError(e.message); setSaving(false); }
   };
@@ -5842,7 +5913,7 @@ function AdminApp({ user, myRole }) {
     if (!divisionId) return;
     if (tab !== "matches") return;
     setLoadingMatches(true);
-    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,elo_change,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         const withWeeks = (data || []).map(m => ({
           ...m,
@@ -5866,7 +5937,7 @@ function AdminApp({ user, myRole }) {
   useEffect(() => {
     if (tab !== "matches" || !divisionId) return;
     setLoadingMatches(true);
-    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,elo_change,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         const withWeeks = (data || []).map(m => ({
           ...m,
@@ -6202,6 +6273,11 @@ function AdminApp({ user, myRole }) {
                   <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textAlign: "center" }}>vs</span>
                   <span style={{ fontFamily: F.b, fontSize: 13, fontWeight: m.winner_id === m.team_b_id ? 700 : 400, color: m.winner_id === m.team_b_id ? C.text : C.muted, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.winner_id === m.team_b_id && "🏆 "}{m.team_b_name}</span>
                 </div>
+                {m.elo_change && m.status === "completed" && (
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4, textAlign: "center" }}>
+                    ELO: {m.winner_id === m.team_a_id ? m.team_a_name : m.team_b_name} <span style={{ color: C.green }}>+{m.elo_change}</span> · {m.winner_id === m.team_a_id ? m.team_b_name : m.team_a_name} <span style={{ color: C.red }}>-{m.elo_change}</span>
+                  </div>
+                )}
               </div>
             ))}
           </>
@@ -6459,7 +6535,7 @@ function AdminApp({ user, myRole }) {
                               {divFA.length > 0 && (
                                 <div>
                                   <div style={{ fontFamily: F.m, fontSize: 9, color: C.blue, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, marginTop: divTeams.length > 0 ? 4 : 0 }}>
-                                    🧑 Free Agents ({divFA.length})
+                                    * Free Agents ({divFA.length})
                                   </div>
                                   {divFA.map(r => (
                                     <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}10` }}>
@@ -6648,7 +6724,7 @@ function AdminApp({ user, myRole }) {
                                     style={editInputStyle} />
                                 </div>
                                 <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
-                                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>🧑 Free agent registration enabled for Pilot</span>
+                                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>* Free agent registration enabled for Pilot</span>
                                 </div>
                               </div>
                             )}
@@ -6742,7 +6818,7 @@ function AdminApp({ user, myRole }) {
 
         <div style={{ height: 32 }} />
       </main>
-      {editing && <AdminEditModal match={editing} onClose={() => setEditing(null)} onSave={handleEditSave} />}
+      {editing && <AdminEditModal match={editing} onClose={() => setEditing(null)} onSave={handleEditSave} seasonId={seasonId} divisionId={divisionId} />}
     </div>
   );
 }
@@ -7682,7 +7758,7 @@ function RegisterPage() {
                           )}
                           {isPilot && (
                             <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
-                              🧑 Free agents · ${faPrice}
+                              * Free agents · ${faPrice}
                             </div>
                           )}
                         </div>
@@ -7707,7 +7783,7 @@ function RegisterPage() {
                               background: regMode === "freeagent" ? `${C.blue}15` : "transparent",
                               color: regMode === "freeagent" ? C.blue : C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
                             }}>
-                            🧑 Free Agent — ${faPrice}
+                            * Free Agent — ${faPrice}
                           </button>
                         )}
                       </div>
