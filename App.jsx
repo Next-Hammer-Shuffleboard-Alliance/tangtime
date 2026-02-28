@@ -2429,7 +2429,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=500`),
       q("championships", `team_id=eq.${selectedId}&select=type,season_id`),
       q("playoff_appearances", `team_id=eq.${selectedId}&select=season_id`),
-    ]).then(([td, sd, md, cd, pad]) => {
+      q("team_seasons", `team_id=eq.${selectedId}&select=elo_rating,division_id,divisions(season_id)&order=division_id`),
+    ]).then(([td, sd, md, cd, pad, tsData]) => {
       const teamsRow = td?.[0];
       const hasTeamsData = teamsRow && (teamsRow.all_time_wins || 0) > 0;
 
@@ -2444,12 +2445,17 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       (cd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).forEach(c => playoffSeasonIds.add(c.season_id));
       const totalPlayoffs = playoffSeasonIds.size;
 
+      // Get current season ELO from team_seasons (prefer over recrec_elo)
+      const activeSeasonId = activeSeason?.id;
+      const currentSeasonElo = (tsData || []).find(ts => ts.elo_rating && ts.divisions?.season_id === activeSeasonId)?.elo_rating
+        || (tsData || []).find(ts => ts.elo_rating)?.elo_rating;
+
       setTeamDetail({
         id: selectedId,
         name: teamsRow?.name || sd?.[0]?.team_name || "Unknown",
         all_time_wins: hasTeamsData ? teamsRow.all_time_wins : matchWins,
         all_time_losses: hasTeamsData ? teamsRow.all_time_losses : matchLosses,
-        elo_rating: teamsRow?.recrec_elo || null,
+        elo_rating: currentSeasonElo || teamsRow?.recrec_elo || null,
         championships: teamsRow?.championship_count || 0,
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
         playoff_appearances: totalPlayoffs,
@@ -2565,7 +2571,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>
             {t.name}{isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default", marginLeft: 6 }}>🏆</span>}
           </h3>
-          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{(t.elo_rating || t.recrec_elo) ? `ELO ${t.elo_rating || t.recrec_elo} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{t.elo_rating ? `ELO ${t.elo_rating} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             {[
               ["Wins", t.all_time_wins || 0, C.green],
