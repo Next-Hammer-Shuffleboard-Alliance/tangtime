@@ -1,4 +1,4 @@
-// App v28d — FA count color, FA shuffle+naming, auto-close reg when full, greyed-out filled divisions
+// App v28d2 — FA count color, FA shuffle+naming, auto-close reg when full, greyed-out filled divisions, delete only unused seasons
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6051,7 +6051,15 @@ function AdminApp({ user, myRole }) {
     setSeasonsLoading(true);
     try {
       const s = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active");
-      setAllSeasons(s || []);
+      // Tag each season with whether it's been used (has matches or team_seasons)
+      const enriched = await Promise.all((s || []).map(async (sn) => {
+        const [m, ts] = await Promise.all([
+          q("matches", `season_id=eq.${sn.id}&select=id&limit=1`),
+          q("team_seasons", `season_id=eq.${sn.id}&select=id&limit=1`),
+        ]);
+        return { ...sn, has_activity: !!(m?.length || ts?.length) };
+      }));
+      setAllSeasons(enriched);
     } catch (e) { setError(e.message); }
     setSeasonsLoading(false);
   };
@@ -6163,11 +6171,15 @@ function AdminApp({ user, myRole }) {
   };
 
   const deleteSeason = async (sId, sName) => {
-    // Check if season has any matches
     try {
       const matches = await q("matches", `season_id=eq.${sId}&select=id&limit=1`);
       if (matches?.length > 0) {
-        setError(`Cannot delete "${sName}" — it has matches. Only seasons with 0 matches can be deleted.`);
+        setError(`Cannot delete "${sName}" — it has matches.`);
+        return;
+      }
+      const ts = await q("team_seasons", `season_id=eq.${sId}&select=id&limit=1`);
+      if (ts?.length > 0) {
+        setError(`Cannot delete "${sName}" — it has teams assigned.`);
         return;
       }
     } catch {}
@@ -6480,7 +6492,7 @@ function AdminApp({ user, myRole }) {
                               {isActive ? "✓ Active" : "Set Active"}
                             </button>
                           )}
-                          {!isActive && (
+                          {!isActive && !s.has_activity && (
                             <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
                               style={{
                                 padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.red}30`,
