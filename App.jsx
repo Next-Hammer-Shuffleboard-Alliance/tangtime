@@ -1,4 +1,4 @@
-// App v26 — v22 base + week fix + auth + captain/admin routes (no external deps)
+// App v28d3 — FA count color, FA shuffle+naming, auto-close reg, greyed filled divs, delete only future seasons
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -178,6 +178,54 @@ function computeRanks(standings) {
     }
     const tied = sorted.filter(x => x.wins === t.wins && x.losses === t.losses).length > 1;
     return { ...t, displayRank: rank, isTied: tied };
+  });
+}
+
+// Group stage standings - sort by W-L, flag ties
+// R16 bracket labels: match_number -> { team1Label, team2Label }
+const R16_LABELS = {
+  1: { t1: "A1", t2: "B2" }, 2: { t1: "C1", t2: "D2" },
+  3: { t1: "E1", t2: "F2" }, 4: { t1: "G1", t2: "H2" },
+  5: { t1: "B1", t2: "A2" }, 6: { t1: "D1", t2: "C2" },
+  7: { t1: "F1", t2: "E2" }, 8: { t1: "H1", t2: "G2" },
+};
+
+function computeGroupStandings(teamList, matches, overrideOrder = null) {
+  const st = {};
+  teamList.forEach(t => {
+    st[t.team_id] = { team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0 };
+  });
+  const completed = matches.filter(m => m.status === "completed");
+  completed.forEach(m => {
+    if (st[m.team1_id]) {
+      if (m.winner_id === m.team1_id) st[m.team1_id].w++;
+      else if (m.winner_id === m.team2_id) st[m.team1_id].l++;
+    }
+    if (st[m.team2_id]) {
+      if (m.winner_id === m.team2_id) st[m.team2_id].w++;
+      else if (m.winner_id === m.team1_id) st[m.team2_id].l++;
+    }
+  });
+
+  // If admin override order exists, use that
+  if (overrideOrder && overrideOrder.length === teamList.length) {
+    return overrideOrder.map((tid, idx) => {
+      const s = st[tid];
+      return s ? { ...s, rank: idx + 1, tied: false } : null;
+    }).filter(Boolean);
+  }
+
+  // Sort by W desc, L asc
+  const arr = Object.values(st).sort((a, b) => b.w - a.w || a.l - b.l);
+
+  // Flag ties at the cutline (positions 2/3 matter for advancement)
+  return arr.map((team, idx) => {
+    const sameRecord = arr.filter(t => t.w === team.w && t.l === team.l);
+    const tied = sameRecord.length > 1;
+    // Check if this tie spans the cutline (top 2 advance)
+    const positions = sameRecord.map(t => arr.indexOf(t));
+    const crossesCutline = tied && positions.some(p => p < 2) && positions.some(p => p >= 2);
+    return { ...team, rank: idx + 1, tied, crossesCutline };
   });
 }
 
@@ -835,7 +883,7 @@ function SeasonSelector({ seasons, selected, onSelect }) {
 // ══════════════════════════════════════
 
 // ─── HOME ───
-function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
+function HomePage({ seasons, activeSeason, divisions, goPage, champs, hasPlayoffTab }) {
   const [leaders, setLeaders] = useState([]);
   const [recent, setRecent] = useState([]);
   const [allStandings, setAllStandings] = useState([]);
@@ -981,8 +1029,8 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs }) {
         </div>
       </div>
 
-      {/* PAST SEASON: Champion + Division Winners */}
-      {isPast && seasonChamp && (
+      {/* PAST SEASON: Champion (only show when no Playoffs tab — otherwise it's on Playoffs) */}
+      {isPast && !hasPlayoffTab && seasonChamp && (
         <div>
           <Card style={{
             background: `linear-gradient(135deg, #1a1520, ${C.surface})`,
@@ -1198,9 +1246,12 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
       q("division_standings", `division_id=eq.${divId}&order=calculated_rank`),
       q("matches", `division_id=eq.${divId}&status=eq.completed&winner_id=not.is.null&order=scheduled_date.desc,scheduled_time.desc`),
       seasonIdForPlayoffs ? q("playoff_appearances", `season_id=eq.${seasonIdForPlayoffs}`) : Promise.resolve([]),
-    ]).then(([d, matches, playoffData]) => {
+      selDiv?.season_id ? q("team_seasons", `division_id=eq.${divId}&select=team_id,elo_rating`) : Promise.resolve([]),
+    ]).then(([d, matches, playoffData, eloData]) => {
       const playoffMap = {};
       (playoffData || []).forEach(p => { playoffMap[p.team_id] = p.round_reached; });
+      const eloMap = {};
+      (eloData || []).forEach(e => { if (e.elo_rating) eloMap[e.team_id] = e.elo_rating; });
       // Compute streaks from matches if not in standings view
       const streakMap = {};
       if (matches?.length) {
@@ -1222,6 +1273,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
         ...s,
         streak: s.streak || s.current_streak || streakMap[s.team_id] || null,
         playoffRound: playoffMap[s.team_id] || null,
+        elo: eloMap[s.team_id] || null,
       }));
       setStandings(enriched);
       setLoading(false);
@@ -1284,15 +1336,16 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
 
       {loading ? <Loader /> : !rows.length ? <Empty msg="No standings data" /> : (() => {
         const hasPlayoffData = rows.some(t => t.playoffRound);
+        const hasElo = rows.some(t => t.elo && t.elo !== 1500);
         return (
         <div style={{ position: "relative" }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <Card style={{ padding: 0, overflow: "hidden", minWidth: 380 }}>
+        <Card style={{ padding: 0, overflow: "hidden", minWidth: hasElo ? 420 : 380 }}>
           <div style={{
-            display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
+            display: "grid", gridTemplateColumns: hasElo ? "30px 1fr 32px 32px 34px 42px 44px" : "30px 1fr 32px 32px 34px 42px 38px",
             alignItems: "center", padding: "10px 12px", background: C.hover, borderBottom: `1px solid ${C.border}`,
           }}>
-            {["#", "Team", "W", "L", "GB", "STRK", "OT"].map(h => (
+            {["#", "Team", "W", "L", "GB", "STRK", ...(hasElo ? ["ELO"] : ["OT"])].map(h => (
               <span key={h} style={{
                 fontFamily: F.m, fontSize: 9, fontWeight: 700, color: C.dim,
                 textTransform: "uppercase", letterSpacing: 1,
@@ -1307,7 +1360,7 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
             const lastTopNIdx = useTopN ? rows.reduce((last, r, j) => r.displayRank <= playoffSpots ? j : last, -1) : -1;
             return (
             <div key={t.team_id || i} onClick={() => goPage("teams", { teamId: t.team_id })} style={{
-              display: "grid", gridTemplateColumns: "30px 1fr 32px 32px 34px 42px 38px",
+              display: "grid", gridTemplateColumns: hasElo ? "30px 1fr 32px 32px 34px 42px 44px" : "30px 1fr 32px 32px 34px 42px 38px",
               alignItems: "center", padding: "12px 12px", cursor: "pointer",
               borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none",
               background: useTopN && isTopN ? C.amberGlow : "transparent", position: "relative",
@@ -1321,8 +1374,8 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                 {t.playoffRound && (
                   <span style={{ fontSize: 10, flexShrink: 0 }}>{
                     t.playoffRound === "champion" ? "🏆" :
-                    t.playoffRound === "final" ? "🥈" :
-                    t.playoffRound === "semifinal" ? "🎖️" :
+                    t.playoffRound === "finalist" ? "🥈" :
+                    t.playoffRound === "banquet" ? "🎖️" :
                     "☆"
                   }</span>
                 )}</div>
@@ -1334,9 +1387,15 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
                   <Badge color={(t._streak || t.streak).startsWith("W") ? C.green : C.red} style={{ fontSize: 10, padding: "2px 7px" }}>{t._streak || t.streak}</Badge>
                 ) : <span style={{ color: C.dim }}>—</span>}
               </span>
-              <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.dim }}>
-                {(t.ot_wins || 0) + (t.ot_losses || 0) > 0 ? `${t.ot_wins}-${t.ot_losses}` : "—"}
-              </span>
+              {hasElo ? (
+                <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, fontWeight: 600, color: t.elo > 1500 ? C.green : t.elo < 1500 ? C.red : C.muted }}>
+                  {t.elo || "—"}
+                </span>
+              ) : (
+                <span style={{ textAlign: "center", fontFamily: F.m, fontSize: 12, color: C.dim }}>
+                  {(t.ot_wins || 0) + (t.ot_losses || 0) > 0 ? `${t.ot_wins}-${t.ot_losses}` : "—"}
+                </span>
+              )}
             </div>
           )})}
         </Card>
@@ -1533,6 +1592,786 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
   );
 }
 
+// ─── PLAYOFFS ───
+function PlayoffsPage({ activeSeason, divisions, goPage }) {
+  const [playoffTab, setPlayoffTab] = useState("groups");
+  const [groups, setGroups] = useState(null);
+  const [playoffTeams, setPlayoffTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showDraw, setShowDraw] = useState(false);
+  const [drawComplete, setDrawComplete] = useState(false);
+  const [lotteryData, setLotteryData] = useState(null);
+  const [lotteryReplay, setLotteryReplay] = useState(null);
+  const [lotteryAnimating, setLotteryAnimating] = useState(false);
+  const [groupMatches, setGroupMatches] = useState({});
+  const [bracketMatches, setBracketMatches] = useState({});
+  const [groupOverrides, setGroupOverrides] = useState({});
+
+  useEffect(() => {
+    if (!activeSeason) { setLoading(false); return; }
+    Promise.all([
+      q("playoff_groups", `season_id=eq.${activeSeason.id}&select=group_name,team_id,team_name,seed_label,division_id,court&order=group_name,position`),
+      q("playoff_appearances", `season_id=eq.${activeSeason.id}&select=team_id,seed_label,round_reached`),
+      q("seasons", `id=eq.${activeSeason.id}&select=lottery_data,group_overrides`),
+      q("group_matches", `season_id=eq.${activeSeason.id}&order=group_name,match_number`),
+    ]).then(([grps, pa, seasonInfo, gm]) => {
+      if (grps?.length > 0) {
+        const groupMap = {};
+        grps.forEach(g => {
+          if (!groupMap[g.group_name]) groupMap[g.group_name] = [];
+          groupMap[g.group_name].push(g);
+        });
+        setGroups(groupMap);
+      }
+      setPlayoffTeams(pa || []);
+      if (seasonInfo?.[0]?.lottery_data) setLotteryData(seasonInfo[0].lottery_data);
+      if (seasonInfo?.[0]?.group_overrides) setGroupOverrides(seasonInfo[0].group_overrides);
+      if (gm?.length > 0) {
+        const matchMap = {};
+        const bracketMap = {};
+        const bracketRounds = ["R16", "QF", "SF", "FIN", "3RD"];
+        gm.forEach(m => {
+          if (bracketRounds.includes(m.group_name)) {
+            if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
+            bracketMap[m.group_name].push(m);
+          } else {
+            if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+            matchMap[m.group_name].push(m);
+          }
+        });
+        setGroupMatches(matchMap);
+        setBracketMatches(bracketMap);
+      }
+      setLoading(false);
+    });
+  }, [activeSeason]);
+
+  // Poll for match updates every 60s
+  useEffect(() => {
+    if (!activeSeason || !groups || Object.keys(groups).length === 0) return;
+
+    const poll = setInterval(async () => {
+      try {
+        const gm = await q("group_matches", `season_id=eq.${activeSeason.id}&order=group_name,match_number`);
+        if (gm?.length > 0) {
+          const matchMap = {};
+          const bracketMap = {};
+          const bracketRounds = ["R16", "QF", "SF", "FIN", "3RD"];
+          gm.forEach(m => {
+            if (bracketRounds.includes(m.group_name)) {
+              if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
+              bracketMap[m.group_name].push(m);
+            } else {
+              if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+              matchMap[m.group_name].push(m);
+            }
+          });
+          setGroupMatches(matchMap);
+          setBracketMatches(bracketMap);
+        }
+      } catch {}
+    }, 60000);
+    return () => clearInterval(poll);
+  }, [activeSeason, !!groups]);
+
+  // Shuffle groups for animation
+  const shuffleGroups = (grps) => {
+    const allTeams = Object.values(grps).flat().sort(() => Math.random() - 0.5);
+    const names = Object.keys(grps).sort();
+    const result = {};
+    names.forEach((n, i) => {
+      result[n] = allTeams.slice(i * 4, (i + 1) * 4);
+    });
+    return result;
+  };
+
+  const runDrawAnimation = async () => {
+    if (!groups) return;
+    setShowDraw(true);
+    setDrawComplete(false);
+    const final = {};
+    Object.entries(groups).forEach(([k, v]) => { final[k] = [...v]; });
+    for (let tick = 0; tick < 14; tick++) {
+      setGroups(shuffleGroups(final));
+      await new Promise(r => setTimeout(r, 150 + tick * 30));
+    }
+    setGroups(final);
+    setDrawComplete(true);
+  };
+
+  const runLotteryReplay = async () => {
+    if (!lotteryData?.drawn?.length || !lotteryData?.pool) return;
+    setLotteryAnimating(true);
+    const pool = lotteryData.pool;
+    const poolNames = lotteryData.pool_names || {};
+
+    // Draw WC1
+    setLotteryReplay({ step: "wc1", showing: null });
+    for (let tick = 0; tick < 14; tick++) {
+      const randomId = pool[Math.floor(Math.random() * pool.length)];
+      setLotteryReplay({ step: "wc1", showing: randomId });
+      await new Promise(r => setTimeout(r, 120 + tick * 25));
+    }
+    const wc1 = lotteryData.drawn[0];
+    setLotteryReplay({ step: "wc1_result", showing: wc1.team_id });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Draw WC2 if exists
+    if (lotteryData.drawn.length > 1) {
+      setLotteryReplay({ step: "wc2", showing: null });
+      const remainingPool = pool.filter(id => id !== wc1.team_id);
+      for (let tick = 0; tick < 14; tick++) {
+        const randomId = remainingPool[Math.floor(Math.random() * remainingPool.length)];
+        setLotteryReplay({ step: "wc2", showing: randomId });
+        await new Promise(r => setTimeout(r, 120 + tick * 25));
+      }
+      const wc2 = lotteryData.drawn[1];
+      setLotteryReplay({ step: "wc2_result", showing: wc2.team_id });
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    setLotteryReplay({ step: "done" });
+    setLotteryAnimating(false);
+  };
+
+  const seedColor = (label) => {
+    if (!label) return C.dim;
+    if (label.startsWith("WC")) return C.blue;
+    const num = parseInt(label.replace(/[^0-9]/g, ""));
+    if (num === 1) return C.green;
+    if (num === 2) return C.amber;
+    return C.dim;
+  };
+
+  const divLabel = (code) => {
+    const map = { MH: "Mon Hammer", MC: "Mon Cherry", MP: "Mon Pilot", TH: "Tue Hammer", TC: "Tue Cherry", TP: "Tue Pilot", WC: "Wild Card" };
+    const prefix = code?.replace(/[0-9]/g, "") || "";
+    return map[prefix] || code;
+  };
+
+  const progress = getSeasonProgress(activeSeason);
+
+  if (loading) return <Loader />;
+
+  // ── PHASE 1: Postseason started, no teams confirmed ──
+  if (playoffTeams.length === 0) {
+    return (
+      <div>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>
+          🏆 Playoffs
+        </div>
+        <Card style={{
+          padding: "24px 16px", textAlign: "center",
+          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+          border: `1px solid ${C.amber}15`,
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🏆</div>
+          <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+            Postseason Has Begun
+          </div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
+            The regular season is complete! The playoff field is being finalized.
+            Check back soon for the official wildcard lottery and group draw.
+          </div>
+          <div style={{
+            marginTop: 16, padding: "10px 14px", borderRadius: 8,
+            background: `${C.amber}08`, border: `1px solid ${C.amber}15`,
+          }}>
+            <div style={{ fontFamily: F.b, fontSize: 11, color: C.amber }}>What's Next</div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+              ① Playoff teams confirmed by division{"\n"}
+              ② Wildcard lottery for final 2 spots{"\n"}
+              ③ Group draw — 32 teams into 8 groups{"\n"}
+              ④ Group stage matches → Championship bracket
+            </div>
+          </div>
+        </Card>
+        <Footer />
+      </div>
+    );
+  }
+
+  // ── PHASE 2: Teams confirmed, no groups yet ──
+  if (!groups) {
+    // Organize teams by division origin
+    const qualifiedByDiv = {};
+    const wcTeams = [];
+    playoffTeams.forEach(pt => {
+      if (pt.seed_label?.startsWith("WC")) {
+        wcTeams.push(pt);
+      } else {
+        const divCode = pt.seed_label?.replace(/[0-9]/g, "") || "?";
+        if (!qualifiedByDiv[divCode]) qualifiedByDiv[divCode] = [];
+        qualifiedByDiv[divCode].push(pt);
+      }
+    });
+
+    return (
+      <div>
+        <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>
+          🏆 Playoff Field
+        </div>
+
+        {/* Summary hero */}
+        <Card style={{
+          padding: "16px", marginBottom: 14, textAlign: "center",
+          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+          border: `1px solid ${C.amber}15`,
+        }}>
+          <div style={{ fontFamily: F.d, fontSize: 32, fontWeight: 800, color: C.amber }}>{playoffTeams.length}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>teams qualified for playoffs</div>
+          <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginTop: 6 }}>
+            {groups ? "Groups drawn!" : playoffTeams.length >= 32 ? "Group draw coming soon..." : "Finalizing playoff field..."}
+          </div>
+        </Card>
+
+        {/* Lottery Replay */}
+        {lotteryData?.drawn?.length > 0 && (
+          <Card style={{ padding: "14px 16px", marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                🎲 Wildcard Lottery
+              </div>
+              {!lotteryAnimating && lotteryReplay?.step !== "done" && (
+                <button onClick={runLotteryReplay}
+                  style={{
+                    padding: "5px 12px", borderRadius: 6, border: "none",
+                    background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                  }}>
+                  ▶ Watch Lottery
+                </button>
+              )}
+              {lotteryReplay?.step === "done" && (
+                <button onClick={() => { setLotteryReplay(null); }}
+                  style={{
+                    padding: "5px 12px", borderRadius: 6, border: `1px solid ${C.border}`,
+                    background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer",
+                  }}>
+                  🔄 Replay
+                </button>
+              )}
+            </div>
+
+            {/* Animating lottery */}
+            {lotteryAnimating && lotteryReplay && (
+              <div style={{ textAlign: "center", padding: "8px 0" }}>
+                <div style={{ fontFamily: F.b, fontSize: 12, color: C.amber, marginBottom: 8 }}>
+                  🎲 Drawing {lotteryReplay.step === "wc1" ? "Wildcard 1" : "Wildcard 2"}...
+                </div>
+                {lotteryReplay.showing && (
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px",
+                    background: `${C.amber}10`, borderRadius: 10, transition: "all 0.1s",
+                  }}>
+                    <span style={{ fontSize: 16 }}>🎲</span>
+                    <span style={{ fontFamily: F.b, fontSize: 14, color: C.amber }}>
+                      {lotteryData.pool_names?.[lotteryReplay.showing] || "..."}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* WC1 result */}
+            {lotteryReplay?.step === "wc1_result" && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+                background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 10, marginBottom: 8,
+              }}>
+                <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 8px" }}>WC1</Badge>
+                <TeamAvatar name={lotteryData.pool_names?.[lotteryReplay.showing] || "?"} size={28} />
+                <span style={{ flex: 1, fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>
+                  {lotteryData.pool_names?.[lotteryReplay.showing] || "?"}
+                </span>
+                <span style={{ fontSize: 20 }}>🎉</span>
+              </div>
+            )}
+
+            {/* Final results */}
+            {(lotteryReplay?.step === "wc2_result" || lotteryReplay?.step === "done" || !lotteryReplay) && lotteryData.drawn.map((wc, i) => (
+              <div key={wc.team_id} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                background: `${C.amber}08`, border: `1px solid ${C.amber}20`, borderRadius: 10,
+                marginBottom: i < lotteryData.drawn.length - 1 ? 6 : 0,
+              }}>
+                <Badge color={C.amber} style={{ fontSize: 11, padding: "3px 7px" }}>{wc.label}</Badge>
+                <TeamAvatar name={lotteryData.pool_names?.[wc.team_id] || "?"} size={24} />
+                <span style={{ flex: 1, fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
+                  {lotteryData.pool_names?.[wc.team_id] || "?"}
+                </span>
+              </div>
+            ))}
+
+            {/* Pool info */}
+            {lotteryData.pool && !lotteryAnimating && (
+              <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 8, textAlign: "center" }}>
+                Drawn from a pool of {lotteryData.pool.length} eligible teams
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Qualified teams by division */}
+        {Object.entries(qualifiedByDiv).sort(([a], [b]) => a.localeCompare(b)).map(([divCode, teams]) => (
+          <Card key={divCode} style={{ padding: "10px 14px", marginBottom: 8 }}>
+            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+              {divLabel(divCode)}
+            </div>
+            {teams.sort((a, b) => {
+              const aNum = parseInt(a.seed_label?.replace(/[^0-9]/g, "")) || 99;
+              const bNum = parseInt(b.seed_label?.replace(/[^0-9]/g, "")) || 99;
+              return aNum - bNum;
+            }).map((t, i) => (
+              <div key={t.team_id} style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "5px 0",
+                borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+              }}>
+                <Badge color={seedColor(t.seed_label)} style={{ fontSize: 9, padding: "2px 6px", minWidth: 30, textAlign: "center" }}>
+                  {t.seed_label}
+                </Badge>
+                <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{t.seed_label}</span>
+              </div>
+            ))}
+          </Card>
+        ))}
+
+        <Footer />
+      </div>
+    );
+  }
+
+  // ── PHASE 3: Groups drawn ──
+  return (
+    <div>
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+        {[
+          { id: "groups", label: "⚔️ Groups" },
+          { id: "bracket", label: "🏆 Bracket" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setPlayoffTab(t.id)}
+            style={{
+              flex: 1, padding: "9px 0", borderRadius: 8, border: "none",
+              background: playoffTab === t.id ? `${C.amber}15` : "transparent",
+              color: playoffTab === t.id ? C.amber : C.muted,
+              fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              transition: "all 0.15s",
+              borderBottom: playoffTab === t.id ? `2px solid ${C.amber}` : `2px solid transparent`,
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── GROUPS TAB ── */}
+      {playoffTab === "groups" && (
+        <>
+          {/* Hero */}
+          <Card style={{
+            padding: "16px", marginBottom: 14, textAlign: "center",
+            background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+            border: `1px solid ${C.amber}15`,
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 4 }}>⚔️</div>
+            <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>
+              Group Stage
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+              {Object.values(groups).flat().length} teams drawn into {Object.keys(groups).length} groups · Top 2 advance to bracket
+            </div>
+            {!showDraw ? (
+              <button onClick={runDrawAnimation}
+                style={{
+                  marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none",
+                  background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 11,
+                  fontWeight: 700, cursor: "pointer",
+                }}>
+                ▶ Watch the Draw
+              </button>
+            ) : drawComplete ? (
+              <button onClick={() => { setShowDraw(false); setDrawComplete(false); }}
+                style={{
+                  marginTop: 12, padding: "7px 16px", borderRadius: 8,
+                  border: `1px solid ${C.border}`, background: "transparent",
+                  color: C.muted, fontFamily: F.b, fontSize: 10, cursor: "pointer",
+                }}>
+                🔄 Replay Draw
+              </button>
+            ) : (
+              <div style={{ marginTop: 12, fontFamily: F.b, fontSize: 12, color: C.amber }}>
+                🎲 Drawing groups...
+              </div>
+            )}
+          </Card>
+
+          {/* Lottery replay in groups phase */}
+          {lotteryData?.drawn?.length > 0 && (
+            <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>
+                  🎲 Wildcard Lottery
+                </div>
+                {!lotteryAnimating && lotteryReplay?.step !== "done" && (
+                  <button onClick={runLotteryReplay}
+                    style={{ padding: "4px 10px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    ▶ Watch
+                  </button>
+                )}
+                {lotteryReplay?.step === "done" && (
+                  <button onClick={() => { setLotteryReplay(null); }}
+                    style={{ padding: "4px 10px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    🔄 Replay
+                  </button>
+                )}
+              </div>
+              {lotteryData.drawn.map(wc => (
+                <div key={wc.team_id} style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "5px 0",
+                  borderTop: `1px solid ${C.border}`,
+                }}>
+                  <Badge color={C.blue} style={{ fontSize: 9, padding: "2px 6px", minWidth: 30, textAlign: "center" }}>
+                    {wc.label}
+                  </Badge>
+                  <TeamAvatar name={lotteryData.pool_names?.[wc.team_id] || "?"} size={20} />
+                  <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>
+                    {lotteryData.pool_names?.[wc.team_id] || "?"}
+                  </span>
+                </div>
+              ))}
+              {/* Inline lottery animation */}
+              {lotteryAnimating && lotteryReplay && (
+                <div style={{ textAlign: "center", padding: "10px 0 4px" }}>
+                  <div style={{ fontFamily: F.b, fontSize: 11, color: C.amber, marginBottom: 6 }}>
+                    🎲 {lotteryReplay.step === "wc1" || lotteryReplay.step === "wc1_result" ? "Wildcard 1" : "Wildcard 2"}
+                  </div>
+                  {lotteryReplay.showing && (
+                    <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 10px" }}>
+                      {lotteryData.pool_names?.[lotteryReplay.showing] || "..."}
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Groups grid */}
+          {Object.keys(groupMatches).length === 0 ? (
+            // No matches yet — show teams by seed
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, minWidth: 0 }}>
+              {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => (
+                <Card key={groupName} style={{
+                  padding: "10px 12px", minWidth: 0, overflow: "hidden",
+                  border: `1px solid ${showDraw && !drawComplete ? C.amber + "25" : C.border}`,
+                  transition: "border-color 0.15s",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{
+                      fontFamily: F.d, fontSize: 13, fontWeight: 800,
+                      width: 26, height: 26, borderRadius: 13,
+                      background: `${C.amber}18`, color: C.amber,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {groupName}
+                    </div>
+                    <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Group {groupName}</span>
+                  </div>
+                  {[...teamList].sort((a, b) => {
+                    const aWC = a.seed_label?.startsWith("WC") ? 1 : 0;
+                    const bWC = b.seed_label?.startsWith("WC") ? 1 : 0;
+                    if (aWC !== bWC) return aWC - bWC;
+                    const aNum = parseInt(a.seed_label?.replace(/[^0-9]/g, "")) || 99;
+                    const bNum = parseInt(b.seed_label?.replace(/[^0-9]/g, "")) || 99;
+                    return aNum - bNum;
+                  }).map((t, i) => (
+                    <div key={t.team_id} style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "5px 0",
+                      borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => goPage("teams", { teamId: t.team_id })}>
+                      <TeamAvatar name={t.team_name} size={20} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontFamily: F.b, fontSize: 11, color: C.text, fontWeight: 500,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {t.team_name}
+                        </div>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>
+                          {divLabel(t.seed_label?.replace(/[0-9]/g, ""))}
+                        </div>
+                      </div>
+                      <Badge color={seedColor(t.seed_label)} style={{ fontSize: 8, padding: "1px 5px" }}>
+                        {t.seed_label}
+                      </Badge>
+                    </div>
+                  ))}
+                </Card>
+              ))}
+            </div>
+          ) : (
+            // Matches exist — show standings + results per group
+            <div>
+              {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => {
+                const gMatches = groupMatches[groupName] || [];
+                const completed = gMatches.filter(m => m.status === "completed").length;
+                const court = teamList[0]?.court;
+
+                // Calculate standings with admin overrides
+                const standingsArr = computeGroupStandings(teamList, gMatches, groupOverrides[groupName]);
+                const hasCutlineTie = standingsArr.some(s => s.crossesCutline) && !groupOverrides[groupName];
+
+                return (
+                  <Card key={groupName} style={{ padding: "12px 14px", marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{
+                          fontFamily: F.d, fontSize: 14, fontWeight: 800,
+                          width: 28, height: 28, borderRadius: 14,
+                          background: `${C.amber}18`, color: C.amber,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {groupName}
+                        </div>
+                        <div>
+                          <div style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>Group {groupName}</div>
+                          {court && <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Court {court}</div>}
+                        </div>
+                      </div>
+                      <Badge color={completed === gMatches.length && completed > 0 ? C.green : C.amber} style={{ fontSize: 9 }}>
+                        {completed}/{gMatches.length}
+                      </Badge>
+                    </div>
+
+                    {/* Standings table */}
+                    <div style={{ marginBottom: completed > 0 ? 10 : 0 }}>
+                      <div style={{ display: "flex", gap: 4, marginBottom: 4, padding: "0 4px" }}>
+                        <span style={{ width: 16 }} />
+                        <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
+                        <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
+                        <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
+                      </div>
+                      {(completed > 0 ? standingsArr : teamList.map(t => ({ team_id: t.team_id, team_name: t.team_name, seed_label: t.seed_label, w: 0, l: 0, crossesCutline: false }))).map((s, idx) => {
+                        const groupDone = completed === gMatches.length && completed > 0;
+                        const advances = groupDone && idx < 2 && !hasCutlineTie;
+                        const eliminated = groupDone && idx >= 2 && !hasCutlineTie;
+                        return (
+                        <div key={s.team_id} style={{
+                          display: "flex", alignItems: "center", gap: 4, padding: "5px 4px",
+                          borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                          background: advances ? `${C.green}08` : "transparent",
+                          borderRadius: advances ? 4 : 0,
+                          cursor: "pointer",
+                        }}
+                        onClick={() => goPage("teams", { teamId: s.team_id })}>
+                          <TeamAvatar name={s.team_name} size={18} />
+                          <span style={{
+                            flex: 1, fontFamily: F.b, fontSize: 11,
+                            color: advances ? C.green : eliminated ? C.muted : C.text,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {advances ? "✓ " : ""}{s.team_name}
+                          </span>
+                          <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: eliminated ? C.dim : C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
+                          <span style={{ width: 28, fontFamily: F.d, fontSize: 11, color: C.dim, textAlign: "center" }}>{s.l}</span>
+                        </div>
+                        );
+                      })}
+                      {hasCutlineTie && (
+                        <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 4, background: `${C.amber}10`, border: `1px solid ${C.amber}20` }}>
+                          <span style={{ fontFamily: F.m, fontSize: 9, color: C.amber }}>
+                            ⚡ Tiebreaker pending
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Match results */}
+                    {gMatches.length > 0 && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                        <div style={{ fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                          Matches
+                        </div>
+                        {gMatches.map((m, idx) => {
+                          const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
+                          const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                          return (
+                          <div key={m.match_number} style={{
+                            display: "flex", alignItems: "center", gap: 4, padding: "4px 0",
+                            borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                          }}>
+                            <span style={{ fontFamily: F.m, fontSize: 8, color: C.dim, width: 12, textAlign: "center" }}>{m.match_number}</span>
+                            <span style={{
+                              flex: 1, fontFamily: F.b, fontSize: 10,
+                              color: t1Wins ? C.green : m.status === "completed" ? C.muted : C.text,
+                              fontWeight: t1Wins ? 700 : 400,
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                              {t1Wins && <span style={{ fontSize: 8, marginRight: 2 }}>W</span>}
+                              {m.team1_name}
+                            </span>
+                            {m.status === "completed" ? (
+                              m.team1_score != null ? (
+                                <span style={{ fontFamily: F.d, fontSize: 10, fontWeight: 700, color: C.text, minWidth: 36, textAlign: "center" }}>
+                                  {m.team1_score}-{m.team2_score}
+                                </span>
+                              ) : (
+                                <span style={{ fontFamily: F.m, fontSize: 8, color: C.green, minWidth: 36, textAlign: "center" }}>✓</span>
+                              )
+                            ) : (
+                              <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, minWidth: 36, textAlign: "center" }}>vs</span>
+                            )}
+                            <span style={{
+                              flex: 1, fontFamily: F.b, fontSize: 10, textAlign: "right",
+                              color: t2Wins ? C.green : m.status === "completed" ? C.muted : C.text,
+                              fontWeight: t2Wins ? 700 : 400,
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                              {m.team2_name}
+                              {t2Wins && <span style={{ fontSize: 8, marginLeft: 2 }}>W</span>}
+                            </span>
+                          </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── BRACKET TAB ── */}
+      {playoffTab === "bracket" && (
+        <>
+          <Card style={{
+            padding: "20px 16px", textAlign: "center", marginBottom: 14,
+            background: `linear-gradient(135deg, ${C.surface}, ${C.amber}06)`,
+            border: `1px solid ${C.amber}15`,
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 4 }}>🏆</div>
+            <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 800, marginBottom: 4 }}>
+              Championship Bracket
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, lineHeight: 1.5 }}>
+              16-team single elimination · Group winners vs runners-up
+            </div>
+          </Card>
+
+          {(bracketMatches["R16"] || []).length === 0 ? (
+            <Card style={{ padding: "24px 16px", textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🏆</div>
+              <div style={{ fontFamily: F.b, fontSize: 13, color: C.text, marginBottom: 6 }}>
+                Bracket Coming Soon
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+                The championship bracket will be generated once all group stage matches have been completed. Top 2 teams from each group advance to the Round of 16.
+              </div>
+            </Card>
+          ) : (
+            <>
+            {/* Champion banner */}
+            {(() => {
+              const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
+              if (!fin) return null;
+              const champName = String(fin.winner_id) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+              return (
+                <Card style={{
+                  padding: "20px 16px", textAlign: "center", marginBottom: 14,
+                  background: `linear-gradient(135deg, ${C.surface}, ${C.amber}15)`,
+                  border: `1px solid ${C.amber}30`,
+                }}>
+                  <div style={{ fontSize: 36, marginBottom: 6 }}>🏆</div>
+                  <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber, marginBottom: 4 }}>
+                    {champName}
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>
+                    Season {activeSeason?.number || ""} Champions
+                  </div>
+                </Card>
+              );
+            })()}
+            {["R16", "QF", "SF", "3RD", "FIN"].map(round => {
+              const matches = (bracketMatches[round] || []).sort((a, b) => a.match_number - b.match_number);
+              if (matches.length === 0) return null;
+              const roundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", FIN: "Final", "3RD": "3rd Place" };
+              return (
+                <div key={round} style={{ marginBottom: 14 }}>
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>
+                    {roundNames[round]}
+                  </div>
+                  {matches.map(m => {
+                    const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
+                    const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
+                    const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                    const mIcon = (teamId) => {
+                      if (round === "FIN" && m.status === "completed") return String(m.winner_id) === String(teamId) ? "🏆 " : "🥈 ";
+                      if (["SF", "FIN", "3RD"].includes(round)) return "🎖️ ";
+                      return "";
+                    };
+                    return (
+                    <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
+                      {m.court && (
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 4 }}>
+                          Court {m.court}{r16L ? ` · ${r16L.t1} vs ${r16L.t2}` : ""}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{
+                          flex: 1, padding: "6px 8px", borderRadius: 6, textAlign: "center",
+                          background: t1Wins ? `${C.green}10` : "transparent",
+                          border: `1px solid ${t1Wins ? C.green + "25" : C.border}`,
+                        }}>
+                          {r16L && !m.court && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t1}</div>}
+                          <div style={{
+                            fontFamily: F.b, fontSize: 11, fontWeight: t1Wins ? 700 : 400,
+                            color: t1Wins ? C.green : m.team1_name ? C.text : C.dim,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {m.team1_id ? mIcon(m.team1_id) : ""}{m.team1_name || "TBD"}
+                          </div>
+                          {m.team1_score != null && (
+                            <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team1_score}</div>
+                          )}
+                        </div>
+                        <span style={{ fontFamily: F.d, fontSize: 11, color: C.dim, fontWeight: 700 }}>
+                          {m.status === "completed" ? "" : "vs"}
+                        </span>
+                        <div style={{
+                          flex: 1, padding: "6px 8px", borderRadius: 6, textAlign: "center",
+                          background: t2Wins ? `${C.green}10` : "transparent",
+                          border: `1px solid ${t2Wins ? C.green + "25" : C.border}`,
+                        }}>
+                          {r16L && !m.court && <div style={{ fontFamily: F.d, fontSize: 9, color: C.amber, fontWeight: 700, marginBottom: 2 }}>{r16L.t2}</div>}
+                          <div style={{
+                            fontFamily: F.b, fontSize: 11, fontWeight: t2Wins ? 700 : 400,
+                            color: t2Wins ? C.green : m.team2_name ? C.text : C.dim,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {m.team2_id ? mIcon(m.team2_id) : ""}{m.team2_name || "TBD"}
+                          </div>
+                          {m.team2_score != null && (
+                            <div style={{ fontFamily: F.d, fontSize: 14, fontWeight: 700, color: C.text }}>{m.team2_score}</div>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            </>
+          )}
+        </>
+      )}
+      <Footer />
+    </div>
+  );
+}
+
 // ─── TEAMS ───
 function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teams, setTeams] = useState([]);
@@ -1590,7 +2429,8 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       q("recent_matches", `or=(team_a_id.eq.${selectedId},team_b_id.eq.${selectedId})&order=scheduled_date.desc&limit=500`),
       q("championships", `team_id=eq.${selectedId}&select=type,season_id`),
       q("playoff_appearances", `team_id=eq.${selectedId}&select=season_id`),
-    ]).then(([td, sd, md, cd, pad]) => {
+      q("team_seasons", `team_id=eq.${selectedId}&select=elo_rating,division_id,divisions(season_id)&order=division_id`),
+    ]).then(([td, sd, md, cd, pad, tsData]) => {
       const teamsRow = td?.[0];
       const hasTeamsData = teamsRow && (teamsRow.all_time_wins || 0) > 0;
 
@@ -1605,12 +2445,17 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       (cd || []).filter(c => ["league","finalist","banquet"].includes(c.type)).forEach(c => playoffSeasonIds.add(c.season_id));
       const totalPlayoffs = playoffSeasonIds.size;
 
+      // Get current season ELO from team_seasons (prefer over recrec_elo)
+      const activeSeasonId = activeSeason?.id;
+      const currentSeasonElo = (tsData || []).find(ts => ts.elo_rating && ts.divisions?.season_id === activeSeasonId)?.elo_rating
+        || (tsData || []).find(ts => ts.elo_rating)?.elo_rating;
+
       setTeamDetail({
         id: selectedId,
         name: teamsRow?.name || sd?.[0]?.team_name || "Unknown",
         all_time_wins: hasTeamsData ? teamsRow.all_time_wins : matchWins,
         all_time_losses: hasTeamsData ? teamsRow.all_time_losses : matchLosses,
-        elo_rating: teamsRow?.recrec_elo || null,
+        elo_rating: currentSeasonElo || teamsRow?.recrec_elo || null,
         championships: teamsRow?.championship_count || 0,
         seasons_played: hasTeamsData ? (teamsRow.seasons_played || seasonNames.size) : seasonNames.size,
         playoff_appearances: totalPlayoffs,
@@ -1726,7 +2571,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           <h3 style={{ fontFamily: F.d, fontSize: 20, color: C.text, margin: 0 }}>
             {t.name}{isChamp && <span title={`${t.championships || t.championship_count} championship${(t.championships || t.championship_count) > 1 ? "s" : ""}`} style={{ fontSize: 18, cursor: "default", marginLeft: 6 }}>🏆</span>}
           </h3>
-          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{(t.elo_rating || t.recrec_elo) ? `ELO ${t.elo_rating || t.recrec_elo} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
+          <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginTop: 4, marginBottom: 18 }}>{t.elo_rating ? `ELO ${t.elo_rating} · ` : ""}{t.seasons_played || 1} season{(t.seasons_played || 1) > 1 ? "s" : ""}</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             {[
               ["Wins", t.all_time_wins || 0, C.green],
@@ -2171,7 +3016,7 @@ function HallOfFamePage({ seasons, goPage, initialTab }) {
 
   const tabLabel = tab === "league" ? "League Champions" : tab === "banquet" ? "Banquet (Final 4)" : tab === "playoffs" ? "Playoff Appearances" : "Division Champions";
 
-  const roundLabel = { champion: "🏆 Champion", final: "🥈 Final", semifinal: "🏅 Banquet", round_2: "Round 2", round_1: "Round 1" };
+  const roundLabel = { champion: "🏆 Champion", finalist: "🥈 Final", banquet: "🏅 Banquet", qualified: "☆ Qualified", wildcard: "★ Wildcard", round_2: "Round 2", round_1: "Round 1" };
 
   const dataNote = tab === "banquet" ? "Banquet data is incomplete for seasons before Winter 2023. Help us fill in the gaps!"
     : tab === "playoffs" ? "Playoffs data is incomplete. Help us fill in the gaps!"
@@ -2705,7 +3550,43 @@ function CaptainApp({ user, myRole }) {
   );
 }
 
-function AdminEditModal({ match, onClose, onSave }) {
+// ─── ELO Helper ───
+const ELO_K = 16;
+async function calculateElo(winnerId, loserId, divisionId) {
+  try {
+    const [wTs, lTs] = await Promise.all([
+      q("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}&select=elo_rating`),
+      q("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}&select=elo_rating`),
+    ]);
+    const wRating = wTs?.[0]?.elo_rating || 1500;
+    const lRating = lTs?.[0]?.elo_rating || 1500;
+    const expected = 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
+    const delta = Math.round(ELO_K * (1 - expected));
+    await Promise.all([
+      qAuth("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: wRating + delta }),
+      qAuth("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: lRating - delta }),
+    ]);
+    return delta;
+  } catch (e) { console.error("ELO calc error:", e); return 0; }
+}
+
+async function reverseElo(winnerId, loserId, eloChange, divisionId) {
+  if (!eloChange) return;
+  try {
+    const [wTs, lTs] = await Promise.all([
+      q("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}&select=elo_rating`),
+      q("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}&select=elo_rating`),
+    ]);
+    const wRating = wTs?.[0]?.elo_rating || 1500;
+    const lRating = lTs?.[0]?.elo_rating || 1500;
+    await Promise.all([
+      qAuth("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: wRating - eloChange }),
+      qAuth("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}`, "PATCH", { elo_rating: lRating + eloChange }),
+    ]);
+  } catch (e) { console.error("ELO reverse error:", e); }
+}
+
+function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
   const [winnerId, setWinnerId] = useState(match.winner_id || "");
   const [isOT, setIsOT] = useState(match.went_to_ot || false);
   const [saving, setSaving] = useState(false);
@@ -2715,7 +3596,25 @@ function AdminEditModal({ match, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
+      const oldWinnerId = match.winner_id;
+      const oldLoserId = oldWinnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
+      const newLoserId = winnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
+
       await rpc("admin_update_match_result", { match_id: match.id, new_winner_id: winnerId || null, is_ot: isOT });
+
+      // ELO calculation
+      if (winnerId && divisionId) {
+        // If there was a previous winner, reverse old ELO first
+        if (oldWinnerId && oldWinnerId !== winnerId && match.elo_change) {
+          await reverseElo(oldWinnerId, oldLoserId, match.elo_change, divisionId);
+        }
+        // Calculate new ELO (skip if same winner — no change needed)
+        if (!oldWinnerId || oldWinnerId !== winnerId) {
+          const delta = await calculateElo(winnerId, newLoserId, divisionId);
+          await qAuth("matches", `id=eq.${match.id}`, "PATCH", { elo_change: delta });
+        }
+      }
+
       onSave();
     } catch (e) { setError(e.message); setSaving(false); }
   };
@@ -2724,7 +3623,13 @@ function AdminEditModal({ match, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
+      // Reverse ELO before clearing
+      if (match.winner_id && match.elo_change && divisionId) {
+        const loserId = match.winner_id === match.team_a_id ? match.team_b_id : match.team_a_id;
+        await reverseElo(match.winner_id, loserId, match.elo_change, divisionId);
+      }
       await rpc("admin_clear_match_result", { match_id: match.id });
+      await qAuth("matches", `id=eq.${match.id}`, "PATCH", { elo_change: null });
       onSave();
     } catch (e) { setError(e.message); setSaving(false); }
   };
@@ -2772,7 +3677,7 @@ function AdminEditModal({ match, onClose, onSave }) {
 // ─── ADMIN POSTSEASON TAB ───
 // ══════════════════════════════════════
 
-function AdminPostseasonTab({ seasonId, divisions }) {
+function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
   const [standings, setStandings] = useState({});  // divId -> [{team_id, team_name, wins, losses}]
   const [existingChamps, setExistingChamps] = useState([]); // championships for this season
   const [existingPlayoffs, setExistingPlayoffs] = useState([]); // playoff_appearances for this season
@@ -2788,6 +3693,18 @@ function AdminPostseasonTab({ seasonId, divisions }) {
   const [lotteryDrawn, setLotteryDrawn] = useState([]); // drawn team_ids
   const [lotteryAnimating, setLotteryAnimating] = useState(false);
   const [lotteryMode, setLotteryMode] = useState("pool"); // "pool" | "drawn" | "manual"
+  // Group draw state
+  const [groups, setGroups] = useState(null); // { A: [{team_id, team_name, seed_label, division_id}], ... }
+  const [groupDrawStep, setGroupDrawStep] = useState("idle"); // "idle" | "animating" | "done"
+  const [drawingTier, setDrawingTier] = useState(null); // current tier being drawn
+  const [drawingTeam, setDrawingTeam] = useState(null); // current team being placed
+  const [existingGroups, setExistingGroups] = useState(null); // loaded from DB
+  const [courtAssignments, setCourtAssignments] = useState({}); // groupName -> court number
+  const [groupMatches, setGroupMatches] = useState({}); // groupName -> [{match_number, team1_id, team1_name, team2_id, team2_name, ...}]
+  const [bracketMatches, setBracketMatches] = useState({}); // "R16"->[], "QF"->[], "SF"->[], "FIN"->[], "3RD"->[]
+  const [groupOverrides, setGroupOverrides] = useState({}); // groupName -> [team_id ordered]
+  const [editingScore, setEditingScore] = useState(null); // {groupName, matchNumber}
+  const [scoreInputs, setScoreInputs] = useState({ team1: "", team2: "" });
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
   const DEFAULT_PLAYOFF_SPOTS = 5;
@@ -2872,6 +3789,47 @@ function AdminPostseasonTab({ seasonId, divisions }) {
         });
         setSeedLabels(labels);
 
+        // Load existing group draw
+        try {
+          const grps = await q("playoff_groups", `season_id=eq.${seasonId}&select=group_name,team_id,team_name,seed_label,division_id,court&order=group_name,position`);
+          if (grps?.length > 0) {
+            const groupMap = {};
+            const courts = {};
+            grps.forEach(g => {
+              if (!groupMap[g.group_name]) groupMap[g.group_name] = [];
+              groupMap[g.group_name].push(g);
+              if (g.court && !courts[g.group_name]) courts[g.group_name] = g.court;
+            });
+            setExistingGroups(groupMap);
+            setGroups(groupMap);
+            setCourtAssignments(courts);
+            setGroupDrawStep("done");
+
+            // Load group matches + bracket
+            const gm = await q("group_matches", `season_id=eq.${seasonId}&order=group_name,match_number`);
+            if (gm?.length > 0) {
+              const matchMap = {};
+              const bracketMap = {};
+              const bracketRounds = ["R16", "QF", "SF", "FIN", "3RD"];
+              gm.forEach(m => {
+                if (bracketRounds.includes(m.group_name)) {
+                  if (!bracketMap[m.group_name]) bracketMap[m.group_name] = [];
+                  bracketMap[m.group_name].push(m);
+                } else {
+                  if (!matchMap[m.group_name]) matchMap[m.group_name] = [];
+                  matchMap[m.group_name].push(m);
+                }
+              });
+              setGroupMatches(matchMap);
+              setBracketMatches(bracketMap);
+            }
+
+            // Load group overrides
+            const seasonInfo = await q("seasons", `id=eq.${seasonId}&select=group_overrides`);
+            if (seasonInfo?.[0]?.group_overrides) setGroupOverrides(seasonInfo[0].group_overrides);
+          }
+        } catch {}
+
       } catch (e) { console.error(e); setError(e.message); }
       setLoading(false);
     })();
@@ -2894,6 +3852,7 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       await qAuth("championships", "", "POST", {
         team_id: teamId,
         season_id: seasonId,
+        division_id: divId,
         type: "division",
       });
 
@@ -2989,6 +3948,11 @@ function AdminPostseasonTab({ seasonId, divisions }) {
       setExistingPlayoffs(prev => prev.filter(p => p.team_id !== teamId));
       setSeedLabels(prev => { const next = { ...prev }; delete next[teamId]; return next; });
       setWildcards(prev => prev.filter(id => id !== teamId));
+      // Clear lottery data if a wildcard was removed
+      const wasWC = seedLabels[teamId]?.startsWith("WC");
+      if (wasWC) {
+        await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { lottery_data: null }).catch(() => {});
+      }
     } catch (e) { setError(e.message); }
     setSaving(null);
   };
@@ -3071,6 +4035,457 @@ function AdminPostseasonTab({ seasonId, divisions }) {
 
   const totalConfirmed = existingPlayoffs.length;
 
+  // ── Group Draw Algorithm ──
+  const buildPlayoffTeamList = () => {
+    // Collect all confirmed playoff teams with metadata
+    const teams = [];
+    for (const [divId, teamIds] of Object.entries(confirmedPlayoffs)) {
+      const div = divisions.find(d => d.id === divId);
+      for (const tid of teamIds) {
+        const team = (standings[divId] || []).find(t => t.team_id === tid);
+        if (team) {
+          const label = seedLabels[tid] || "";
+          const seedNum = parseInt(label.replace(/[^0-9]/g, "")) || 99;
+          teams.push({
+            team_id: tid,
+            team_name: team.team_name,
+            seed_label: label,
+            seed_num: label.startsWith("WC") ? 99 : seedNum,
+            division_id: divId,
+            div_code: label.replace(/[0-9]/g, ""), // "MH", "TC", etc.
+          });
+        }
+      }
+    }
+    // Add wildcards
+    for (const wcId of wildcards) {
+      let wcTeam = null;
+      let wcDivId = null;
+      for (const [divId, dTeams] of Object.entries(standings)) {
+        const found = dTeams.find(t => t.team_id === wcId);
+        if (found) { wcTeam = found; wcDivId = divId; break; }
+      }
+      if (wcTeam && !teams.find(t => t.team_id === wcId)) {
+        teams.push({
+          team_id: wcId,
+          team_name: wcTeam.team_name,
+          seed_label: seedLabels[wcId] || "WC",
+          seed_num: 99,
+          division_id: wcDivId,
+          div_code: "WC",
+        });
+      }
+    }
+    return teams;
+  };
+
+  const runGroupDraw = (allTeams) => {
+    const groupNames = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    const result = {};
+    groupNames.forEach(g => result[g] = []);
+
+    // Sort teams into tiers by seed number
+    const tiers = {};
+    allTeams.forEach(t => {
+      const tier = t.seed_num;
+      if (!tiers[tier]) tiers[tier] = [];
+      tiers[tier].push(t);
+    });
+
+    // Process tiers in order
+    const tierKeys = Object.keys(tiers).map(Number).sort((a, b) => a - b);
+
+    for (const tierNum of tierKeys) {
+      // Shuffle within tier
+      const tierTeams = [...tiers[tierNum]].sort(() => Math.random() - 0.5);
+
+      for (const team of tierTeams) {
+        // Find eligible groups
+        const eligible = groupNames.filter(g => {
+          if (result[g].length >= 4) return false;
+          // No same-division team in group
+          if (result[g].some(t => t.division_id === team.division_id)) return false;
+          return true;
+        });
+
+        if (eligible.length === 0) {
+          // Fallback: just find a group with space (ignore division constraint)
+          const fallback = groupNames.filter(g => result[g].length < 4);
+          if (fallback.length > 0) {
+            const minSize = Math.min(...fallback.map(g => result[g].length));
+            const smallest = fallback.filter(g => result[g].length === minSize);
+            const pick = smallest[Math.floor(Math.random() * smallest.length)];
+            result[pick].push(team);
+          }
+        } else {
+          // Prefer emptier groups
+          const minSize = Math.min(...eligible.map(g => result[g].length));
+          const smallest = eligible.filter(g => result[g].length === minSize);
+          const pick = smallest[Math.floor(Math.random() * smallest.length)];
+          result[pick].push(team);
+        }
+      }
+    }
+    return result;
+  };
+
+  const startGroupDraw = async () => {
+    const allTeams = buildPlayoffTeamList();
+    if (allTeams.length < 8) {
+      setError(`Need at least 8 teams for group draw. Currently have ${allTeams.length}.`);
+      return;
+    }
+
+    setGroupDrawStep("animating");
+    setGroups(null);
+
+    // Animate: show random shuffles
+    for (let tick = 0; tick < 10; tick++) {
+      const shuffled = runGroupDraw(allTeams);
+      setGroups(shuffled);
+      const tierNum = tick < 3 ? 1 : tick < 5 ? 2 : tick < 7 ? 3 : tick < 9 ? 4 : 5;
+      setDrawingTier(`Seed ${tierNum}`);
+      await new Promise(r => setTimeout(r, 200 + tick * 50));
+    }
+
+    // Final draw
+    const finalGroups = runGroupDraw(allTeams);
+    setGroups(finalGroups);
+    setDrawingTier(null);
+    setDrawingTeam(null);
+    setGroupDrawStep("done");
+  };
+
+  const saveGroups = async () => {
+    if (!groups) return;
+    setSaving("groups");
+    try {
+      // Delete existing groups for this season
+      await qAuth("playoff_groups", `season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+
+      // Insert all groups
+      for (const [groupName, teams] of Object.entries(groups)) {
+        for (let i = 0; i < teams.length; i++) {
+          const t = teams[i];
+          await qAuth("playoff_groups", "", "POST", {
+            season_id: seasonId,
+            group_name: groupName,
+            team_id: t.team_id,
+            team_name: t.team_name,
+            seed_label: t.seed_label,
+            division_id: t.division_id,
+            position: i + 1,
+          });
+        }
+      }
+      setExistingGroups(groups);
+      setSuccess("Group draw saved!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  const clearGroups = async () => {
+    if (!window.confirm("Clear the group draw? This cannot be undone.")) return;
+    try {
+      await qAuth("group_matches", `season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+      await qAuth("playoff_groups", `season_id=eq.${seasonId}`, "DELETE");
+      setGroups(null);
+      setExistingGroups(null);
+      setGroupMatches({});
+      setCourtAssignments({});
+      setGroupDrawStep("idle");
+      setSuccess("Group draw cleared.");
+    } catch (e) { setError(e.message); }
+  };
+
+  // ── Court Assignments ──
+  const assignCourtsRandomly = async () => {
+    if (!groups) return;
+    const groupNames = Object.keys(groups).sort();
+    const courts = [1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5);
+    const assignments = {};
+    groupNames.forEach((g, i) => { assignments[g] = courts[i]; });
+    setCourtAssignments(assignments);
+
+    // Save to DB
+    for (const [gName, court] of Object.entries(assignments)) {
+      await qAuth("playoff_groups", `season_id=eq.${seasonId}&group_name=eq.${gName}`, "PATCH", { court }).catch(() => {});
+    }
+    setSuccess("Courts assigned!");
+    setTimeout(() => setSuccess(null), 2000);
+  };
+
+  const updateCourt = async (groupName, court) => {
+    const num = parseInt(court);
+    if (isNaN(num) || num < 1 || num > 10) return;
+    setCourtAssignments(prev => ({ ...prev, [groupName]: num }));
+    await qAuth("playoff_groups", `season_id=eq.${seasonId}&group_name=eq.${groupName}`, "PATCH", { court: num }).catch(() => {});
+  };
+
+  // ── Match Schedule Generation ──
+  const generateRoundRobin = (teamList) => {
+    // All possible pairings for 4 teams (6 matches)
+    const pairings = [];
+    for (let i = 0; i < teamList.length; i++) {
+      for (let j = i + 1; j < teamList.length; j++) {
+        pairings.push([teamList[i], teamList[j]]);
+      }
+    }
+
+    // Shuffle and validate: no team plays 3 in a row
+    const isValid = (order) => {
+      for (let i = 0; i < order.length - 2; i++) {
+        const teams1 = [order[i][0].team_id, order[i][1].team_id];
+        const teams2 = [order[i + 1][0].team_id, order[i + 1][1].team_id];
+        const teams3 = [order[i + 2][0].team_id, order[i + 2][1].team_id];
+        // Check if any team appears in all 3 consecutive matches
+        const allTeams = [...teams1, ...teams2, ...teams3];
+        const counts = {};
+        allTeams.forEach(t => { counts[t] = (counts[t] || 0) + 1; });
+        if (Object.values(counts).some(c => c >= 3)) return false;
+      }
+      return true;
+    };
+
+    // Try shuffling up to 100 times to find valid order
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const shuffled = [...pairings].sort(() => Math.random() - 0.5);
+      if (isValid(shuffled)) return shuffled;
+    }
+    // Fallback: return shuffled anyway
+    return pairings.sort(() => Math.random() - 0.5);
+  };
+
+  const generateAllGroupMatches = async () => {
+    if (!groups || !existingGroups) return;
+    setSaving("matches");
+    setError(null);
+    try {
+      // Delete existing matches
+      await qAuth("group_matches", `season_id=eq.${seasonId}`, "DELETE").catch(() => {});
+
+      const newMatches = {};
+      for (const [gName, teamList] of Object.entries(groups)) {
+        const schedule = generateRoundRobin(teamList);
+        const court = courtAssignments[gName] || null;
+        newMatches[gName] = [];
+
+        for (let i = 0; i < schedule.length; i++) {
+          const [t1, t2] = schedule[i];
+          const matchData = {
+            season_id: seasonId,
+            group_name: gName,
+            match_number: i + 1,
+            team1_id: t1.team_id,
+            team2_id: t2.team_id,
+            team1_name: t1.team_name,
+            team2_name: t2.team_name,
+            court: court,
+            status: "scheduled",
+          };
+          await qAuth("group_matches", "", "POST", matchData);
+          newMatches[gName].push(matchData);
+        }
+      }
+      setGroupMatches(newMatches);
+      setSuccess("Match schedules generated for all groups!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  // ── Score Entry ──
+  const saveMatchResult = async (groupName, matchNumber, winnerId, team1Score = null, team2Score = null) => {
+    setSaving(`score-${groupName}-${matchNumber}`);
+    try {
+      const isBracket = ["R16", "QF", "SF", "FIN", "3RD"].includes(groupName);
+      const source = isBracket ? bracketMatches : groupMatches;
+      const match = (source[groupName] || []).find(m => m.match_number === matchNumber);
+      if (!match) return;
+
+      const updates = { winner_id: winnerId, status: "completed" };
+      if (team1Score !== null && team2Score !== null) {
+        updates.team1_score = parseInt(team1Score);
+        updates.team2_score = parseInt(team2Score);
+      }
+
+      await qAuth("group_matches",
+        `season_id=eq.${seasonId}&group_name=eq.${groupName}&match_number=eq.${matchNumber}`,
+        "PATCH", updates
+      );
+
+      const setter = isBracket ? setBracketMatches : setGroupMatches;
+      setter(prev => ({
+        ...prev,
+        [groupName]: (prev[groupName] || []).map(m =>
+          m.match_number === matchNumber ? { ...m, ...updates } : m
+        ),
+      }));
+      setEditingScore(null);
+      setScoreInputs({ team1: "", team2: "" });
+
+      // Auto-advance bracket: populate next round
+      if (isBracket) {
+        await advanceBracket(groupName, matchNumber, winnerId, match);
+      }
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  // R16 matchups: A1vB2, C1vD2, E1vF2, G1vH2, B1vA2, D1vC2, F1vE2, H1vG2
+  const R16_MATCHUPS = [
+    { m: 1, g1: "A", s1: 0, g2: "B", s2: 1 }, // A1 vs B2
+    { m: 2, g1: "C", s1: 0, g2: "D", s2: 1 }, // C1 vs D2
+    { m: 3, g1: "E", s1: 0, g2: "F", s2: 1 }, // E1 vs F2
+    { m: 4, g1: "G", s1: 0, g2: "H", s2: 1 }, // G1 vs H2
+    { m: 5, g1: "B", s1: 0, g2: "A", s2: 1 }, // B1 vs A2
+    { m: 6, g1: "D", s1: 0, g2: "C", s2: 1 }, // D1 vs C2
+    { m: 7, g1: "F", s1: 0, g2: "E", s2: 1 }, // F1 vs E2
+    { m: 8, g1: "H", s1: 0, g2: "G", s2: 1 }, // H1 vs G2
+  ];
+
+  const generateR16 = async () => {
+    if (!groups || !groupMatches) return;
+    setSaving("bracket");
+    setError(null);
+    try {
+      // Compute standings for each group using overrides
+      const groupStandings = {};
+      Object.entries(groups).forEach(([gName, teamList]) => {
+        groupStandings[gName] = computeGroupStandings(teamList, groupMatches[gName] || [], groupOverrides[gName]);
+      });
+
+      // Check for unresolved cutline ties
+      const hasUnresolved = Object.entries(groupStandings).some(([gName, st]) =>
+        st.some(s => s.crossesCutline) && !groupOverrides[gName]
+      );
+      if (hasUnresolved) {
+        setError("Cannot generate bracket: resolve all tied groups first.");
+        setSaving(null);
+        return;
+      }
+
+      // Delete existing bracket matches
+      for (const round of ["R16", "QF", "SF", "FIN", "3RD"]) {
+        await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}`, "DELETE").catch(() => {});
+      }
+
+      const r16 = [];
+      for (const mu of R16_MATCHUPS) {
+        const t1 = groupStandings[mu.g1]?.[mu.s1];
+        const t2 = groupStandings[mu.g2]?.[mu.s2];
+        if (!t1 || !t2) { setError(`Missing team for match ${mu.m}`); setSaving(null); return; }
+        const matchData = {
+          season_id: seasonId,
+          group_name: "R16",
+          match_number: mu.m,
+          team1_id: t1.team_id,
+          team1_name: t1.team_name,
+          team2_id: t2.team_id,
+          team2_name: t2.team_name,
+          court: mu.m, // Courts 1-8
+          status: "scheduled",
+        };
+        await qAuth("group_matches", "", "POST", matchData);
+        r16.push(matchData);
+      }
+
+      setBracketMatches({ R16: r16 });
+      setSuccess("R16 bracket generated!");
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(null);
+  };
+
+  // Default courts per round
+  const BRACKET_COURTS = { R16: [1,2,3,4,5,6,7,8], QF: [1,2,3,4], SF: [1,2], FIN: [3], "3RD": [4] };
+
+  // When a bracket match completes, auto-create next round match
+  const advanceBracket = async (round, matchNum, winnerId, match) => {
+    const wId = String(winnerId);
+    const winnerName = String(match.team1_id) === wId ? match.team1_name : match.team2_name;
+    const loserId = String(match.team1_id) === wId ? match.team2_id : match.team1_id;
+    const loserName = String(match.team1_id) === wId ? match.team2_name : match.team1_name;
+
+    try {
+      // R16 → QF: matches 1&5→QF1, 2&6→QF2, 3&7→QF3, 4&8→QF4
+      if (round === "R16") {
+        const qfMatch = matchNum <= 4 ? matchNum : matchNum - 4;
+        const isTeam1 = matchNum <= 4;
+        await upsertBracketSlot("QF", qfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.QF[qfMatch - 1] || qfMatch);
+      }
+      // QF → SF: 1&2→SF1, 3&4→SF2
+      if (round === "QF") {
+        const sfMatch = matchNum <= 2 ? 1 : 2;
+        const isTeam1 = matchNum % 2 === 1;
+        await upsertBracketSlot("SF", sfMatch, isTeam1, winnerId, winnerName, BRACKET_COURTS.SF[sfMatch - 1] || sfMatch);
+        // Update playoff_appearances: this team reached the banquet (Final 4)
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "banquet" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances to banquet:", e.message); }
+      }
+      // SF → FIN + 3RD
+      if (round === "SF") {
+        await upsertBracketSlot("FIN", 1, matchNum === 1, winnerId, winnerName, BRACKET_COURTS.FIN[0]);
+        await upsertBracketSlot("3RD", 1, matchNum === 1, loserId, loserName, BRACKET_COURTS["3RD"][0]);
+      }
+      // FIN complete → update playoff_appearances only (championships written at season complete)
+      if (round === "FIN") {
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${winnerId}`, "PATCH", { round_reached: "champion" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances champion:", e.message); }
+        try { await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${loserId}`, "PATCH", { round_reached: "finalist" }); }
+        catch (e) { console.warn("Failed to update playoff_appearances finalist:", e.message); }
+      }
+    } catch (e) {
+      setError("Bracket advance failed: " + e.message);
+    }
+  };
+
+  // Admin designates which tied team advances from a group
+  const designateAdvance = async (groupName, advancingTeamId, standings) => {
+    // Build ordered list: move advancing team into position 2 if tied at cutline
+    const order = standings.map(s => s.team_id);
+    const advIdx = order.indexOf(advancingTeamId);
+    if (advIdx > 1) {
+      // Swap with whoever is at position 1 (2nd place)
+      [order[1], order[advIdx]] = [order[advIdx], order[1]];
+    }
+    const updated = { ...groupOverrides, [groupName]: order };
+    setGroupOverrides(updated);
+    try {
+      await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { group_overrides: updated });
+    } catch (e) { setError(e.message); }
+  };
+
+  const upsertBracketSlot = async (round, matchNum, isTeam1, teamId, teamName, court) => {
+    // Query DB for existing match (don't rely on React state which may be stale)
+    const existing = await q("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`);
+    const match = existing?.[0];
+
+    if (match) {
+      const field = isTeam1
+        ? { team1_id: teamId, team1_name: teamName }
+        : { team2_id: teamId, team2_name: teamName };
+      await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${matchNum}`, "PATCH", field);
+      setBracketMatches(prev => ({
+        ...prev,
+        [round]: (prev[round] || []).map(m => m.match_number === matchNum ? { ...m, ...field } : m),
+      }));
+    } else {
+      const data = {
+        season_id: seasonId, group_name: round, match_number: matchNum, status: "scheduled",
+        team1_id: isTeam1 ? teamId : null, team1_name: isTeam1 ? teamName : null,
+        team2_id: isTeam1 ? null : teamId, team2_name: isTeam1 ? null : teamName,
+        court: court || null,
+      };
+      const result = await qAuth("group_matches", "", "POST", data);
+      setBracketMatches(prev => {
+        const updated = { ...prev, [round]: [...(prev[round] || []), data] };
+        return updated;
+      });
+    }
+  };
+
   if (loading) return <Loader />;
 
   const activeDivs = divisions.filter(d => d.has_data).sort((a, b) => {
@@ -3097,6 +4512,32 @@ function AdminPostseasonTab({ seasonId, divisions }) {
             {totalConfirmed >= (activeDivs.reduce((sum, d) => sum + getPlayoffSpots(d.id), 0) + 2) ? "✓ Complete" : "In Progress"}
           </Badge>
         </div>
+        {/* Auto-confirm all clear (untied) winners */}
+        {(() => {
+          const unconfirmed = activeDivs.filter(d => {
+            if (confirmedDivWinners[d.id]) return false;
+            const teams = standings[d.id] || [];
+            if (teams.length < 2) return false;
+            return teams[0].wins !== teams[1].wins || teams[0].losses !== teams[1].losses;
+          });
+          if (unconfirmed.length === 0) return null;
+          return (
+            <button onClick={async () => {
+              setSaving("all-winners");
+              for (const d of unconfirmed) {
+                const teams = standings[d.id] || [];
+                if (teams[0]) await confirmDivisionWinner(d.id, teams[0].team_id);
+              }
+              setSaving(null);
+              setSuccess(`${unconfirmed.length} division winners confirmed!`);
+              setTimeout(() => setSuccess(null), 3000);
+            }}
+              disabled={!!saving}
+              style={{ marginTop: 10, width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.green}30`, background: `${C.green}10`, color: C.green, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              {saving === "all-winners" ? "Confirming..." : `👑 Confirm ${unconfirmed.length} Clear Winner${unconfirmed.length > 1 ? "s" : ""}`}
+            </button>
+          );
+        })()}
       </Card>
 
       {/* Division-by-division */}
@@ -3445,18 +4886,16 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                   onClick={async () => {
                     if (lotteryPool.size < 2) { setError("Need at least 2 teams in the lottery pool"); return; }
                     setLotteryAnimating(true);
-                    // Shuffle animation: show random names cycling
                     const poolArr = [...lotteryPool];
-                    const numToDraw = Math.min(2 - wildcards.length, poolArr.length);
-                    // Quick visual shuffle
-                    for (let tick = 0; tick < 12; tick++) {
+                    // Draw one team at a time
+                    for (let tick = 0; tick < 14; tick++) {
                       const shuffled = [...poolArr].sort(() => Math.random() - 0.5);
-                      setLotteryDrawn(shuffled.slice(0, numToDraw));
-                      await new Promise(r => setTimeout(r, 100 + tick * 30));
+                      setLotteryDrawn([shuffled[0]]);
+                      await new Promise(r => setTimeout(r, 120 + tick * 25));
                     }
-                    // Final draw
+                    // Final pick for WC1
                     const finalShuffled = [...poolArr].sort(() => Math.random() - 0.5);
-                    setLotteryDrawn(finalShuffled.slice(0, numToDraw));
+                    setLotteryDrawn([finalShuffled[0]]);
                     setLotteryAnimating(false);
                   }}
                   disabled={lotteryPool.size < 2 || lotteryAnimating}
@@ -3466,52 +4905,84 @@ function AdminPostseasonTab({ seasonId, divisions }) {
                     color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700, cursor: "pointer",
                     opacity: lotteryPool.size < 2 ? 0.5 : 1,
                   }}>
-                  {lotteryAnimating ? "🎲 Drawing..." : `🎲 Draw ${Math.min(2 - wildcards.length, lotteryPool.size)} Wildcard${(2 - wildcards.length) > 1 ? "s" : ""}`}
+                  {lotteryAnimating ? "🎲 Drawing WC1..." : `🎲 Draw Wildcard ${wildcards.length + 1}`}
                 </button>
               </>
             )}
 
-            {/* Lottery Results */}
-            {lotteryMode === "pool" && lotteryDrawn.length > 0 && !lotteryAnimating && (
+            {/* Lottery Result — WC1 drawn, confirm before WC2 */}
+            {lotteryMode === "pool" && lotteryDrawn.length === 1 && !lotteryAnimating && (
               <div>
                 <div style={{ textAlign: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 28, marginBottom: 4 }}>🎉</div>
-                  <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>Lottery Results</div>
+                  <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>
+                    Wildcard {wildcards.length + 1} Drawn!
+                  </div>
                 </div>
-                {lotteryDrawn.map((tid, i) => {
+                {(() => {
+                  const tid = lotteryDrawn[0];
                   let team = null;
                   for (const [, teams] of Object.entries(standings)) {
                     team = teams.find(t => t.team_id === tid);
                     if (team) break;
                   }
                   return team ? (
-                    <div key={tid} style={{
+                    <div style={{
                       display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
                       background: `${C.amber}10`, border: `1px solid ${C.amber}30`,
-                      borderRadius: 10, marginBottom: 8,
+                      borderRadius: 10, marginBottom: 12,
                     }}>
-                      <Badge color={C.amber} style={{ fontSize: 12, padding: "4px 8px" }}>WC{wildcards.length + i + 1}</Badge>
+                      <Badge color={C.amber} style={{ fontSize: 13, padding: "4px 8px" }}>WC{wildcards.length + 1}</Badge>
                       <TeamAvatar name={team.team_name} size={28} />
                       <span style={{ flex: 1, fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.amber }}>{team.team_name}</span>
                       <span style={{ fontFamily: F.m, fontSize: 12, color: C.muted }}>{team.wins}-{team.losses}</span>
                     </div>
                   ) : null;
-                })}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                })()}
+                <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setLotteryDrawn([])}
                     style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                     🔄 Redraw
                   </button>
                   <button onClick={async () => {
-                    for (const tid of lotteryDrawn) {
-                      await confirmWildcard(tid);
+                    const tid = lotteryDrawn[0];
+                    // Save lottery data to season
+                    const poolNames = {};
+                    for (const pid of lotteryPool) {
+                      for (const [, teams] of Object.entries(standings)) {
+                        const t = teams.find(x => x.team_id === pid);
+                        if (t) { poolNames[pid] = t.team_name; break; }
+                      }
                     }
+                    let lottData;
+                    if (wildcards.length === 0) {
+                      // First wildcard - start fresh
+                      lottData = { pool: [...lotteryPool], pool_names: poolNames, drawn: [{ team_id: tid, label: "WC1" }] };
+                    } else {
+                      // Second wildcard - append to existing
+                      const existingLottery = await q("seasons", `id=eq.${seasonId}&select=lottery_data`);
+                      lottData = existingLottery?.[0]?.lottery_data || { pool: [...lotteryPool], pool_names: poolNames, drawn: [] };
+                      lottData.drawn = [...(lottData.drawn || []), { team_id: tid, label: `WC${wildcards.length + 1}` }];
+                    }
+                    await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { lottery_data: lottData });
+
+                    await confirmWildcard(tid);
                     setLotteryDrawn([]);
-                    setLotteryPool(new Set());
+
+                    // If WC1 was just confirmed and need WC2, keep pool open minus drawn team
+                    if (wildcards.length + 1 < 2) {
+                      setLotteryPool(prev => {
+                        const next = new Set(prev);
+                        next.delete(tid);
+                        return next;
+                      });
+                    } else {
+                      setLotteryPool(new Set());
+                    }
                   }}
                     disabled={!!saving}
                     style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    ✓ Confirm Wildcards
+                    {wildcards.length + 1 < 2 ? `✓ Confirm WC${wildcards.length + 1} & Draw Next` : `✓ Confirm WC${wildcards.length + 1}`}
                   </button>
                 </div>
               </div>
@@ -3588,6 +5059,781 @@ function AdminPostseasonTab({ seasonId, divisions }) {
           </div>
         </div>
       </Card>
+
+      {/* ── Group Draw Section ── */}
+      <div style={{ marginTop: 20 }}>
+          <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+            ⚔️ Playoff Group Draw
+          </div>
+
+          {/* Draw controls */}
+          {groupDrawStep === "idle" && !existingGroups && (
+            <Card style={{ padding: "16px", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>⚔️</div>
+              {totalConfirmed >= 32 ? (
+                <>
+                  <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                    Ready to Draw Groups
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
+                    {totalConfirmed} teams will be drawn into 8 groups of 4.
+                    Teams are seeded by finish — same-division teams are separated.
+                  </div>
+                  <button onClick={startGroupDraw}
+                    style={{
+                      width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+                      background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 14, fontWeight: 700,
+                      cursor: "pointer",
+                    }}>
+                    🎲 Draw Groups
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                    Playoff Group Draw
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, marginBottom: 8, lineHeight: 1.5 }}>
+                    Confirm all 32 playoff teams above before generating the group draw.
+                  </div>
+                  <div style={{ fontFamily: F.d, fontSize: 28, fontWeight: 800, color: totalConfirmed > 0 ? C.amber : C.dim, marginBottom: 4 }}>
+                    {totalConfirmed} / 32
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 14 }}>teams confirmed</div>
+                  {/* Progress bar */}
+                  <div style={{ width: "100%", height: 6, background: C.border, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${(totalConfirmed / 32) * 100}%`, height: "100%", background: totalConfirmed >= 32 ? C.green : C.amber, borderRadius: 3, transition: "width 0.3s" }} />
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
+
+          {/* Animating state */}
+          {groupDrawStep === "animating" && (
+            <div style={{ textAlign: "center", marginBottom: 12 }}>
+              <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.amber, marginBottom: 4 }}>
+                🎲 Drawing {drawingTier || "..."}
+              </div>
+              <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>Shuffling teams into groups...</div>
+            </div>
+          )}
+
+          {/* Groups display */}
+          {groups && (
+            <>
+              {groupDrawStep === "done" && !existingGroups && (
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <button onClick={() => { setGroups(null); setGroupDrawStep("idle"); }}
+                    style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, cursor: "pointer" }}>
+                    🔄 Redraw
+                  </button>
+                  <button onClick={saveGroups} disabled={saving === "groups"}
+                    style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    {saving === "groups" ? "Saving..." : "✓ Confirm & Save Groups"}
+                  </button>
+                </div>
+              )}
+
+              {existingGroups && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <Badge color={C.green} style={{ fontSize: 10 }}>✓ Groups Confirmed</Badge>
+                  <button onClick={clearGroups}
+                    style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.red}30`, background: `${C.red}10`, color: C.red, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                    Clear & Redraw
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, teamList]) => (
+                  <Card key={groupName} style={{
+                    padding: "10px 12px",
+                    border: `1px solid ${groupDrawStep === "animating" ? C.amber + "30" : C.border}`,
+                    transition: "all 0.15s",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{
+                        fontFamily: F.d, fontSize: 14, fontWeight: 800,
+                        width: 26, height: 26, borderRadius: 13,
+                        background: `${C.amber}20`, color: C.amber,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {groupName}
+                      </div>
+                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                        {teamList.length} team{teamList.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    {teamList.map((t, i) => (
+                      <div key={t.team_id} style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "5px 0",
+                        borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                      }}>
+                        <TeamAvatar name={t.team_name} size={20} />
+                        <span style={{
+                          flex: 1, fontFamily: F.b, fontSize: 11, color: C.text,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {t.team_name}
+                        </span>
+                        <Badge color={
+                          t.seed_label?.startsWith("WC") ? C.blue :
+                          t.seed_label?.endsWith("1") ? C.green : C.dim
+                        } style={{ fontSize: 8, padding: "1px 4px" }}>
+                          {t.seed_label}
+                        </Badge>
+                      </div>
+                    ))}
+                  </Card>
+                ))}
+              </div>
+
+              {/* ── Court Assignments ── */}
+              {existingGroups && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                      🏟 Court Assignments
+                    </div>
+                    {Object.keys(courtAssignments).length === 0 ? (
+                      <button onClick={assignCourtsRandomly}
+                        style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                        🎲 Random Assign
+                      </button>
+                    ) : (
+                      <button onClick={assignCourtsRandomly}
+                        style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                        🔄 Reshuffle
+                      </button>
+                    )}
+                  </div>
+                  <Card style={{ padding: "10px 14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {Object.keys(groups).sort().map(gName => (
+                        <div key={gName} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{
+                            fontFamily: F.d, fontSize: 12, fontWeight: 800, color: C.amber,
+                            width: 22, height: 22, borderRadius: 11,
+                            background: `${C.amber}18`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>{gName}</div>
+                          <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginRight: 4 }}>→</span>
+                          <select
+                            value={courtAssignments[gName] || ""}
+                            onChange={e => updateCourt(gName, e.target.value)}
+                            style={{
+                              flex: 1, padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`,
+                              background: C.bg, color: C.text, fontFamily: F.b, fontSize: 11, outline: "none",
+                            }}>
+                            <option value="">--</option>
+                            {[1,2,3,4,5,6,7,8,9,10].map(c => (
+                              <option key={c} value={c}>Court {c}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* ── Match Schedule ── */}
+              {existingGroups && Object.keys(courtAssignments).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                      📋 Group Matches
+                    </div>
+                    {Object.keys(groupMatches).length === 0 ? (
+                      <button onClick={generateAllGroupMatches} disabled={saving === "matches"}
+                        style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                        {saving === "matches" ? "Generating..." : "🎲 Generate Schedules"}
+                      </button>
+                    ) : (
+                      <button onClick={() => {
+                        if (window.confirm("Regenerate all match schedules? Existing scores will be lost.")) generateAllGroupMatches();
+                      }} disabled={saving === "matches"}
+                        style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                        🔄 Regenerate
+                      </button>
+                    )}
+                  </div>
+
+                  {Object.keys(groupMatches).length > 0 && (
+                    Object.entries(groupMatches).sort(([a], [b]) => a.localeCompare(b)).map(([gName, gMatches]) => {
+                      const court = courtAssignments[gName];
+                      const completed = gMatches.filter(m => m.status === "completed").length;
+                      // Calculate group standings
+                      const gStandings = {};
+                      (groups[gName] || []).forEach(t => {
+                        gStandings[t.team_id] = { team_id: t.team_id, team_name: t.team_name, w: 0, l: 0 };
+                      });
+                      gMatches.filter(m => m.status === "completed").forEach(m => {
+                        if (gStandings[m.team1_id]) {
+                          if (m.winner_id === m.team1_id) gStandings[m.team1_id].w++;
+                          else if (m.winner_id === m.team2_id) gStandings[m.team1_id].l++;
+                        }
+                        if (gStandings[m.team2_id]) {
+                          if (m.winner_id === m.team2_id) gStandings[m.team2_id].w++;
+                          else if (m.winner_id === m.team1_id) gStandings[m.team2_id].l++;
+                        }
+                      });
+                      const standingsArr = computeGroupStandings(groups[gName] || [], gMatches, groupOverrides[gName]);
+                      const groupDone = completed === gMatches.length && completed > 0;
+                      const hasCutlineTie = groupDone && standingsArr.some(s => s.crossesCutline);
+                      const isResolved = !!groupOverrides[gName];
+
+                      return (
+                        <Card key={gName} style={{ padding: "12px 14px", marginBottom: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{
+                                fontFamily: F.d, fontSize: 14, fontWeight: 800, color: C.amber,
+                                width: 26, height: 26, borderRadius: 13, background: `${C.amber}18`,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                              }}>{gName}</div>
+                              <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
+                                Court {court}
+                              </span>
+                            </div>
+                            <Badge color={completed === gMatches.length ? C.green : C.amber}
+                              style={{ fontSize: 9 }}>
+                              {completed}/{gMatches.length} played
+                            </Badge>
+                          </div>
+
+                          {/* Mini standings */}
+                          {completed > 0 && (
+                            <div style={{ marginBottom: 10, padding: "6px 8px", borderRadius: 6, background: C.bg }}>
+                              <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                                <span style={{ flex: 1, fontFamily: F.m, fontSize: 8, color: C.dim, textTransform: "uppercase" }}>Team</span>
+                                <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>W</span>
+                                <span style={{ width: 28, fontFamily: F.m, fontSize: 8, color: C.dim, textAlign: "center" }}>L</span>
+                              </div>
+                              {standingsArr.map((s, idx) => {
+                                const advances = groupDone && idx < 2 && (!hasCutlineTie || isResolved);
+                                return (
+                                <div key={s.team_id} style={{
+                                  display: "flex", alignItems: "center", gap: 4, padding: "3px 0",
+                                  borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                                  background: advances ? `${C.green}06` : "transparent",
+                                }}>
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 10,
+                                    color: advances ? C.green : C.muted,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {advances ? "✓ " : ""}{s.team_name}
+                                  </span>
+                                  <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.text, textAlign: "center", fontWeight: 700 }}>{s.w}</span>
+                                  <span style={{ width: 28, fontFamily: F.d, fontSize: 10, color: C.dim, textAlign: "center" }}>{s.l}</span>
+                                </div>
+                                );
+                              })}
+                              {/* Tie resolution */}
+                              {hasCutlineTie && !isResolved && (() => {
+                                const tiedTeams = standingsArr.filter(s => s.crossesCutline);
+                                return (
+                                  <div style={{ marginTop: 6, padding: "6px", borderRadius: 6, background: `${C.amber}08`, border: `1px solid ${C.amber}20` }}>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.amber, marginBottom: 6 }}>
+                                      ⚡ Tie — pick who advances:
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                      {tiedTeams.map(t => (
+                                        <button key={t.team_id}
+                                          onClick={() => designateAdvance(gName, t.team_id, standingsArr)}
+                                          style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${C.green}30`, background: `${C.green}08`, color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600, cursor: "pointer", textAlign: "left" }}>
+                                          ✓ Advance {t.team_name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                              {isResolved && hasCutlineTie && (
+                                <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 9, color: C.green }}>✓ Tiebreaker resolved</span>
+                                  <button onClick={() => {
+                                    const updated = { ...groupOverrides };
+                                    delete updated[gName];
+                                    setGroupOverrides(updated);
+                                    qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { group_overrides: Object.keys(updated).length ? updated : null });
+                                  }}
+                                    style={{ padding: "2px 6px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 8, cursor: "pointer" }}>
+                                    Reset
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Match list */}
+                          {gMatches.map((m, idx) => {
+                            const isEditing = editingScore?.groupName === gName && editingScore?.matchNumber === m.match_number;
+                            return (
+                              <div key={m.match_number} style={{
+                                padding: "8px 0",
+                                borderTop: idx > 0 ? `1px solid ${C.border}` : "none",
+                              }}>
+                                {/* Completed match display */}
+                                {m.status === "completed" && !isEditing && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                    <span style={{
+                                      fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team1_id ? 700 : 400,
+                                      color: m.winner_id === m.team1_id ? C.green : C.muted,
+                                    }}>
+                                      {m.winner_id === m.team1_id ? "W " : ""}
+                                    </span>
+                                    <span style={{
+                                      flex: 1, fontFamily: F.b, fontSize: 11,
+                                      color: m.winner_id === m.team1_id ? C.text : C.muted,
+                                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    }}>
+                                      {m.team1_name}
+                                    </span>
+                                    {m.team1_score != null && (
+                                      <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 44, textAlign: "center" }}>
+                                        {m.team1_score}-{m.team2_score}
+                                      </span>
+                                    )}
+                                    <span style={{
+                                      flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
+                                      color: m.winner_id === m.team2_id ? C.text : C.muted,
+                                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    }}>
+                                      {m.team2_name}
+                                    </span>
+                                    <span style={{
+                                      fontFamily: F.b, fontSize: 11, fontWeight: m.winner_id === m.team2_id ? 700 : 400,
+                                      color: m.winner_id === m.team2_id ? C.green : C.muted,
+                                    }}>
+                                      {m.winner_id === m.team2_id ? " W" : ""}
+                                    </span>
+                                    <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
+                                      style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                      ✏️
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Pending match — tap to select winner */}
+                                {m.status !== "completed" && !isEditing && (
+                                  <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                      <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {m.team1_name}
+                                      </span>
+                                      <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>vs</span>
+                                      <span style={{ flex: 1, fontFamily: F.b, fontSize: 11, color: C.text, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {m.team2_name}
+                                      </span>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, paddingLeft: 20 }}>
+                                      <button onClick={() => saveMatchResult(gName, m.match_number, m.team1_id)}
+                                        disabled={!!saving}
+                                        style={{
+                                          flex: 1, padding: "7px 4px", borderRadius: 6,
+                                          border: `1px solid ${C.green}30`, background: `${C.green}08`,
+                                          color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600,
+                                          cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        }}>
+                                        ✓ {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                      </button>
+                                      <button onClick={() => saveMatchResult(gName, m.match_number, m.team2_id)}
+                                        disabled={!!saving}
+                                        style={{
+                                          flex: 1, padding: "7px 4px", borderRadius: 6,
+                                          border: `1px solid ${C.green}30`, background: `${C.green}08`,
+                                          color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600,
+                                          cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        }}>
+                                        ✓ {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                      </button>
+                                      <button onClick={() => { setEditingScore({ groupName: gName, matchNumber: m.match_number }); setScoreInputs({ team1: "", team2: "" }); }}
+                                        style={{ padding: "7px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                        +Score
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Score input expanded */}
+                                {isEditing && (
+                                  <div style={{ padding: "6px 0 2px" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                      <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim, width: 14, textAlign: "center" }}>{m.match_number}</span>
+                                      <span style={{ fontFamily: F.b, fontSize: 11, color: C.text }}>{m.team1_name} vs {m.team2_name}</span>
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 20 }}>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team1}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team1: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }}
+                                          autoFocus />
+                                      </div>
+                                      <span style={{ fontFamily: F.d, fontSize: 14, color: C.dim, fontWeight: 700, paddingTop: 16 }}>—</span>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team2}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team2: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, marginTop: 8, paddingLeft: 20 }}>
+                                      <button onClick={() => {
+                                        const s1 = scoreInputs.team1 ? parseInt(scoreInputs.team1) : null;
+                                        const s2 = scoreInputs.team2 ? parseInt(scoreInputs.team2) : null;
+                                        const winnerId = s1 != null && s2 != null ? (s1 > s2 ? m.team1_id : m.team2_id) : null;
+                                        if (!winnerId) { setError("Enter scores for both teams to determine winner"); return; }
+                                        saveMatchResult(gName, m.match_number, winnerId, s1, s2);
+                                      }}
+                                        disabled={!!saving}
+                                        style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                        ✓ Save Score
+                                      </button>
+                                      <button onClick={() => setEditingScore(null)}
+                                        style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </Card>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* ── Bracket ── */}
+              {existingGroups && Object.keys(groupMatches).length > 0 && (() => {
+                const groupNames = Object.keys(groups);
+                const groupStatus = groupNames.map(gName => {
+                  const gm = groupMatches[gName] || [];
+                  const total = gm.length;
+                  const done = gm.filter(m => m.status === "completed").length;
+                  return { gName, total, done, allDone: total > 0 && done === total };
+                });
+                const allGroupsDone = groupStatus.every(g => g.allDone);
+                const hasUnresolvedTies = Object.entries(groups).some(([gName, teamList]) => {
+                  const st = computeGroupStandings(teamList, groupMatches[gName] || [], groupOverrides[gName]);
+                  return st.some(s => s.crossesCutline) && !groupOverrides[gName];
+                });
+                const hasR16 = (bracketMatches["R16"] || []).length > 0;
+                const bracketRoundNames = { R16: "Round of 16", QF: "Quarterfinals", SF: "Semifinals", FIN: "Final", "3RD": "3rd Place" };
+
+                return (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                        🏆 Bracket
+                      </div>
+                      {allGroupsDone && !hasR16 && !hasUnresolvedTies && (
+                        <button onClick={generateR16} disabled={saving === "bracket"}
+                          style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                          {saving === "bracket" ? "Generating..." : "🏆 Generate R16 Bracket"}
+                        </button>
+                      )}
+                      {hasR16 && (
+                        <button onClick={() => { if (window.confirm("Regenerate bracket? All bracket results will be lost.")) generateR16(); }}
+                          disabled={saving === "bracket"}
+                          style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.m, fontSize: 10, cursor: "pointer" }}>
+                          ♻️ Regenerate
+                        </button>
+                      )}
+                    </div>
+
+                    {hasUnresolvedTies && !hasR16 && (
+                      <Card style={{ padding: "12px 14px", marginBottom: 10 }}>
+                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.red }}>
+                          ⚡ Resolve all tied groups before generating bracket
+                        </div>
+                      </Card>
+                    )}
+
+                    {!allGroupsDone && !hasR16 && (
+                      <Card style={{ padding: "12px 14px", marginBottom: 10 }}>
+                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted, marginBottom: 6 }}>
+                          Group stage in progress:
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {groupStatus.map(g => (
+                            <Badge key={g.gName} color={g.allDone ? C.green : C.amber} style={{ fontSize: 9 }}>
+                              {g.gName}: {g.done}/{g.total}
+                            </Badge>
+                          ))}
+                        </div>
+                      </Card>
+                    )}
+
+                    {/* Bracket matches by round */}
+                    {["R16", "QF", "SF", "3RD", "FIN"].map(round => {
+                      const matches = bracketMatches[round] || [];
+                      if (matches.length === 0) return null;
+                      const completedCount = matches.filter(m => m.status === "completed").length;
+                      return (
+                        <div key={round} style={{ marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontFamily: F.b, fontSize: 12, color: C.text }}>{bracketRoundNames[round]}</span>
+                            <Badge color={completedCount === matches.length ? C.green : C.amber} style={{ fontSize: 9 }}>
+                              {completedCount}/{matches.length}
+                            </Badge>
+                          </div>
+                          {matches.sort((a, b) => a.match_number - b.match_number).map(m => {
+                            const isEditing = editingScore?.groupName === round && editingScore?.matchNumber === m.match_number;
+                            const ready = m.team1_id && m.team2_id;
+                            const r16L = round === "R16" ? R16_LABELS[m.match_number] : null;
+                            const t1Wins = m.winner_id && String(m.winner_id) === String(m.team1_id);
+                            const t2Wins = m.winner_id && String(m.winner_id) === String(m.team2_id);
+                            const milestoneIcon = (teamId) => {
+                              if (round === "FIN" && m.status === "completed") return String(m.winner_id) === String(teamId) ? "🏆 " : "🥈 ";
+                              if (["SF", "FIN", "3RD"].includes(round)) return "🎖️ ";
+                              return "";
+                            };
+                            return (
+                              <Card key={m.match_number} style={{ padding: "10px 12px", marginBottom: 6 }}>
+                                {/* Court row */}
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>Court</span>
+                                    <select value={m.court || ""} onChange={async (e) => {
+                                      const val = e.target.value ? parseInt(e.target.value) : null;
+                                      await qAuth("group_matches", `season_id=eq.${seasonId}&group_name=eq.${round}&match_number=eq.${m.match_number}`, "PATCH", { court: val });
+                                      setBracketMatches(prev => ({
+                                        ...prev,
+                                        [round]: (prev[round] || []).map(x => x.match_number === m.match_number ? { ...x, court: val } : x),
+                                      }));
+                                    }}
+                                      style={{ padding: "2px 4px", borderRadius: 4, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 10, width: 40 }}>
+                                      <option value="">—</option>
+                                      {[1,2,3,4,5,6,7,8,9,10].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  </div>
+                                  {r16L && <span style={{ fontFamily: F.m, fontSize: 9, color: C.dim }}>{r16L.t1} vs {r16L.t2}</span>}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 11,
+                                    color: t1Wins ? C.green : m.team1_name ? C.text : C.dim,
+                                    fontWeight: t1Wins ? 700 : 400,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {m.team1_id ? milestoneIcon(m.team1_id) : ""}{m.team1_name || "TBD"}
+                                  </span>
+                                  {m.status === "completed" && m.team1_score != null ? (
+                                    <span style={{ fontFamily: F.d, fontSize: 12, fontWeight: 700, color: C.text, minWidth: 44, textAlign: "center" }}>
+                                      {m.team1_score}-{m.team2_score}
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, minWidth: 30, textAlign: "center" }}>
+                                      {m.status === "completed" ? "✓" : "vs"}
+                                    </span>
+                                  )}
+                                  <span style={{
+                                    flex: 1, fontFamily: F.b, fontSize: 11, textAlign: "right",
+                                    color: t2Wins ? C.green : m.team2_name ? C.text : C.dim,
+                                    fontWeight: t2Wins ? 700 : 400,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  }}>
+                                    {m.team2_name || "TBD"}{m.team2_id ? ` ${milestoneIcon(m.team2_id).trim()}` : ""}
+                                  </span>
+                                  {m.status === "completed" && !isEditing && (
+                                    <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: m.team1_score != null ? String(m.team1_score) : "", team2: m.team2_score != null ? String(m.team2_score) : "" }); }}
+                                      style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: "transparent", color: C.dim, fontSize: 9, cursor: "pointer" }}>
+                                      ✏️
+                                    </button>
+                                  )}
+                                </div>
+                                {/* Winner select buttons */}
+                                {m.status !== "completed" && ready && !isEditing && (
+                                  <div style={{ display: "flex", gap: 6, marginTop: 8, paddingLeft: 20 }}>
+                                    <button onClick={() => saveMatchResult(round, m.match_number, m.team1_id)}
+                                      disabled={!!saving}
+                                      style={{ flex: 1, padding: "7px 4px", borderRadius: 6, border: `1px solid ${C.green}30`, background: `${C.green}08`, color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      ✓ {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                    </button>
+                                    <button onClick={() => saveMatchResult(round, m.match_number, m.team2_id)}
+                                      disabled={!!saving}
+                                      style={{ flex: 1, padding: "7px 4px", borderRadius: 6, border: `1px solid ${C.green}30`, background: `${C.green}08`, color: C.green, fontFamily: F.b, fontSize: 10, fontWeight: 600, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      ✓ {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                    </button>
+                                    <button onClick={() => { setEditingScore({ groupName: round, matchNumber: m.match_number }); setScoreInputs({ team1: "", team2: "" }); }}
+                                      style={{ padding: "7px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 9, cursor: "pointer", flexShrink: 0 }}>
+                                      +Score
+                                    </button>
+                                  </div>
+                                )}
+                                {/* Score input */}
+                                {isEditing && (
+                                  <div style={{ padding: "6px 0 2px" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 20 }}>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team1_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team1}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team1: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }}
+                                          autoFocus />
+                                      </div>
+                                      <span style={{ fontFamily: F.d, fontSize: 14, color: C.dim, fontWeight: 700, paddingTop: 16 }}>—</span>
+                                      <div style={{ flex: 1, textAlign: "center" }}>
+                                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {m.team2_name?.split(" ").slice(0, 2).join(" ")}
+                                        </div>
+                                        <input type="number" placeholder="—" value={scoreInputs.team2}
+                                          onChange={e => setScoreInputs(prev => ({ ...prev, team2: e.target.value }))}
+                                          style={{ width: "100%", padding: "8px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.d, fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none" }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, marginTop: 8, paddingLeft: 20 }}>
+                                      <button onClick={() => {
+                                        const s1 = scoreInputs.team1 ? parseInt(scoreInputs.team1) : null;
+                                        const s2 = scoreInputs.team2 ? parseInt(scoreInputs.team2) : null;
+                                        const wId = s1 != null && s2 != null ? (s1 > s2 ? m.team1_id : m.team2_id) : null;
+                                        if (!wId) { setError("Enter scores for both teams"); return; }
+                                        saveMatchResult(round, m.match_number, wId, s1, s2);
+                                      }}
+                                        disabled={!!saving}
+                                        style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                        ✓ Save
+                                      </button>
+                                      <button onClick={() => setEditingScore(null)}
+                                        style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer" }}>
+                                        ✕
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+
+                    {/* Complete Season button when FIN is done */}
+                    {(() => {
+                      const fin = (bracketMatches["FIN"] || []).find(m => m.status === "completed");
+                      if (!fin) return null;
+                      const champId = fin.winner_id;
+                      const champName = String(champId) === String(fin.team1_id) ? fin.team1_name : fin.team2_name;
+                      const finalistId = String(champId) === String(fin.team1_id) ? fin.team2_id : fin.team1_id;
+                      const finalistName = String(champId) === String(fin.team1_id) ? fin.team2_name : fin.team1_name;
+                      // Collect SF teams (banquet = Final 4 who lost in SF)
+                      const sfMatches = bracketMatches["SF"] || [];
+                      const banquetTeams = sfMatches.filter(m => m.status === "completed").map(m => {
+                        const loserId = String(m.winner_id) === String(m.team1_id) ? m.team2_id : m.team1_id;
+                        const loserName = String(m.winner_id) === String(m.team1_id) ? m.team2_name : m.team1_name;
+                        return { id: loserId, name: loserName };
+                      });
+
+                      const completeSeason = async () => {
+                        if (!window.confirm("Mark this season as completed? This will write championship data and finalize all results.")) return;
+                        setSaving("complete");
+                        setError(null);
+                        const errors = [];
+
+                        // 1. Update playoff_appearances round_reached
+                        const roundUpdates = [
+                          { teamId: champId, round: "champion" },
+                          { teamId: finalistId, round: "finalist" },
+                          ...banquetTeams.map(t => ({ teamId: t.id, round: "banquet" })),
+                        ];
+                        for (const { teamId, round } of roundUpdates) {
+                          try {
+                            await qAuth("playoff_appearances", `season_id=eq.${seasonId}&team_id=eq.${teamId}`, "PATCH", { round_reached: round });
+                          } catch (e) { errors.push(`playoff_appearances ${round}: ${e.message}`); }
+                        }
+
+                        // 2. Clear any existing championship entries for this season (idempotent)
+                        try {
+                          await qAuth("championships", `season_id=eq.${seasonId}&type=in.(league,finalist,banquet)`, "DELETE");
+                        } catch (e) { errors.push(`clear old champs: ${e.message}`); }
+
+                        // 3. Write championship entries
+                        const champEntries = [
+                          { season_id: seasonId, team_id: champId, type: "league" },
+                          { season_id: seasonId, team_id: finalistId, type: "finalist" },
+                          ...banquetTeams.map(t => ({ season_id: seasonId, team_id: t.id, type: "banquet" })),
+                        ];
+                        for (const entry of champEntries) {
+                          try {
+                            await qAuth("championships", "", "POST", entry);
+                          } catch (e) { errors.push(`championship ${entry.type}: ${e.message}`); }
+                        }
+
+                        // 4. Increment winner's championship count
+                        try {
+                          const teamData = await q("teams", `id=eq.${champId}&select=championship_count`);
+                          const currentCount = teamData?.[0]?.championship_count || 0;
+                          await qAuth("teams", `id=eq.${champId}`, "PATCH", { championship_count: currentCount + 1 });
+                        } catch (e) { errors.push(`championship_count: ${e.message}`); }
+
+                        // 5. Mark season as completed
+                        try {
+                          await qAuth("seasons", `id=eq.${seasonId}`, "PATCH", { is_active: false });
+                        } catch (e) { errors.push(`season is_active: ${e.message}`); }
+
+                        if (errors.length) {
+                          setError("Some writes failed:\n" + errors.join("\n"));
+                          console.error("Complete season errors:", errors);
+                        } else {
+                          setSuccess("Season completed! Reloading...");
+                          setTimeout(() => { window.location.reload(); }, 2000);
+                        }
+                        setSaving(null);
+                      };
+
+                      return (
+                        <Card style={{
+                          padding: "16px", textAlign: "center", marginTop: 10,
+                          background: `linear-gradient(135deg, ${C.surface}, ${C.amber}10)`,
+                          border: `1px solid ${C.amber}25`,
+                        }}>
+                          <div style={{ fontSize: 28, marginBottom: 4 }}>🏆</div>
+                          <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 800, color: C.amber, marginBottom: 2 }}>
+                            {champName}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginBottom: 4 }}>
+                            🥈 {finalistName}
+                          </div>
+                          {banquetTeams.length > 0 && (
+                            <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginBottom: 10 }}>
+                              🎖️ {banquetTeams.map(t => t.name).join(" · ")}
+                            </div>
+                          )}
+                          {activeSeason?.is_active !== false ? (
+                            <button onClick={completeSeason}
+                              disabled={!!saving}
+                              style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: C.green, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              {saving === "complete" ? "Writing data..." : "✓ Complete Season"}
+                            </button>
+                          ) : (
+                            <Badge color={C.green} style={{ fontSize: 11 }}>✓ Season Completed</Badge>
+                          )}
+                        </Card>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+
     </div>
   );
 }
@@ -3611,11 +5857,53 @@ function AdminApp({ user, myRole }) {
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  // Seasons management state
+  const [allSeasons, setAllSeasons] = useState([]);
+  const [allDivisions, setAllDivisions] = useState([]); // divisions for selected manage-season
+  const [seasonsLoading, setSeasonsLoading] = useState(false);
+  const [selectedManageSeason, setSelectedManageSeason] = useState(null);
+  const [showCreateSeason, setShowCreateSeason] = useState(false);
+  const [newSeasonName, setNewSeasonName] = useState("");
+  const [newSeasonStart, setNewSeasonStart] = useState("");
+  const [newSeasonEnd, setNewSeasonEnd] = useState("");
+  const [showAddDiv, setShowAddDiv] = useState(false);
+  const [newDivDay, setNewDivDay] = useState("monday");
+  const [newDivLevel, setNewDivLevel] = useState("hammer");
+  const [newDivTime, setNewDivTime] = useState("7:00 PM");
+  const [newDivPrice, setNewDivPrice] = useState("650");
+  const [newDivMax, setNewDivMax] = useState("16");
+  const [seasonsSaving, setSeasonsSaving] = useState(false);
+  const [seasonRegs, setSeasonRegs] = useState([]); // registrations for selected manage-season
+  const [expandedRegDivs, setExpandedRegDivs] = useState({}); // divId -> bool for show all teams
+  const [assigningFA, setAssigningFA] = useState(false);
+
+  // Auto-close registration when team spots fill
+  useEffect(() => {
+    if (!seasonRegs.length || !allDivisions.length) return;
+    (async () => {
+      for (const d of allDivisions) {
+        if (!d.registration_open) continue;
+        const maxTeams = d.max_teams || 16;
+        const teamCount = seasonRegs.filter(r => r.division_id === d.id && !r.is_free_agent).length;
+        if (teamCount >= maxTeams) {
+          try {
+            await qAuth("divisions", `id=eq.${d.id}`, "PATCH", { registration_open: false });
+            setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, registration_open: false } : x));
+            setSuccess(`${cap(d.day_of_week)} ${cap(d.level)} auto-closed — ${teamCount}/${maxTeams} teams filled`);
+          } catch (e) { console.error("Auto-close failed:", e); }
+        }
+      }
+    })();
+  }, [seasonRegs, allDivisions.length]);
 
   // Load season + divisions once on mount
   useEffect(() => {
     (async () => {
-      const seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date&limit=1");
+      let seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date,is_active&limit=1");
+      if (!seasons?.length) {
+        // No active season - load most recent
+        seasons = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active&limit=1");
+      }
       if (!seasons?.length) return;
       setSeasonId(seasons[0].id);
       setSeasonData(seasons[0]);
@@ -3651,7 +5939,7 @@ function AdminApp({ user, myRole }) {
     if (!divisionId) return;
     if (tab !== "matches") return;
     setLoadingMatches(true);
-    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,elo_change,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         const withWeeks = (data || []).map(m => ({
           ...m,
@@ -3675,7 +5963,7 @@ function AdminApp({ user, myRole }) {
   useEffect(() => {
     if (tab !== "matches" || !divisionId) return;
     setLoadingMatches(true);
-    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+    qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,elo_change,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
       .then(data => {
         const withWeeks = (data || []).map(m => ({
           ...m,
@@ -3758,6 +6046,157 @@ function AdminApp({ user, myRole }) {
       return a.scheduled_date.localeCompare(b.scheduled_date) || (a.scheduled_time || "").localeCompare(b.scheduled_time || "");
     });
 
+  // ── Season management functions ──
+  const loadAllSeasons = async () => {
+    setSeasonsLoading(true);
+    try {
+      const s = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active");
+      setAllSeasons(s || []);
+    } catch (e) { setError(e.message); }
+    setSeasonsLoading(false);
+  };
+
+  const loadSeasonDivisions = async (sId) => {
+    try {
+      const d = await q("divisions", `season_id=eq.${sId}&order=day_of_week,level&select=id,name,day_of_week,level,time_slot,price_cents,max_teams,registration_open,playoff_spots,free_agent_price_cents`);
+      setAllDivisions(d || []);
+    } catch (e) { setError(e.message); }
+  };
+
+  const createSeason = async () => {
+    if (!newSeasonName.trim()) { setError("Season name required"); return; }
+    if (!newSeasonStart) { setError("Start date required"); return; }
+    setSeasonsSaving(true);
+    try {
+      // Get venue_id from an existing season
+      const existing = await q("seasons", "select=venue_id&limit=1");
+      const venueId = existing?.[0]?.venue_id;
+      if (!venueId) { setError("No venue found — create at least one season in Supabase first"); setSeasonsSaving(false); return; }
+
+      const slug = newSeasonName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const body = { name: newSeasonName.trim(), start_date: newSeasonStart, is_active: false, venue_id: venueId, slug };
+      if (newSeasonEnd) body.end_date = newSeasonEnd;
+      const created = await qAuth("seasons", "", "POST", body);
+      const newId = created?.[0]?.id || created?.id;
+      if (!newId) { setError("Season created but couldn't get ID — refresh and check"); setSeasonsSaving(false); return; }
+
+      // Auto-create 6 default divisions
+      const defaults = [
+        ["monday", "pilot"], ["monday", "cherry"], ["monday", "hammer"],
+        ["tuesday", "pilot"], ["tuesday", "cherry"], ["tuesday", "hammer"],
+      ];
+      for (const [day, level] of defaults) {
+        await qAuth("divisions", "", "POST", {
+          season_id: newId,
+          name: `${cap(day)} ${cap(level)}`,
+          slug: `${day}-${level}`,
+          day_of_week: day,
+          level,
+          time_slot: level === "pilot" ? "6:30 PM" : level === "cherry" ? "7:30 PM" : "8:30 PM",
+          price_cents: 65000,
+          max_teams: 16,
+          registration_open: false,
+          free_agent_price_cents: level === "pilot" ? 10000 : null,
+        });
+      }
+
+      setSuccess(`Season "${newSeasonName.trim()}" created with 6 divisions!`);
+      setNewSeasonName(""); setNewSeasonStart(""); setNewSeasonEnd("");
+      setShowCreateSeason(false);
+      await loadAllSeasons();
+      // Auto-expand new season
+      setSelectedManageSeason(newId);
+      await loadSeasonDivisions(newId);
+    } catch (e) { setError(e.message); }
+    setSeasonsSaving(false);
+  };
+
+  const createDivision = async () => {
+    if (!selectedManageSeason) return;
+    setSeasonsSaving(true);
+    const name = `${cap(newDivDay)} ${cap(newDivLevel)}`;
+    try {
+      await qAuth("divisions", "", "POST", {
+        season_id: selectedManageSeason,
+        name,
+        slug: `${newDivDay}-${newDivLevel}`,
+        day_of_week: newDivDay,
+        level: newDivLevel,
+        time_slot: newDivTime || null,
+        price_cents: parseInt(newDivPrice) * 100 || 65000,
+        max_teams: parseInt(newDivMax) || 16,
+        registration_open: false,
+      });
+      setSuccess(`Division "${name}" created!`);
+      setShowAddDiv(false);
+      await loadSeasonDivisions(selectedManageSeason);
+    } catch (e) { setError(e.message); }
+    setSeasonsSaving(false);
+  };
+
+  const toggleRegistration = async (divId, currentVal) => {
+    try {
+      await qAuth("divisions", `id=eq.${divId}`, "PATCH", { registration_open: !currentVal });
+      setAllDivisions(prev => prev.map(d => d.id === divId ? { ...d, registration_open: !currentVal } : d));
+      setSuccess(!currentVal ? "Registration opened!" : "Registration closed.");
+    } catch (e) { setError(e.message); }
+  };
+
+  const toggleSeasonActive = async (sId, currentVal) => {
+    try {
+      if (!currentVal) {
+        await qAuth("seasons", `is_active=eq.true`, "PATCH", { is_active: false });
+      }
+      await qAuth("seasons", `id=eq.${sId}`, "PATCH", { is_active: !currentVal });
+      setSuccess(!currentVal ? "Season activated!" : "Season deactivated.");
+      await loadAllSeasons();
+    } catch (e) { setError(e.message); }
+  };
+
+  const deleteDiv = async (divId, divName) => {
+    if (!window.confirm(`Delete division "${divName}"? This cannot be undone.`)) return;
+    try {
+      await qAuth("divisions", `id=eq.${divId}`, "DELETE");
+      setAllDivisions(prev => prev.filter(d => d.id !== divId));
+      setSuccess("Division deleted.");
+    } catch (e) { setError(e.message); }
+  };
+
+  const deleteSeason = async (sId, sName) => {
+    try {
+      const matches = await q("matches", `season_id=eq.${sId}&select=id&limit=1`);
+      if (matches?.length > 0) {
+        setError(`Cannot delete "${sName}" — it has matches.`);
+        return;
+      }
+      const ts = await q("team_seasons", `season_id=eq.${sId}&select=id&limit=1`);
+      if (ts?.length > 0) {
+        setError(`Cannot delete "${sName}" — it has teams assigned.`);
+        return;
+      }
+    } catch {}
+    if (!window.confirm(`Delete season "${sName}" and all its divisions? This cannot be undone.`)) return;
+    try {
+      // Delete registrations first, then divisions, then season
+      const divs = await q("divisions", `season_id=eq.${sId}&select=id`);
+      for (const d of (divs || [])) {
+        await qAuth("registrations", `division_id=eq.${d.id}`, "DELETE");
+      }
+      await qAuth("divisions", `season_id=eq.${sId}`, "DELETE");
+      await qAuth("seasons", `id=eq.${sId}`, "DELETE");
+      setSuccess(`Season "${sName}" deleted.`);
+      if (selectedManageSeason === sId) { setSelectedManageSeason(null); setAllDivisions([]); }
+      await loadAllSeasons();
+    } catch (e) { setError(e.message); }
+  };
+
+  const updateDivField = async (divId, field, value) => {
+    try {
+      await qAuth("divisions", `id=eq.${divId}`, "PATCH", { [field]: value });
+      setAllDivisions(prev => prev.map(d => d.id === divId ? { ...d, [field]: value } : d));
+    } catch (e) { setError(e.message); }
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b }}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}dd`, backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
@@ -3792,7 +6231,7 @@ function AdminApp({ user, myRole }) {
         <div style={{ display: "flex", gap: 3, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
           {(adminGroup === "season"
             ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
-            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"]]
+            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"], ["seasons", "📅 Seasons"]]
           ).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{
               flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
@@ -3864,6 +6303,11 @@ function AdminApp({ user, myRole }) {
                   <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textAlign: "center" }}>vs</span>
                   <span style={{ fontFamily: F.b, fontSize: 13, fontWeight: m.winner_id === m.team_b_id ? 700 : 400, color: m.winner_id === m.team_b_id ? C.text : C.muted, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.winner_id === m.team_b_id && "🏆 "}{m.team_b_name}</span>
                 </div>
+                {m.elo_change && m.status === "completed" && (
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4, textAlign: "center" }}>
+                    ELO: {m.winner_id === m.team_a_id ? m.team_a_name : m.team_b_name} <span style={{ color: C.green }}>+{m.elo_change}</span> · {m.winner_id === m.team_a_id ? m.team_b_name : m.team_a_name} <span style={{ color: C.red }}>-{m.elo_change}</span>
+                  </div>
+                )}
               </div>
             ))}
           </>
@@ -3904,7 +6348,7 @@ function AdminApp({ user, myRole }) {
 
         {tab === "roster" && seasonId && <AdminRosterTab seasonId={seasonId} />}
 
-        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} />}
+        {tab === "postseason" && seasonId && <AdminPostseasonTab seasonId={seasonId} divisions={divisions} seasonData={seasonData} />}
 
         {tab === "captains" && (
           <>
@@ -3944,9 +6388,445 @@ function AdminApp({ user, myRole }) {
           </>
         )}
 
-        <div style={{ textAlign: "center", marginTop: 32 }}><a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to standings</a></div>
+        {tab === "seasons" && (() => {
+          // Load seasons on first view
+          if (!allSeasons.length && !seasonsLoading) loadAllSeasons();
+
+          const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: F.b, fontSize: 13, outline: "none", boxSizing: "border-box" };
+          const labelStyle = { fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, display: "block" };
+
+          return (
+            <>
+              {/* Create Season */}
+              {!showCreateSeason ? (
+                <button onClick={() => setShowCreateSeason(true)}
+                  style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: `2px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.b, fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+                  + New Season
+                </button>
+              ) : (
+                <Card style={{ padding: "16px", marginBottom: 16, border: `1px solid ${C.amber}30` }}>
+                  <div style={{ fontFamily: F.d, fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>Create Season</div>
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={labelStyle}>Season Name</label>
+                    <input value={newSeasonName} onChange={e => setNewSeasonName(e.target.value)} placeholder="e.g. Spring 2026" style={inputStyle} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Start Date</label>
+                      <input type="date" value={newSeasonStart} onChange={e => setNewSeasonStart(e.target.value)} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>End Date (optional)</label>
+                      <input type="date" value={newSeasonEnd} onChange={e => setNewSeasonEnd(e.target.value)} style={inputStyle} />
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 10, padding: "8px 10px", background: `${C.amber}08`, borderRadius: 6, border: `1px solid ${C.amber}15` }}>
+                    💡 6 default divisions will be created (Mon & Tue — Pilot, Cherry, Hammer). You can add, remove, or edit them after.
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setShowCreateSeason(false)}
+                      style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                    <button onClick={createSeason} disabled={seasonsSaving}
+                      style={{ flex: 2, padding: "10px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      {seasonsSaving ? "Creating..." : "Create Season"}
+                    </button>
+                  </div>
+                </Card>
+              )}
+
+              {/* Seasons list */}
+              {seasonsLoading ? <Loader /> : allSeasons.length === 0 ? <Empty msg="No seasons yet" /> : allSeasons.map(s => {
+                const isSelected = selectedManageSeason === s.id;
+                const isActive = s.is_active;
+                const isFuture = s.start_date && new Date(s.start_date + "T00:00") > new Date();
+                const isPast = !isActive && !isFuture;
+                return (
+                  <div key={s.id} style={{ marginBottom: 10 }}>
+                    <Card style={{
+                      padding: "14px 16px", cursor: "pointer",
+                      border: `1px solid ${isSelected ? C.amber + "40" : isActive ? C.green + "30" : C.border}`,
+                      background: isSelected ? `${C.amber}08` : C.surface,
+                    }}
+                      onClick={async () => {
+                        if (isSelected) { setSelectedManageSeason(null); setAllDivisions([]); setSeasonRegs([]); }
+                        else {
+                          setSelectedManageSeason(s.id);
+                          await loadSeasonDivisions(s.id);
+                          try {
+                            const regs = await q("registrations", `season_id=eq.${s.id}&select=id,division_id,team_name,captain_email,is_free_agent,player_name,partner_request,payment_status,roster,amount_cents,provisioned,is_new_team,team_id,created_at&order=created_at.desc`);
+                            setSeasonRegs(regs || []);
+                          } catch(e) { setSeasonRegs([]); }
+                        }
+                      }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontFamily: F.d, fontSize: 16, fontWeight: 700, color: C.text }}>
+                            {s.name}
+                            {isActive && <Badge color={C.green} style={{ marginLeft: 8, fontSize: 9 }}>Active</Badge>}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginTop: 2 }}>
+                            {s.start_date ? new Date(s.start_date + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No start date"}
+                            {s.end_date ? ` — ${new Date(s.end_date + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {isPast ? (
+                            <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim, padding: "5px 10px" }}>Completed</span>
+                          ) : (
+                            <button onClick={(e) => { e.stopPropagation(); toggleSeasonActive(s.id, isActive); }}
+                              style={{
+                                padding: "5px 10px", borderRadius: 6, border: `1px solid ${isActive ? C.green + "50" : C.border}`,
+                                background: isActive ? `${C.green}15` : "transparent",
+                                color: isActive ? C.green : C.muted, fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                              }}>
+                              {isActive ? "✓ Active" : "Set Active"}
+                            </button>
+                          )}
+                          {!isActive && (!s.start_date || new Date(s.start_date + "T00:00:00") > new Date()) && (
+                            <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
+                              style={{
+                                padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.red}30`,
+                                background: "transparent", color: C.red, fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                              }}>
+                              ✕
+                            </button>
+                          )}
+                          <span style={{ color: C.dim, fontSize: 16 }}>{isSelected ? "▾" : "▸"}</span>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Expanded: divisions for this season */}
+                    {isSelected && (
+                      <div style={{ padding: "10px 0 0 12px", borderLeft: `2px solid ${C.amber}30`, marginLeft: 16 }}>
+
+                        {/* Registration Summary */}
+                        {(() => {
+                          const paidRegs = seasonRegs.filter(r => r.payment_status === "paid");
+                          const teamRegs = paidRegs.filter(r => !r.is_free_agent);
+                          const faRegs = paidRegs.filter(r => r.is_free_agent);
+                          const totalRevenue = paidRegs.reduce((s, r) => s + (r.amount_cents || 0), 0);
+                          const totalMaxTeams = allDivisions.reduce((s, d) => s + (d.max_teams || 16), 0);
+                          const teamCount = teamRegs.length;
+                          const pct = totalMaxTeams > 0 ? Math.min(100, Math.round((teamCount / totalMaxTeams) * 100)) : 0;
+                          if (!paidRegs.length && totalMaxTeams === 0) return null;
+                          return (
+                            <Card style={{ padding: "12px 14px", marginBottom: 10, border: `1px solid ${C.green}20`, background: `${C.green}05` }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1 }}>Registration Summary</div>
+                                <div style={{ textAlign: "right" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.text }}>${(totalRevenue / 100).toLocaleString()}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Revenue</div>
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.amber }}>{teamCount}<span style={{ fontSize: 12, color: C.dim }}>/{totalMaxTeams}</span></div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Teams ({pct}%)</div>
+                                </div>
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.blue }}>{faRegs.length}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Free Agents</div>
+                                </div>
+                                <div style={{ textAlign: "center" }}>
+                                  <div style={{ fontFamily: F.d, fontSize: 20, fontWeight: 800, color: C.green }}>{teamRegs.reduce((s, r) => {
+                                    const roster = Array.isArray(r.roster) ? r.roster : [];
+                                    return s + roster.filter(m => m.name?.trim()).length;
+                                  }, 0) + faRegs.length}</div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.muted }}>Players</div>
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })()}
+
+
+                        {/* Division cards for editing */}
+                        {allDivisions.length === 0 ? (
+                          <div style={{ fontFamily: F.m, fontSize: 12, color: C.dim, marginBottom: 10 }}>No divisions yet</div>
+                        ) : allDivisions.map(d => {
+                          const editInputStyle = { padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.m, fontSize: 11, outline: "none", width: "100%" };
+                          const readOnly = isPast || isActive;
+                          const divRegs = seasonRegs.filter(r => r.division_id === d.id && r.payment_status === "paid");
+                          const divTeams = divRegs.filter(r => !r.is_free_agent);
+                          const divFA = divRegs.filter(r => r.is_free_agent);
+                          return (
+                          <Card key={d.id} style={{ padding: "12px 14px", marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: readOnly ? (divRegs.length > 0 ? 8 : 0) : 8 }}>
+                              <div>
+                                <div style={{ fontFamily: F.b, fontSize: 13, fontWeight: 600, color: C.text }}>
+                                  {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                                </div>
+                                {divRegs.length > 0 && (
+                                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted, marginTop: 1 }}>
+                                    {divTeams.length}/{d.max_teams || 16} teams{divFA.length > 0 ? ` · ${divFA.length} FA` : ""}
+                                  </div>
+                                )}
+                              </div>
+                              {readOnly ? (
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                                  {d.time_slot || ""}{d.time_slot ? " · " : ""}${((d.price_cents || 65000) / 100).toFixed(0)} · {d.max_teams || 16} teams
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <button onClick={(e) => { e.stopPropagation(); toggleRegistration(d.id, d.registration_open); }}
+                                    style={{
+                                      padding: "5px 10px", borderRadius: 6, border: "none",
+                                      background: d.registration_open ? C.green : `${C.dim}30`,
+                                      color: d.registration_open ? "#fff" : C.muted,
+                                      fontFamily: F.m, fontSize: 10, fontWeight: 600, cursor: "pointer",
+                                    }}>
+                                    {d.registration_open ? "✓ Reg Open" : "Reg Closed"}
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); deleteDiv(d.id, d.name); }}
+                                    style={{ padding: "4px 6px", borderRadius: 5, border: "none", background: `${C.red}15`, color: C.red, fontFamily: F.m, fontSize: 9, cursor: "pointer" }}>
+                                    ✕
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            {!readOnly && (
+                            <>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                              <div>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Time</div>
+                                <input value={d.time_slot || ""} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, time_slot: e.target.value } : x))}
+                                  onBlur={e => updateDivField(d.id, "time_slot", e.target.value)}
+                                  style={editInputStyle} />
+                              </div>
+                              <div>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Price ($)</div>
+                                <input type="number" value={((d.price_cents || 65000) / 100)} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, price_cents: parseInt(e.target.value) * 100 || 65000 } : x))}
+                                  onBlur={e => updateDivField(d.id, "price_cents", parseInt(e.target.value) * 100 || 65000)}
+                                  style={editInputStyle} />
+                              </div>
+                              <div>
+                                <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Max Teams</div>
+                                <input type="number" value={d.max_teams || 16} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, max_teams: parseInt(e.target.value) || 16 } : x))}
+                                  onBlur={e => updateDivField(d.id, "max_teams", parseInt(e.target.value) || 16)}
+                                  style={editInputStyle} />
+                              </div>
+                            </div>
+                            {d.level === "pilot" && (
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8, marginTop: 8 }}>
+                                <div>
+                                  <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>FA Price ($)</div>
+                                  <input type="number" value={((d.free_agent_price_cents || 10000) / 100)} onChange={e => setAllDivisions(prev => prev.map(x => x.id === d.id ? { ...x, free_agent_price_cents: parseInt(e.target.value) * 100 || 10000 } : x))}
+                                    onBlur={e => updateDivField(d.id, "free_agent_price_cents", parseInt(e.target.value) * 100 || 10000)}
+                                    style={editInputStyle} />
+                                </div>
+                                <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+                                  <span style={{ fontFamily: F.m, fontSize: 10, color: C.blue }}>* Free agent registration enabled for Pilot</span>
+                                </div>
+                              </div>
+                            )}
+                            </>
+                            )}
+
+                            {/* Registration details for this division */}
+                            {divRegs.length > 0 && (
+                              <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}30` }}>
+                                {/* Registered teams */}
+                                {divTeams.length > 0 && (
+                                  <div style={{ marginBottom: divFA.length > 0 ? 8 : 0 }}>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                                      Registered ({divTeams.length}/{d.max_teams || 16})
+                                    </div>
+                                    {(() => {
+                                      const MAX_SHOW = 6;
+                                      const expanded = expandedRegDivs[d.id];
+                                      const showTeams = expanded ? divTeams : divTeams.slice(0, MAX_SHOW);
+                                      const hiddenCount = divTeams.length - MAX_SHOW;
+                                      return (
+                                        <>
+                                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                            {showTeams.map(r => (
+                                              <span key={r.id} style={{ fontFamily: F.m, fontSize: 10, color: C.muted, background: `${C.amber}10`, border: `1px solid ${C.amber}15`, borderRadius: 5, padding: "2px 7px" }}>
+                                                {r.team_name}{r.is_new_team ? " ✦" : ""}
+                                              </span>
+                                            ))}
+                                          </div>
+                                          {hiddenCount > 0 && !expanded && (
+                                            <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: true }))}
+                                              style={{ background: "none", border: "none", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
+                                              + {hiddenCount} more
+                                            </button>
+                                          )}
+                                          {expanded && hiddenCount > 0 && (
+                                            <button onClick={() => setExpandedRegDivs(prev => ({ ...prev, [d.id]: false }))}
+                                              style={{ background: "none", border: "none", color: C.dim, fontFamily: F.m, fontSize: 11, cursor: "pointer", padding: "4px 0", marginTop: 2 }}>
+                                              Show less
+                                            </button>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+
+                                {/* Free agents */}
+                                {divFA.length > 0 && (
+                                  <div>
+                                    <div style={{ fontFamily: F.m, fontSize: 9, color: C.blue, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, marginTop: divTeams.length > 0 ? 4 : 0 }}>
+                                      Free Agents ({divFA.length})
+                                    </div>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                      {divFA.map(r => (
+                                        <span key={r.id} style={{ fontFamily: F.m, fontSize: 10, color: C.muted, background: `${C.blue}10`, border: `1px solid ${C.blue}15`, borderRadius: 5, padding: "2px 7px" }}>
+                                          {r.player_name || "—"}{r.partner_request ? ` 🤝` : ""}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    {divFA.length >= 4 && !d.registration_open && (
+                                      <button onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (!confirm(`Assign ${divFA.length} free agents into teams of 4+?`)) return;
+                                        setAssigningFA(true);
+                                        try {
+                                          const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+                                          const members = divFA.map(r => ({ name: r.player_name, email: r.captain_email, partner: r.partner_request, reg_id: r.id }));
+                                          // Group partner requests together, shuffle the rest
+                                          const partnerGroups = {};
+                                          const noPartner = [];
+                                          for (const m of members) {
+                                            if (m.partner) {
+                                              const key = m.partner.toLowerCase().trim();
+                                              if (!partnerGroups[key]) partnerGroups[key] = [];
+                                              partnerGroups[key].push(m);
+                                            } else { noPartner.push(m); }
+                                          }
+                                          const shuffled = shuffle(noPartner);
+                                          const all = [...Object.values(partnerGroups).flat(), ...shuffled];
+                                          const teams = [];
+                                          for (let i = 0; i < all.length; i += 4) {
+                                            teams.push(all.slice(i, Math.min(i + 4, all.length)));
+                                          }
+                                          if (teams.length > 1 && teams[teams.length - 1].length < 4) {
+                                            const last = teams.pop();
+                                            teams[teams.length - 1].push(...last);
+                                          }
+                                          const divArr2 = await q("divisions", `id=eq.${d.id}&select=id,season_id&limit=1`);
+                                          const seasonId2 = divArr2?.[0]?.season_id;
+                                          const venueArr2 = await q("seasons", "select=venue_id&limit=1");
+                                          const venueId2 = venueArr2?.[0]?.venue_id;
+                                          const dayLabel = cap(d.day_of_week).substring(0, 3) === "Tue" ? "Tues" : cap(d.day_of_week).substring(0, 3);
+                                          for (let i = 0; i < teams.length; i++) {
+                                            const teamName2 = `${dayLabel} ${cap(d.level)} Free Agents ${i + 1}`;
+                                            const newTeam = await qAuth("teams", null, "POST", { name: teamName2, venue_id: venueId2, championship_count: 0 });
+                                            const teamId2 = newTeam?.[0]?.id;
+                                            if (!teamId2) continue;
+                                            await qAuth("team_seasons", null, "POST", { team_id: teamId2, season_id: seasonId2, division_id: d.id });
+                                            for (const member of teams[i]) {
+                                              await qAuth("roster_members", null, "POST", { team_id: teamId2, season_id: seasonId2, name: member.name, email: member.email });
+                                              await qAuth("registrations", `id=eq.${member.reg_id}`, "PATCH", { provisioned: true, team_id: teamId2 });
+                                            }
+                                          }
+                                          setSuccess(`Created ${teams.length} free agent teams`);
+                                          const regs = await q("registrations", `season_id=eq.${s.id}&select=id,division_id,team_name,captain_email,is_free_agent,player_name,partner_request,payment_status,roster,amount_cents,provisioned,is_new_team,team_id,created_at&order=created_at.desc`);
+                                          setSeasonRegs(regs || []);
+                                        } catch (err) { setError(`FA assignment failed: ${err.message}`); }
+                                        setAssigningFA(false);
+                                      }}
+                                        style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 8, border: "none", background: C.blue, color: "#fff", fontFamily: F.b, fontSize: 11, fontWeight: 600, cursor: assigningFA ? "wait" : "pointer", opacity: assigningFA ? 0.6 : 1 }}
+                                        disabled={assigningFA}>
+                                        {assigningFA ? "Assigning..." : `🎲 Randomly Assign ${divFA.length} Free Agents`}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </Card>
+                          );
+                        })}
+
+                        {/* Add division - only for future seasons */}
+                        {!isPast && !isActive && (!showAddDiv ? (
+                          <button onClick={() => setShowAddDiv(true)}
+                            style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: `1px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 11, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}>
+                            + Add Division
+                          </button>
+                        ) : (
+                          <Card style={{ padding: "14px", marginBottom: 8, border: `1px solid ${C.amber}30` }}>
+                            <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 10 }}>New Division</div>
+
+                            {/* Quick presets */}
+                            <div style={{ marginBottom: 10 }}>
+                              <label style={labelStyle}>Quick Add</label>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {[["monday", "hammer"], ["monday", "cherry"], ["tuesday", "hammer"], ["tuesday", "cherry"]].map(([day, lvl]) => (
+                                  <button key={`${day}-${lvl}`} onClick={() => { setNewDivDay(day); setNewDivLevel(lvl); }}
+                                    style={{
+                                      padding: "5px 10px", borderRadius: 6,
+                                      border: `1px solid ${newDivDay === day && newDivLevel === lvl ? C.amber : C.border}`,
+                                      background: newDivDay === day && newDivLevel === lvl ? `${C.amber}15` : "transparent",
+                                      color: newDivDay === day && newDivLevel === lvl ? C.amber : C.muted,
+                                      fontFamily: F.m, fontSize: 10, cursor: "pointer",
+                                    }}>
+                                    {levelEmoji(lvl)} {cap(day).slice(0, 3)} {cap(lvl)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                              <div>
+                                <label style={labelStyle}>Day</label>
+                                <select value={newDivDay} onChange={e => setNewDivDay(e.target.value)} style={inputStyle}>
+                                  {["monday", "tuesday", "wednesday", "thursday", "friday"].map(d => (
+                                    <option key={d} value={d}>{cap(d)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label style={labelStyle}>Level</label>
+                                <select value={newDivLevel} onChange={e => setNewDivLevel(e.target.value)} style={inputStyle}>
+                                  {["hammer", "cherry", "pilot", "party"].map(l => (
+                                    <option key={l} value={l}>{cap(l)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+                              <div>
+                                <label style={labelStyle}>Time Slot</label>
+                                <input value={newDivTime} onChange={e => setNewDivTime(e.target.value)} placeholder="7:00 PM" style={inputStyle} />
+                              </div>
+                              <div>
+                                <label style={labelStyle}>Price ($)</label>
+                                <input type="number" value={newDivPrice} onChange={e => setNewDivPrice(e.target.value)} style={inputStyle} />
+                              </div>
+                              <div>
+                                <label style={labelStyle}>Max Teams</label>
+                                <input type="number" value={newDivMax} onChange={e => setNewDivMax(e.target.value)} style={inputStyle} />
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button onClick={() => setShowAddDiv(false)}
+                                style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, fontFamily: F.b, fontSize: 11, cursor: "pointer" }}>
+                                Cancel
+                              </button>
+                              <button onClick={createDivision} disabled={seasonsSaving}
+                                style={{ flex: 2, padding: "9px 0", borderRadius: 8, border: "none", background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                {seasonsSaving ? "Creating..." : `Create ${cap(newDivDay)} ${cap(newDivLevel)}`}
+                              </button>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          );
+        })()}
+
+        <div style={{ height: 32 }} />
       </main>
-      {editing && <AdminEditModal match={editing} onClose={() => setEditing(null)} onSave={handleEditSave} />}
+      {editing && <AdminEditModal match={editing} onClose={() => setEditing(null)} onSave={handleEditSave} seasonId={seasonId} divisionId={divisionId} />}
     </div>
   );
 }
@@ -4560,12 +7440,21 @@ function RegisterPage() {
   const [seasons, setSeasons] = useState([]);
   const [teams, setTeams] = useState([]);
   const [regCounts, setRegCounts] = useState({});
+  const [regTeams, setRegTeams] = useState({}); // divId -> [{team_name}]
+  const [freeAgentCounts, setFreeAgentCounts] = useState({}); // divId -> count
   const [selectedDiv, setSelectedDiv] = useState(null);
+  const [regMode, setRegMode] = useState("team"); // "team" | "freeagent"
   const [teamMode, setTeamMode] = useState("existing"); // "existing" | "new"
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [newTeamName, setNewTeamName] = useState("");
   const [email, setEmail] = useState("");
+  const [playerName, setPlayerName] = useState("");
+  const [partnerRequest, setPartnerRequest] = useState("");
   const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [wantRename, setWantRename] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [rosterMembers, setRosterMembers] = useState([{ name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }, { name: "", email: "" }]);
+  const [showWaiver, setShowWaiver] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -4577,6 +7466,9 @@ function RegisterPage() {
   const sessionId = urlParams.get("session_id");
   const isCanceled = urlParams.get("canceled") === "true";
   const [verified, setVerified] = useState(false);
+  const [regType, setRegType] = useState(() => {
+    try { return sessionStorage.getItem("tt_reg_mode"); } catch { return null; }
+  }); // "team" | "freeagent"
 
   // Verify payment on success
   useEffect(() => {
@@ -4587,7 +7479,12 @@ function RegisterPage() {
         body: JSON.stringify({ session_id: sessionId }),
       })
         .then(r => r.json())
-        .then(d => { if (d.success) setVerified(true); })
+        .then(d => {
+          if (d.success) {
+            setVerified(true);
+            setRegType(d.is_free_agent ? "freeagent" : "team");
+          }
+        })
         .catch(() => {});
     }
   }, [isSuccess, sessionId, verified]);
@@ -4602,20 +7499,38 @@ function RegisterPage() {
     async function load() {
       try {
         const [divs, seas, tms, regs] = await Promise.all([
-          q("divisions", "registration_open=eq.true&select=id,name,level,day,season_id,price_cents,max_teams,time_slot"),
-          q("seasons", "order=start_date.desc&limit=5"),
+          q("divisions", "order=day_of_week,time_slot&select=id,name,level,day_of_week,season_id,price_cents,max_teams,time_slot,free_agent_price_cents,registration_open"),
+          q("seasons", "order=start_date.desc&limit=5&select=id,name,start_date,end_date,is_active"),
           q("teams", "primary_team_id=is.null&order=name.asc&limit=500&select=id,name"),
-          q("registrations", "payment_status=eq.paid&select=division_id"),
+          q("registrations", "payment_status=eq.paid&select=division_id,team_name,is_free_agent,player_name"),
         ]);
-        setDivisions(divs);
+        // Filter to active season (or most recent if none active)
+        const activeSeason = (seas || []).find(s => s.is_active) || (seas || [])[0];
+        const activeSeasonId = activeSeason?.id;
+        setDivisions((divs || []).filter(d => d.season_id === activeSeasonId).sort((a, b) => {
+          const dayOrd = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5 };
+          const lvlOrd = { pilot: 1, cherry: 2, hammer: 3, party: 4 };
+          const dd = (dayOrd[a.day_of_week] || 9) - (dayOrd[b.day_of_week] || 9);
+          return dd !== 0 ? dd : (lvlOrd[a.level] || 9) - (lvlOrd[b.level] || 9);
+        }));
         setSeasons(seas);
         setTeams(tms);
-        // Count registrations per division
+        // Count registrations per division + collect team names + free agents
         const counts = {};
+        const teams_by_div = {};
+        const fa_counts = {};
         (regs || []).forEach(r => {
-          counts[r.division_id] = (counts[r.division_id] || 0) + 1;
+          if (r.is_free_agent) {
+            fa_counts[r.division_id] = (fa_counts[r.division_id] || 0) + 1;
+          } else {
+            counts[r.division_id] = (counts[r.division_id] || 0) + 1;
+            if (!teams_by_div[r.division_id]) teams_by_div[r.division_id] = [];
+            teams_by_div[r.division_id].push(r.team_name);
+          }
         });
         setRegCounts(counts);
+        setRegTeams(teams_by_div);
+        setFreeAgentCounts(fa_counts);
       } catch (e) { console.error(e); }
       setLoading(false);
     }
@@ -4626,13 +7541,28 @@ function RegisterPage() {
 
   const handleSubmit = async () => {
     setError("");
-    const teamName = teamMode === "new" ? newTeamName.trim() : teams.find(t => t.id === selectedTeamId)?.name;
-    if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
-    if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
-    if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
-
     const div = divisions.find(d => d.id === selectedDiv);
     if (!div) return;
+
+    const isFreeAgent = regMode === "freeagent";
+
+    if (isFreeAgent) {
+      if (!playerName.trim()) { setError("Enter your name"); return; }
+      if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
+      if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+    } else {
+      const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
+      const teamName = teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName);
+      if (!teamName) { setError(teamMode === "new" ? "Enter a team name" : "Select a team"); return; }
+      if (!email.trim() || !email.includes("@")) { setError("Enter a valid email"); return; }
+      if (!waiverAccepted) { setError("You must accept the terms & waiver"); return; }
+      if (rosterMembers.filter(m => m.name.trim()).length === 0) { setError("Add at least one team member name"); return; }
+    }
+
+    const validRoster = rosterMembers.filter(m => m.name.trim()).map(m => ({ name: m.name.trim(), email: m.email.trim() || null }));
+    const existingTeamName = teams.find(t => t.id === selectedTeamId)?.name;
+    const teamName = isFreeAgent ? null : (teamMode === "new" ? newTeamName.trim() : (wantRename && renameName.trim() ? renameName.trim() : existingTeamName));
+    const priceCents = isFreeAgent ? (div.free_agent_price_cents || 10000) : (div.price_cents || 65000);
 
     setSubmitting(true);
     try {
@@ -4641,17 +7571,30 @@ function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           division_id: div.id,
-          division_name: `${cap(div.day)} ${cap(div.level)}${div.time_slot ? ` · ${div.time_slot}` : ""}`,
+          division_name: `${cap(div.day_of_week)} ${cap(div.level)}${div.time_slot ? ` · ${div.time_slot}` : ""}`,
           season_name: getSeasonName(div.season_id),
           team_name: teamName,
-          team_id: teamMode === "existing" ? selectedTeamId : null,
+          team_id: (!isFreeAgent && teamMode === "existing") ? selectedTeamId : null,
           captain_email: email.trim(),
-          is_new_team: teamMode === "new",
-          amount_cents: div.price_cents || 65000,
+          is_new_team: !isFreeAgent && teamMode === "new",
+          is_free_agent: isFreeAgent,
+          player_name: isFreeAgent ? playerName.trim() : null,
+          partner_request: isFreeAgent ? partnerRequest.trim() || null : null,
+          rename_from: (!isFreeAgent && teamMode === "existing" && wantRename && renameName.trim()) ? existingTeamName : null,
+          roster: isFreeAgent ? [] : validRoster,
+          amount_cents: priceCents,
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { setError("Server error — please try again or contact league@tangtime.app"); setSubmitting(false); return; }
+      if (!res.ok) {
+        setError(data.error || "Checkout failed");
+        setSubmitting(false);
+        return;
+      }
       if (data.url) {
+        try { sessionStorage.setItem("tt_reg_mode", isFreeAgent ? "freeagent" : "team"); } catch {}
         window.location.href = data.url;
       } else {
         setError(data.error || "Something went wrong");
@@ -4682,6 +7625,7 @@ function RegisterPage() {
 
   // ─── Success Screen ───
   if (isSuccess) {
+    const isFASuccess = regType === "freeagent";
     return (
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F.b, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ textAlign: "center", maxWidth: 420 }}>
@@ -4690,7 +7634,9 @@ function RegisterPage() {
             You're <span style={{ color: C.green }}>Registered!</span>
           </h1>
           <p style={{ color: C.muted, fontSize: 15, lineHeight: 1.6, marginBottom: 24 }}>
-            Payment confirmed. Your team is locked in for the season. We'll send confirmation details to your email.
+            {isFASuccess
+              ? "Payment confirmed. We'll send confirmation details to your email. You will be assigned a team once registration ends."
+              : "Payment confirmed. Your team is locked in for the season. We'll send confirmation details to your email."}
           </p>
           <Card style={{ textAlign: "left", marginBottom: 24 }}>
             <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim, marginBottom: 6 }}>WHAT'S NEXT</div>
@@ -4699,14 +7645,29 @@ function RegisterPage() {
                 <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>1.</span>
                 <span style={{ color: C.muted, fontSize: 14 }}>Check your email for the confirmation receipt</span>
               </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
-                <span style={{ color: C.muted, fontSize: 14 }}>Add your roster in the Captain Portal before Week 1</span>
-              </div>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
-                <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
-              </div>
+              {isFASuccess ? (
+                <>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Information about your teammates will be emailed after registration closes</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>2.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Add your roster in the Captain Portal before Week 1</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontWeight: 700, flexShrink: 0 }}>3.</span>
+                    <span style={{ color: C.muted, fontSize: 14 }}>Schedules will be posted once registration closes</span>
+                  </div>
+                </>
+              )}
             </div>
           </Card>
           <a href="/" style={{ ...btnStyle, display: "block", background: C.amber, color: C.bg, textDecoration: "none", textAlign: "center" }}>
@@ -4781,56 +7742,181 @@ function RegisterPage() {
           <>
             {/* Division Cards */}
             <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
-              Open Divisions
+              Divisions
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-              {divisions.map(d => {
+              {(() => {
+                let lastDay = null;
+                return divisions.map(d => {
                 const sName = getSeasonName(d.season_id);
-                const regCount = regCounts[d.division_id] || 0;
+                const regCount = regCounts[d.id] || 0;
+                const faCount = freeAgentCounts[d.id] || 0;
                 const spotsLeft = (d.max_teams || 16) - regCount;
                 const selected = selectedDiv === d.id;
+                const isPilot = d.level === "pilot";
+                const teamPrice = ((d.price_cents || 65000) / 100).toFixed(0);
+                const faPrice = ((d.free_agent_price_cents || 10000) / 100).toFixed(0);
+                const isClosed = !d.registration_open || spotsLeft <= 0;
+                const showDayHeader = d.day_of_week !== lastDay;
+                lastDay = d.day_of_week;
                 return (
-                  <Card key={d.id} onClick={() => { setSelectedDiv(selected ? null : d.id); setError(""); }}
-                    style={{
-                      border: `1px solid ${selected ? C.amber : C.border}`,
-                      background: selected ? `${C.amber}08` : C.surface,
-                      cursor: "pointer",
-                    }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
-                          {levelEmoji(d.level)} {cap(d.day)} {cap(d.level)}
-                        </div>
-                        <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
-                          {sName}{d.time_slot ? ` · ${d.time_slot}` : ""}
-                        </div>
+                  <div key={d.id}>
+                    {showDayHeader && (
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginTop: 6, marginBottom: 2 }}>
+                        {cap(d.day_of_week)}
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
-                          ${((d.price_cents || 65000) / 100).toFixed(0)}
+                    )}
+                  <Card key={d.id}
+                    style={{
+                      border: `1px solid ${isClosed ? C.border : selected ? C.amber : C.border}`,
+                      background: isClosed ? `${C.bg}` : selected ? `${C.amber}08` : C.surface,
+                      opacity: isClosed ? 0.5 : 1,
+                    }}>
+                    <div onClick={() => { if (isClosed) return; setSelectedDiv(selected ? null : d.id); setRegMode("team"); setError(""); }}
+                      style={{ cursor: isClosed ? "default" : "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontFamily: F.d, fontSize: 17, fontWeight: 700, marginBottom: 2 }}>
+                            {levelEmoji(d.level)} {cap(d.day_of_week)} {cap(d.level)}
+                          </div>
+                          <div style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>
+                            {sName}{d.time_slot ? ` · ${d.time_slot}` : ""}
+                          </div>
                         </div>
-                        <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
-                          {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
+                        <div style={{ textAlign: "right" }}>
+                          {isClosed ? (
+                            <div style={{ fontFamily: F.b, fontSize: 12, fontWeight: 700, color: C.dim, background: `${C.dim}20`, borderRadius: 6, padding: "4px 12px" }}>
+                              Filled
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 800, color: C.amber }}>
+                                ${teamPrice}
+                              </div>
+                              <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, marginBottom: 2 }}>per team</div>
+                              <div style={{ fontFamily: F.m, fontSize: 10, color: spotsLeft <= 3 ? C.red : C.muted }}>
+                                {`${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`}
+                              </div>
+                              {isPilot && (
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.blue, marginTop: 3 }}>
+                                  * Free agents · ${faPrice}
+                                </div>
+                              )}
+                              {isPilot && faCount > 0 && (
+                                <div style={{ fontFamily: F.m, fontSize: 10, color: C.muted }}>
+                                  {faCount} registered
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
-                    {selected && <div style={{ marginTop: 4, fontSize: 10, color: C.amber }}>▼ Complete form below</div>}
+
+                    {/* Register buttons */}
+                    {selected && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                        <button onClick={() => { setRegMode("team"); setError(""); }}
+                          style={{
+                            flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${regMode === "team" ? C.amber : C.border}`,
+                            background: regMode === "team" ? `${C.amber}15` : "transparent",
+                            color: regMode === "team" ? C.amber : C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          }}>
+                          🏆 Team — ${teamPrice}
+                        </button>
+                        {isPilot && (
+                          <button onClick={() => { setRegMode("freeagent"); setError(""); }}
+                            style={{
+                              flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${regMode === "freeagent" ? C.blue : C.border}`,
+                              background: regMode === "freeagent" ? `${C.blue}15` : "transparent",
+                              color: regMode === "freeagent" ? C.blue : C.muted, fontFamily: F.b, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                            }}>
+                            * Free Agent — ${faPrice}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Registered teams */}
+                    {(regTeams[d.id] || []).length > 0 && (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                        <div style={{ fontFamily: F.m, fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                          Registered ({regCount}/{d.max_teams || 16})
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {(regTeams[d.id] || []).map((name, i) => (
+                            <span key={i} style={{ fontFamily: F.m, fontSize: 10, color: C.muted, background: `${C.amber}10`, border: `1px solid ${C.amber}15`, borderRadius: 5, padding: "2px 7px" }}>
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </Card>
+                  </div>
                 );
-              })}
+              });
+              })()}
             </div>
 
             {/* Registration Form */}
             {selectedDiv && (
               <div style={{ animation: "fadeIn 0.3s ease" }}>
-                <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
-                  Team Information
-                </div>
+
+                {/* FREE AGENT FORM */}
+                {regMode === "freeagent" ? (
+                  <>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+                      Free Agent Registration
+                    </div>
+                    <div style={{ padding: "10px 14px", borderRadius: 10, background: `${C.blue}08`, border: `1px solid ${C.blue}20`, marginBottom: 14, fontFamily: F.m, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+                      Sign up as an individual player. Royal Palms will group free agents into teams of 4+ before the season starts.
+                    </div>
+
+                    {/* Player Name */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                        Your Name
+                      </div>
+                      <input type="text" placeholder="First Last"
+                        value={playerName} onChange={e => setPlayerName(e.target.value)}
+                        style={inputStyle} />
+                    </div>
+
+                    {/* Email */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                        Email
+                      </div>
+                      <input type="email" placeholder="you@example.com"
+                        value={email} onChange={e => setEmail(e.target.value)}
+                        style={inputStyle} />
+                    </div>
+
+                    {/* Partner Request */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+                        Partner Request <span style={{ textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+                      </div>
+                      <input type="text" placeholder="Want to play with someone? Enter their name"
+                        value={partnerRequest} onChange={e => setPartnerRequest(e.target.value)}
+                        style={inputStyle} />
+                      <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>
+                        We'll try to place you on the same team — not guaranteed
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* TEAM FORM (existing) */}
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10 }}>
+                      Team Information
+                    </div>
 
                 {/* Team Mode Toggle */}
                 <div style={{ display: "flex", gap: 0, marginBottom: 14, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
                   {[["existing", "Returning Team"], ["new", "New Team"]].map(([m, label]) => (
-                    <button key={m} onClick={() => { setTeamMode(m); setError(""); setSelectedTeamId(""); setNewTeamName(""); setTeamSearch(""); }}
+                    <button key={m} onClick={() => { setTeamMode(m); setError(""); setSelectedTeamId(""); setNewTeamName(""); setTeamSearch(""); setWantRename(false); setRenameName(""); }}
                       style={{
                         flex: 1, padding: "10px 0", border: "none", fontFamily: F.b, fontSize: 13, fontWeight: 600,
                         cursor: "pointer", transition: "all 0.15s",
@@ -4844,6 +7930,7 @@ function RegisterPage() {
 
                 {/* Existing Team Picker */}
                 {teamMode === "existing" ? (
+                  <>
                   <div style={{ marginBottom: 14 }}>
                     <input
                       type="text" placeholder="Search teams..." value={teamSearch}
@@ -4875,6 +7962,27 @@ function RegisterPage() {
                       ))}
                     </div>
                   </div>
+                  {selectedTeamId && (
+                    <div style={{ marginTop: -6, marginBottom: 14 }}>
+                      <div onClick={() => { setWantRename(!wantRename); setRenameName(""); }}
+                        style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: "6px 0" }}>
+                        <div style={{
+                          width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                          border: `2px solid ${wantRename ? C.amber : C.dim}`,
+                          background: wantRename ? C.amber : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {wantRename && <span style={{ color: C.bg, fontSize: 10, fontWeight: 900 }}>✓</span>}
+                        </div>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.muted }}>Change team name for this season</span>
+                      </div>
+                      {wantRename && (
+                        <input type="text" placeholder="New team name" value={renameName} onChange={e => setRenameName(e.target.value)}
+                          style={{ ...inputStyle, marginTop: 6 }} />
+                      )}
+                    </div>
+                  )}
+                  </>
                 ) : (
                   <div style={{ marginBottom: 14 }}>
                     <input
@@ -4897,7 +8005,47 @@ function RegisterPage() {
                   />
                 </div>
 
-                {/* Waiver */}
+                {/* Roster Members */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5 }}>
+                      Team Members <span style={{ textTransform: "none", letterSpacing: 0 }}>(names required, emails optional)</span>
+                    </div>
+                    <span style={{ fontFamily: F.m, fontSize: 10, color: C.dim }}>
+                      {rosterMembers.filter(m => m.name.trim()).length} added
+                    </span>
+                  </div>
+                  <div style={{ background: C.surfAlt, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+                    {rosterMembers.map((m, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, padding: "8px 10px", borderBottom: i < rosterMembers.length - 1 ? `1px solid ${C.border}` : "none", alignItems: "center" }}>
+                        <span style={{ fontFamily: F.m, fontSize: 11, color: C.dim, width: 18, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
+                        <input type="text" placeholder="Name *" value={m.name}
+                          onChange={e => setRosterMembers(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", minWidth: 0 }} />
+                        <input type="email" placeholder="Email (optional)" value={m.email}
+                          onChange={e => setRosterMembers(prev => prev.map((r, j) => j === i ? { ...r, email: e.target.value } : r))}
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontFamily: F.b, fontSize: 12, outline: "none", minWidth: 0 }} />
+                        {rosterMembers.length > 2 && (
+                          <button onClick={() => setRosterMembers(prev => prev.filter((_, j) => j !== i))}
+                            style={{ padding: "2px 5px", borderRadius: 4, border: "none", background: `${C.red}15`, color: C.red, fontSize: 10, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {rosterMembers.length < 10 && (
+                    <button onClick={() => setRosterMembers(prev => [...prev, { name: "", email: "" }])}
+                      style={{ marginTop: 6, padding: "6px 12px", borderRadius: 6, border: `1px dashed ${C.border}`, background: "transparent", color: C.amber, fontFamily: F.m, fontSize: 11, cursor: "pointer", width: "100%" }}>
+                      + Add Member
+                    </button>
+                  )}
+                  <div style={{ fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 4 }}>
+                    Roster can also be updated later in the Captain Portal
+                  </div>
+                </div>
+                  </>
+                )}
+
+                {/* Waiver — shared between team and free agent */}
                 <div
                   onClick={() => setWaiverAccepted(!waiverAccepted)}
                   style={{
@@ -4916,7 +8064,8 @@ function RegisterPage() {
                   </div>
                   <span style={{ fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
                     I agree to the <a href="/terms" target="_blank" style={{ color: C.amber, textDecoration: "underline" }}>Terms of Service</a> and
-                    acknowledge the league waiver, including assumption of risk and release of liability for shuffleboard activities at Royal Palms Brooklyn.
+                    the <span onClick={(e) => { e.stopPropagation(); setShowWaiver(true); }} style={{ color: C.amber, textDecoration: "underline", cursor: "pointer" }}>League Waiver</span>,
+                    including assumption of risk and release of liability for shuffleboard activities at Royal Palms Brooklyn.
                   </span>
                 </div>
 
@@ -4935,7 +8084,13 @@ function RegisterPage() {
                     color: C.bg,
                     opacity: submitting ? 0.7 : 1,
                   }}>
-                  {submitting ? "Redirecting to payment..." : `Register & Pay $${((divisions.find(d => d.id === selectedDiv)?.price_cents || 65000) / 100).toFixed(0)}`}
+                  {submitting ? "Redirecting to payment..." : (() => {
+                    const div = divisions.find(d => d.id === selectedDiv);
+                    const price = regMode === "freeagent"
+                      ? ((div?.free_agent_price_cents || 10000) / 100).toFixed(0)
+                      : ((div?.price_cents || 65000) / 100).toFixed(0);
+                    return regMode === "freeagent" ? `Sign Up & Pay $${price}` : `Register & Pay $${price}`;
+                  })()}
                 </button>
 
                 <div style={{ textAlign: "center", marginTop: 10 }}>
@@ -4954,6 +8109,31 @@ function RegisterPage() {
           <a href="/" style={{ fontFamily: F.m, fontSize: 12, color: C.dim, textDecoration: "none" }}>← Back to TangTime</a>
         </div>
       </main>
+
+      {/* Waiver Modal */}
+      {showWaiver && (
+        <div onClick={() => setShowWaiver(false)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: C.surface, borderRadius: 14, padding: "20px 18px", maxWidth: 480,
+            maxHeight: "80vh", overflowY: "auto", width: "100%", border: `1px solid ${C.border}`,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 700, color: C.text }}>League Waiver</div>
+              <button onClick={() => setShowWaiver(false)} style={{ background: "none", border: "none", color: C.dim, fontSize: 18, cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ fontFamily: F.m, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
+              <p>The Royal Palms is committed to creating a positive community-driven experience through our shuffleboard league. Should The Royal Palms deem that the behavior of any team or member of a team is in conflict with the values stated above, we reserve the right to terminate that team's membership in the league without warning or prior notice. This decision will be irrefutable and at the sole discretion of The Royal Palms. If a team is terminated from the league, they will be credited with a pro-rated refund of their league dues for that season based on however much of the season they were not able to complete.</p>
+            </div>
+            <button onClick={() => setShowWaiver(false)} style={{
+              width: "100%", marginTop: 14, padding: "11px 0", borderRadius: 8, border: "none",
+              background: C.amber, color: C.bg, fontFamily: F.b, fontSize: 13, fontWeight: 700, cursor: "pointer",
+            }}>Close</button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -4976,12 +8156,20 @@ export default function TangTime() {
 }
 
 function MainApp() {
-  const [page, setPage] = useState("home");
+  const validPages = ["home", "standings", "matches", "playoffs", "teams", "fame"];
+  const [page, setPageRaw] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("tt_tab");
+      if (stored && validPages.includes(stored)) return stored;
+    } catch {}
+    return "home";
+  });
   const [pageData, setPageData] = useState({});
   const [seasons, setSeasons] = useState([]);
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [divisions, setDivisions] = useState([]);
   const [champs, setChamps] = useState([]);
+  const [hasPlayoffData, setHasPlayoffData] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const mainRef = useRef(null);
 
@@ -5011,22 +8199,32 @@ function MainApp() {
     q("divisions", `season_id=eq.${selectedSeason.id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`).then(d => {
       setDivisions((d || []).filter(div => div.level !== "party" || (div.team_seasons?.length > 0)));
     });
+    q("playoff_groups", `season_id=eq.${selectedSeason.id}&select=team_id&limit=1`).then(pg => {
+      setHasPlayoffData(pg?.length > 0);
+    });
   }, [selectedSeason]);
+
+  const setPage = useCallback((p) => {
+    setPageRaw(p);
+    try { sessionStorage.setItem("tt_tab", p); } catch {}
+  }, []);
 
   const goPage = useCallback((p, data = {}) => {
     setPage(p);
     setPageData(data);
     mainRef.current?.scrollTo(0, 0);
-  }, []);
+  }, [setPage]);
 
   const renderPage = () => {
     switch (page) {
       case "home":
-        return <HomePage seasons={seasons} activeSeason={selectedSeason} divisions={divisions} goPage={goPage} champs={champs} />;
+        return <HomePage seasons={seasons} activeSeason={selectedSeason} divisions={divisions} goPage={goPage} champs={champs} hasPlayoffTab={hasPlayoffData} />;
       case "standings":
         return <StandingsPage divisions={divisions} activeSeason={selectedSeason} goPage={goPage} />;
       case "matches":
         return <MatchesPage divisions={divisions} activeSeason={selectedSeason} goPage={goPage} />;
+      case "playoffs":
+        return <PlayoffsPage activeSeason={selectedSeason} divisions={divisions} goPage={goPage} />;
       case "teams":
         return <TeamsPage goPage={goPage} initialTeamId={pageData.teamId} activeSeason={selectedSeason} />;
       case "fame":
@@ -5073,32 +8271,37 @@ function MainApp() {
         position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
         width: "100%", maxWidth: 520, display: "flex", justifyContent: "space-around",
         padding: "8px 4px 16px", zIndex: 100,
-        background: `linear-gradient(180deg, transparent 0%, ${C.bg} 25%)`,
+        background: C.bg,
         borderTop: `1px solid ${C.border}`,
       }}>
-        {[
-          ["home", "⌂", "Home"],
-          ["standings", "☰", "Standings"],
-          ["matches", "◉", "Matches"],
-          ["teams", "◈", "Teams"],
-          ["fame", "♕", "History"],
-        ].map(([key, icon, label]) => {
+        {(() => {
+          const sp = getSeasonProgress(selectedSeason);
+          const showPlayoffs = hasPlayoffData;
+          return [
+            ["home", "⌂", "Home"],
+            ["standings", "☰", "Standings"],
+            ["matches", "◉", "Matches"],
+            ...(showPlayoffs ? [["playoffs", "🏆", "Playoffs"]] : []),
+            ["teams", "◈", "Teams"],
+            ["fame", "♕", "History"],
+          ].map(([key, icon, label]) => {
           const active = page === key;
           return (
             <button key={key} onClick={() => goPage(key)} style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
               background: "none", border: "none", cursor: "pointer",
-              color: active ? C.amber : C.dim, padding: "6px 6px", borderRadius: 10,
+              color: active ? C.amber : C.dim, padding: "6px 4px", borderRadius: 10,
               position: "relative", fontFamily: F.b, transition: "color 0.15s",
             }}>
               {active && (
                 <div style={{ position: "absolute", top: -1, left: "50%", transform: "translateX(-50%)", width: 18, height: 3, borderRadius: 2, background: C.amber }} />
               )}
-              <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
-              <span style={{ fontSize: 9, fontWeight: active ? 700 : 500, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
+              <span style={{ fontSize: showPlayoffs ? 16 : 18, lineHeight: 1, filter: active ? "none" : "grayscale(1) brightness(0.6)", transition: "filter 0.15s" }}>{icon}</span>
+              <span style={{ fontSize: showPlayoffs ? 8 : 9, fontWeight: active ? 700 : 500, textTransform: "uppercase", letterSpacing: showPlayoffs ? 0.3 : 0.5 }}>{label}</span>
             </button>
           );
-        })}
+        });
+        })()}
       </nav>
     </div>
   );
