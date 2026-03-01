@@ -1,4 +1,4 @@
-// App v28d3 — FA count color, FA shuffle+naming, auto-close reg, greyed filled divs, delete only future seasons
+// App v29 — fixed bottom nav (moved outside container to fix position:fixed)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -8235,6 +8235,7 @@ function MainApp() {
   };
 
   return (
+    <>
     <div style={{
       minHeight: "100vh", background: C.bg, fontFamily: F.b, color: C.text,
       display: "flex", flexDirection: "column", maxWidth: 520, margin: "0 auto",
@@ -8265,6 +8266,7 @@ function MainApp() {
       <main ref={mainRef} style={{ flex: 1, padding: "16px 16px 100px", overflowY: "auto" }}>
         {renderPage()}
       </main>
+    </div>
 
       {/* Bottom Nav */}
       <nav style={{
@@ -8303,6 +8305,6 @@ function MainApp() {
         });
         })()}
       </nav>
-    </div>
+    </>
   );
 }
