@@ -1,4 +1,4 @@
-// App v28d2 — FA count color, FA shuffle+naming, auto-close reg, greyed filled divs, delete only unused seasons (bulk query)
+// App v28d3 — FA count color, FA shuffle+naming, auto-close reg, greyed filled divs, delete only future seasons
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6051,16 +6051,7 @@ function AdminApp({ user, myRole }) {
     setSeasonsLoading(true);
     try {
       const s = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active");
-      // Get season IDs that have any activity (team_seasons or matches)
-      const [tsAll, mAll] = await Promise.all([
-        q("team_seasons", "select=season_id"),
-        q("matches", "select=season_id"),
-      ]);
-      const usedIds = new Set([
-        ...(tsAll || []).map(r => r.season_id),
-        ...(mAll || []).map(r => r.season_id),
-      ]);
-      setAllSeasons((s || []).map(sn => ({ ...sn, has_activity: usedIds.has(sn.id) })));
+      setAllSeasons(s || []);
     } catch (e) { setError(e.message); }
     setSeasonsLoading(false);
   };
@@ -6493,7 +6484,7 @@ function AdminApp({ user, myRole }) {
                               {isActive ? "✓ Active" : "Set Active"}
                             </button>
                           )}
-                          {!isActive && !s.has_activity && (
+                          {!isActive && (!s.start_date || new Date(s.start_date + "T00:00:00") > new Date()) && (
                             <button onClick={(e) => { e.stopPropagation(); deleteSeason(s.id, s.name); }}
                               style={{
                                 padding: "5px 8px", borderRadius: 6, border: `1px solid ${C.red}30`,
