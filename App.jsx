@@ -1,4 +1,4 @@
-// App v30 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -2532,7 +2532,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     else if (sortBy === "champs") t.sort((a, b) => ((b.championship_count || b.championships || 0) - (a.championship_count || a.championships || 0)) || ((b.all_time_wins || 0) - (a.all_time_wins || 0)));
     // Reverse if ascending
     if (sortDir === "asc") t.reverse();
-    return t.filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
+    return t.filter(x => ((x.all_time_wins || 0) + (x.all_time_losses || 0)) > 0).filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
   }, [teams, sortBy, sortDir, search, minMatches]);
 
   // ─── TEAM PROFILE ───
@@ -2878,16 +2878,16 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", sortBy === "name" ? (sortDir === "asc" ? "A-Z" : "Z-A") : "A-Z"]].map(([k, l]) => (
+        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", sortBy === "name" ? (sortDir === "desc" ? "A-Z" : "Z-A") : "A-Z"]].map(([k, l]) => (
           <button key={k} onClick={() => {
             if (sortBy === k) { setSortDir(d => d === "desc" ? "asc" : "desc"); }
-            else { setSortBy(k); setSortDir(k === "name" ? "asc" : "desc"); setShowCount(50); }
+            else { setSortBy(k); setSortDir("desc"); setShowCount(50); }
           }} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
             borderRadius: 8, padding: "6px 12px", cursor: "pointer",
             fontFamily: F.m, fontSize: 11, fontWeight: sortBy === k ? 700 : 500, whiteSpace: "nowrap",
-          }}>{l}{sortBy === k && k !== "name" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}</button>
+          }}>{l}{sortBy === k ? (sortDir === "desc" ? " ↓" : " ↑") : ""}</button>
         ))}
       </div>
 
