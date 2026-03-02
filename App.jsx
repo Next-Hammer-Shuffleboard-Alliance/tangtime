@@ -2878,10 +2878,10 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
       </div>
 
       <div style={{ display: "flex", gap: 5, marginBottom: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", sortBy === "name" ? (sortDir === "asc" ? "A-Z" : "Z-A") : "A-Z"]].map(([k, l]) => (
+        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", sortBy === "name" ? (sortDir === "desc" ? "A-Z" : "Z-A") : "A-Z"]].map(([k, l]) => (
           <button key={k} onClick={() => {
             if (sortBy === k) { setSortDir(d => d === "desc" ? "asc" : "desc"); }
-            else { setSortBy(k); setSortDir(k === "name" ? "asc" : "desc"); setShowCount(50); }
+            else { setSortBy(k); setSortDir("desc"); setShowCount(50); }
           }} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
