@@ -1,4 +1,4 @@
-// App v30 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -2532,7 +2532,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     else if (sortBy === "champs") t.sort((a, b) => ((b.championship_count || b.championships || 0) - (a.championship_count || a.championships || 0)) || ((b.all_time_wins || 0) - (a.all_time_wins || 0)));
     // Reverse if ascending
     if (sortDir === "asc") t.reverse();
-    return t.filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
+    return t.filter(x => ((x.all_time_wins || 0) + (x.all_time_losses || 0)) > 0).filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
   }, [teams, sortBy, sortDir, search, minMatches]);
 
   // ─── TEAM PROFILE ───
@@ -2887,7 +2887,7 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
             borderRadius: 8, padding: "6px 12px", cursor: "pointer",
             fontFamily: F.m, fontSize: 11, fontWeight: sortBy === k ? 700 : 500, whiteSpace: "nowrap",
-          }}>{l}{sortBy === k && k !== "name" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}</button>
+          }}>{l}{sortBy === k ? (sortDir === "desc" ? " ↓" : " ↑") : ""}</button>
         ))}
       </div>
 
