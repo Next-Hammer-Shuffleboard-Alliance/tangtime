@@ -1,4 +1,4 @@
-// App v29 — fixed bottom nav (moved outside container to fix position:fixed)
+// App v30 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -2377,6 +2377,9 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
   const [teams, setTeams] = useState([]);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("wins");
+  const [sortDir, setSortDir] = useState("desc"); // "desc" or "asc"
+  const [showCount, setShowCount] = useState(50);
+  const [minMatches, setMinMatches] = useState(true); // true = 24+ matches for winpct
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(initialTeamId || null);
   const [teamDetail, setTeamDetail] = useState(null);
@@ -2511,6 +2514,11 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
 
   const sorted = useMemo(() => {
     let t = [...teams];
+    // Filter: titles tab only shows teams with championships
+    if (sortBy === "champs") t = t.filter(x => (x.championship_count || x.championships || 0) > 0);
+    // Filter: win% with minimum matches filter
+    if (sortBy === "winpct" && minMatches) t = t.filter(x => ((x.all_time_wins || 0) + (x.all_time_losses || 0)) >= 24);
+    // Sort
     if (sortBy === "wins") t.sort((a, b) => (b.all_time_wins || 0) - (a.all_time_wins || 0));
     else if (sortBy === "winpct") {
       t.sort((a, b) => {
@@ -2522,8 +2530,10 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
     else if (sortBy === "name") t.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     else if (sortBy === "elo") t.sort((a, b) => (b.elo_rating || b.recrec_elo || 0) - (a.elo_rating || a.recrec_elo || 0));
     else if (sortBy === "champs") t.sort((a, b) => ((b.championship_count || b.championships || 0) - (a.championship_count || a.championships || 0)) || ((b.all_time_wins || 0) - (a.all_time_wins || 0)));
+    // Reverse if ascending
+    if (sortDir === "asc") t.reverse();
     return t.filter(x => x.name?.toLowerCase().includes(search.toLowerCase()));
-  }, [teams, sortBy, search]);
+  }, [teams, sortBy, sortDir, search, minMatches]);
 
   // ─── TEAM PROFILE ───
   if (selectedId) {
@@ -2867,27 +2877,50 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
         </svg>
       </div>
 
-      <div style={{ display: "flex", gap: 5, marginBottom: 16, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", "A-Z"]].map(([k, l]) => (
-          <button key={k} onClick={() => setSortBy(k)} style={{
+      <div style={{ display: "flex", gap: 5, marginBottom: 8, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        {[["wins", "Wins"], ["winpct", "Win %"], ["elo", "ELO"], ["champs", "Titles"], ["name", sortBy === "name" ? (sortDir === "asc" ? "A-Z" : "Z-A") : "A-Z"]].map(([k, l]) => (
+          <button key={k} onClick={() => {
+            if (sortBy === k) { setSortDir(d => d === "desc" ? "asc" : "desc"); }
+            else { setSortBy(k); setSortDir(k === "name" ? "asc" : "desc"); setShowCount(50); }
+          }} style={{
             background: sortBy === k ? C.amber : C.surface, color: sortBy === k ? C.bg : C.muted,
             border: `1px solid ${sortBy === k ? C.amber : C.border}`,
             borderRadius: 8, padding: "6px 12px", cursor: "pointer",
             fontFamily: F.m, fontSize: 11, fontWeight: sortBy === k ? 700 : 500, whiteSpace: "nowrap",
-          }}>{l}</button>
+          }}>{l}{sortBy === k && k !== "name" ? (sortDir === "desc" ? " ↓" : " ↑") : ""}</button>
         ))}
       </div>
 
+      {/* Win% minimum matches filter */}
+      {sortBy === "winpct" && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <button onClick={() => { setMinMatches(true); setShowCount(50); }} style={{
+            background: minMatches ? `${C.amber}20` : "transparent", color: minMatches ? C.amber : C.dim,
+            border: `1px solid ${minMatches ? C.amber + "40" : C.border}`, borderRadius: 6, padding: "4px 10px",
+            fontFamily: F.m, fontSize: 10, cursor: "pointer",
+          }}>24+ matches</button>
+          <button onClick={() => { setMinMatches(false); setShowCount(50); }} style={{
+            background: !minMatches ? `${C.amber}20` : "transparent", color: !minMatches ? C.amber : C.dim,
+            border: `1px solid ${!minMatches ? C.amber + "40" : C.border}`, borderRadius: 6, padding: "4px 10px",
+            fontFamily: F.m, fontSize: 10, cursor: "pointer",
+          }}>All teams</button>
+        </div>
+      )}
+
       {loading ? <Loader /> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {sorted.slice(0, 50).map(t => {
+          {sorted.slice(0, showCount).map((t, idx) => {
             const wp = ((t.all_time_wins || 0) / Math.max((t.all_time_wins || 0) + (t.all_time_losses || 0), 1) * 100).toFixed(0);
-            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating || t.recrec_elo || '—'}` : sortBy === "winpct" ? `${wp}% win rate` : sortBy === "champs" ? `${t.championship_count || t.championships || 0} titles` : sortBy === "name" ? (t.division_name || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
+            const totalMatches = (t.all_time_wins || 0) + (t.all_time_losses || 0);
+            const subtext = sortBy === "elo" ? `ELO ${t.elo_rating || t.recrec_elo || '—'}` : sortBy === "winpct" ? `${wp}% win rate · ${totalMatches} matches` : sortBy === "champs" ? `${t.championship_count || t.championships || 0} title${(t.championship_count || t.championships || 0) !== 1 ? "s" : ""}` : sortBy === "name" ? (t.division_name || "") : `${t.all_time_wins || 0}W - ${t.all_time_losses || 0}L`;
             return (
               <Card key={t.id} onClick={() => setSelectedId(t.id)} style={{ padding: "14px 18px", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
-                    <TeamAvatar name={t.name} size={34} />
+                    <div style={{ position: "relative" }}>
+                      <TeamAvatar name={t.name} size={34} />
+                      <div style={{ position: "absolute", top: -4, left: -4, fontFamily: F.m, fontSize: 9, color: C.dim, minWidth: 14, textAlign: "center" }}>{idx + 1}</div>
+                    </div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: F.b, fontSize: 14, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
                       <div style={{ fontFamily: F.m, fontSize: 11, color: C.dim }}>{subtext}</div>
@@ -2903,9 +2936,23 @@ function TeamsPage({ goPage, initialTeamId, activeSeason }) {
           })}
         </div>
       )}
-      {!loading && !sorted.length && <Empty msg="No teams found" />}
-      {!loading && sorted.length > 50 && (
-        <p style={{ textAlign: "center", fontFamily: F.m, fontSize: 11, color: C.dim, marginTop: 12 }}>Showing 50 of {sorted.length} · refine search</p>
+      {!loading && !sorted.length && <Empty msg={sortBy === "champs" ? "No teams with titles" : "No teams found"} />}
+      {!loading && sorted.length > showCount && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 14 }}>
+          <button onClick={() => setShowCount(c => c + 50)} style={{
+            background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 16px",
+            color: C.amber, fontFamily: F.m, fontSize: 11, fontWeight: 600, cursor: "pointer",
+          }}>Show More</button>
+          <button onClick={() => setShowCount(sorted.length)} style={{
+            background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 16px",
+            color: C.muted, fontFamily: F.m, fontSize: 11, fontWeight: 500, cursor: "pointer",
+          }}>Show All ({sorted.length})</button>
+        </div>
+      )}
+      {!loading && sorted.length > 0 && (
+        <p style={{ textAlign: "center", fontFamily: F.m, fontSize: 10, color: C.dim, marginTop: 8 }}>
+          Showing {Math.min(showCount, sorted.length)} of {sorted.length} teams
+        </p>
       )}
       <Footer />
     </div>
@@ -7730,7 +7777,7 @@ function RegisterPage() {
 
         {loading ? (
           <div style={{ textAlign: "center", padding: 40, color: C.dim }}>Loading divisions...</div>
-        ) : divisions.length === 0 ? (
+        ) : !divisions.some(d => d.registration_open && ((d.max_teams || 16) - (regCounts[d.id] || 0)) > 0) ? (
           <Card style={{ textAlign: "center", padding: 32 }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
             <div style={{ fontFamily: F.d, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Registration Coming Soon</div>
