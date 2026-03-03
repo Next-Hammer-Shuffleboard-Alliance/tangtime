@@ -1,4 +1,4 @@
-// App v30.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.3 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -916,13 +916,20 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs, hasPlayoff
     ]).then(([st, rc, tm]) => {
       setAllStandings(st || []);
       if (st) {
-        const byDiv = {};
+        // Group by division, then use computeRanks to find actual leader
+        const groups = {};
         st.forEach(s => {
-          if (!byDiv[s.division_name] || s.calculated_rank < byDiv[s.division_name].calculated_rank) {
-            byDiv[s.division_name] = s;
-          }
+          if (!groups[s.division_name]) groups[s.division_name] = [];
+          groups[s.division_name].push(s);
         });
-        setLeaders(Object.values(byDiv));
+        const ldrs = Object.values(groups).map(g => {
+          const ranked = [...g].sort((a, b) => {
+            if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
+            return (a.losses || 0) - (b.losses || 0);
+          });
+          return ranked[0];
+        }).filter(Boolean);
+        setLeaders(ldrs);
       }
       setRecent(rc || []);
       setTopTeams(tm || []);
