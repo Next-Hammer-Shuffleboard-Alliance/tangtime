@@ -1,4 +1,4 @@
-// App v30.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.2 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
