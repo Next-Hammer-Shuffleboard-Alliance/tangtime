@@ -1,4 +1,4 @@
-// App v30.4 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.5 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -3646,15 +3646,38 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  // Helper: adjust a team's all_time_wins or all_time_losses by delta (+1 or -1)
+  const adjustRecord = async (teamId, field, delta) => {
+    if (!teamId) return;
+    try {
+      const t = await q("teams", `id=eq.${teamId}&select=id,all_time_wins,all_time_losses`);
+      if (!t?.length) return;
+      const cur = t[0][field] || 0;
+      await qAuth("teams", `id=eq.${teamId}`, "PATCH", { [field]: Math.max(0, cur + delta) });
+    } catch (e) { console.error("adjustRecord:", e); }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
       const oldWinnerId = match.winner_id;
-      const oldLoserId = oldWinnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
+      const oldLoserId = oldWinnerId ? (oldWinnerId === match.team_a_id ? match.team_b_id : match.team_a_id) : null;
       const newLoserId = winnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
 
       await rpc("admin_update_match_result", { match_id: match.id, new_winner_id: winnerId || null, is_ot: isOT });
+
+      // Update all-time records incrementally
+      if (winnerId && (!oldWinnerId || oldWinnerId !== winnerId)) {
+        // Reverse old result if there was one
+        if (oldWinnerId) {
+          await adjustRecord(oldWinnerId, "all_time_wins", -1);
+          await adjustRecord(oldLoserId, "all_time_losses", -1);
+        }
+        // Apply new result
+        await adjustRecord(winnerId, "all_time_wins", 1);
+        await adjustRecord(newLoserId, "all_time_losses", 1);
+      }
 
       // ELO calculation
       if (winnerId && divisionId) {
@@ -3677,6 +3700,12 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
     setSaving(true);
     setError(null);
     try {
+      // Reverse all-time records
+      if (match.winner_id) {
+        const loserId = match.winner_id === match.team_a_id ? match.team_b_id : match.team_a_id;
+        await adjustRecord(match.winner_id, "all_time_wins", -1);
+        await adjustRecord(loserId, "all_time_losses", -1);
+      }
       // Reverse ELO before clearing
       if (match.winner_id && match.elo_change && divisionId) {
         const loserId = match.winner_id === match.team_a_id ? match.team_b_id : match.team_a_id;
@@ -5969,9 +5998,17 @@ function AdminApp({ user, myRole }) {
     (async () => {
       const d = await q("divisions", `season_id=eq.${seasonId}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`);
       const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
-      setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
+      const enriched = filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 }));
+      setDivisions(enriched);
       setWeekFilter(null);
       setMatches([]);
+      // Auto-select first day and division
+      if (enriched.length) {
+        const firstDay = enriched.sort((a, b) => (dayOrder[a.day_of_week] ?? 9) - (dayOrder[b.day_of_week] ?? 9))[0].day_of_week;
+        setSelectedDay(firstDay);
+        const firstDiv = enriched.find(x => x.day_of_week === firstDay);
+        if (firstDiv) setDivisionId(firstDiv.id);
+      }
     })();
   }, [seasonId]);
 
@@ -6311,7 +6348,7 @@ function AdminApp({ user, myRole }) {
           <div style={{ marginBottom: 10 }}>
             <select value={seasonId || ""} onChange={e => {
               const s = allAdminSeasons.find(x => x.id === e.target.value);
-              if (s) { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }
+              if (s) { setSeasonId(s.id); setSeasonData(s); }
             }} style={{
               width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`,
               background: C.surface, color: C.text, fontFamily: F.m, fontSize: 12, outline: "none",
