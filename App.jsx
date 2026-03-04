@@ -1,4 +1,4 @@
-// App v31 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6367,9 +6367,6 @@ function AdminApp({ user, myRole }) {
           <>
             {/* Day toggle + Season selector */}
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
-              {allAdminSeasons.length > 1 && (
-                <SeasonSelector seasons={allAdminSeasons} selected={seasonData} onSelect={s => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} />
-              )}
               {days.length > 1 && (
                 <div style={{ display: "flex", gap: 4, flex: 1, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
                   {days.map(day => (
@@ -6381,6 +6378,9 @@ function AdminApp({ user, myRole }) {
                     }}>{cap(day)}</button>
                   ))}
                 </div>
+              )}
+              {allAdminSeasons.length > 1 && (
+                <SeasonSelector seasons={allAdminSeasons} selected={seasonData} onSelect={s => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} />
               )}
             </div>
             {/* Level pills */}
