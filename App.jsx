@@ -1,4 +1,4 @@
-// App v30.3 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.4 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -5898,6 +5898,7 @@ function AdminApp({ user, myRole }) {
   const [divisionId, setDivisionId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
+  const [allAdminSeasons, setAllAdminSeasons] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [selectedDay, setSelectedDay] = useState("monday");
   const [weekFilter, setWeekFilter] = useState(null);
@@ -5950,22 +5951,29 @@ function AdminApp({ user, myRole }) {
     })();
   }, [seasonRegs, allDivisions.length]);
 
-  // Load season + divisions once on mount
+  // Load all seasons on mount, default to active
   useEffect(() => {
     (async () => {
-      let seasons = await q("seasons", "is_active=eq.true&select=id,name,start_date,end_date,is_active&limit=1");
-      if (!seasons?.length) {
-        // No active season - load most recent
-        seasons = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active&limit=1");
-      }
-      if (!seasons?.length) return;
-      setSeasonId(seasons[0].id);
-      setSeasonData(seasons[0]);
-      const d = await q("divisions", `season_id=eq.${seasons[0].id}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`);
-      const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
-      setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
+      const allS = await q("seasons", "order=start_date.desc&select=id,name,start_date,end_date,is_active");
+      if (!allS?.length) return;
+      setAllAdminSeasons(allS);
+      const active = allS.find(s => s.is_active) || allS[0];
+      setSeasonId(active.id);
+      setSeasonData(active);
     })();
   }, []);
+
+  // Reload divisions when season changes
+  useEffect(() => {
+    if (!seasonId) return;
+    (async () => {
+      const d = await q("divisions", `season_id=eq.${seasonId}&order=day_of_week,level&select=id,name,day_of_week,level,season_id,playoff_spots,team_seasons(team_id)`);
+      const filtered = (d || []).filter(x => x.level !== "party" || (x.team_seasons?.length > 0));
+      setDivisions(filtered.map(x => ({ ...x, has_data: (x.team_seasons?.length || 0) > 0 })));
+      setWeekFilter(null);
+      setMatches([]);
+    })();
+  }, [seasonId]);
 
   // Compute days and day-filtered divisions
   const days = useMemo(() => {
@@ -6298,6 +6306,22 @@ function AdminApp({ user, myRole }) {
             </button>
           ))}
         </div>
+
+        {adminGroup === "season" && allAdminSeasons.length > 1 && (
+          <div style={{ marginBottom: 10 }}>
+            <select value={seasonId || ""} onChange={e => {
+              const s = allAdminSeasons.find(x => x.id === e.target.value);
+              if (s) { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }
+            }} style={{
+              width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`,
+              background: C.surface, color: C.text, fontFamily: F.m, fontSize: 12, outline: "none",
+            }}>
+              {allAdminSeasons.map(s => (
+                <option key={s.id} value={s.id}>{s.name}{s.is_active ? " (active)" : ""}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {tab === "matches" && (
           <>
