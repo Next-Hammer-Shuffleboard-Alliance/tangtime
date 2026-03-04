@@ -1,4 +1,4 @@
-// App v30.7 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.8 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6327,28 +6327,27 @@ function AdminApp({ user, myRole }) {
             }}>{l}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 3, marginBottom: 16, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-          {(adminGroup === "season"
-            ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
-            : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"], ["seasons", "📅 Seasons"]]
-          ).map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{
-              flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
-              background: tab === k ? `${C.amber}25` : "transparent",
-              color: tab === k ? C.amber : C.muted,
-              fontFamily: F.m, fontSize: 11, fontWeight: tab === k ? 700 : 500, transition: "all 0.15s",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            }}>
-              {k === "captains" ? <><CaptainBadge size={13} /> Captains</> : l}
-            </button>
-          ))}
-        </div>
-
-        {adminGroup === "season" && allAdminSeasons.length > 1 && (
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 16 }}>
+          {adminGroup === "season" && allAdminSeasons.length > 1 && (
             <SeasonSelector seasons={allAdminSeasons} selected={seasonData} onSelect={s => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} />
+          )}
+          <div style={{ display: "flex", gap: 3, flex: 1, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+            {(adminGroup === "season"
+              ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
+              : [["requests", `🔔 Requests${requests.length ? ` (${requests.length})` : ""}`], ["roster", "👕 Roster"], ["captains", null], ["admins", "🔐 Admins"], ["seasons", "📅 Seasons"]]
+            ).map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)} style={{
+                flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer",
+                background: tab === k ? `${C.amber}25` : "transparent",
+                color: tab === k ? C.amber : C.muted,
+                fontFamily: F.m, fontSize: 11, fontWeight: tab === k ? 700 : 500, transition: "all 0.15s",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+              }}>
+                {k === "captains" ? <><CaptainBadge size={13} /> Captains</> : l}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         {tab === "matches" && (
           <>
