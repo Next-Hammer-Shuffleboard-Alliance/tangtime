@@ -1,4 +1,4 @@
-// App v30.9 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -3751,19 +3751,16 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
           </button>
           <span style={{ fontFamily: F.b, fontSize: 13, color: C.text }}>Went to overtime (1-1)</span>
         </div>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 6 }}>Court</div>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {[1,2,3,4,5,6,7,8,9,10].map(c => (
-              <button key={c} onClick={() => setCourt(court === String(c) ? "" : String(c))} style={{
-                width: 36, height: 36, borderRadius: 8, border: `1px solid ${String(c) === String(court) ? C.amber : C.border}`,
-                background: String(c) === String(court) ? C.amberGlow : "transparent",
-                color: String(c) === String(court) ? C.amber : C.muted,
-                fontFamily: F.m, fontSize: 12, fontWeight: String(c) === String(court) ? 700 : 500,
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-              }}>{c}</button>
-            ))}
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <span style={{ fontFamily: F.b, fontSize: 12, color: C.muted }}>Court</span>
+          <select value={court} onChange={e => setCourt(e.target.value)} style={{
+            padding: "8px 12px", borderRadius: 8, border: `1px solid ${court ? C.amber : C.border}`,
+            background: C.surface, color: court ? C.text : C.dim, fontFamily: F.m, fontSize: 12,
+            cursor: "pointer", outline: "none",
+          }}>
+            <option value="">—</option>
+            {[1,2,3,4,5,6,7,8,9,10].map(c => <option key={c} value={String(c)}>{c}</option>)}
+          </select>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {match.winner_id && <button onClick={clearResult} disabled={saving} style={{ padding: "11px 14px", borderRadius: 10, border: `1px solid ${C.red}40`, background: `${C.red}12`, color: C.red, fontFamily: F.b, fontSize: 12, cursor: saving ? "wait" : "pointer" }}>Clear Result</button>}
@@ -6348,9 +6345,6 @@ function AdminApp({ user, myRole }) {
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 16 }}>
-          {adminGroup === "season" && allAdminSeasons.length > 1 && (
-            <SeasonSelector seasons={allAdminSeasons} selected={seasonData} onSelect={s => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} />
-          )}
           <div style={{ display: "flex", gap: 3, flex: 1, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
             {(adminGroup === "season"
               ? [["matches", "📋 Matches"], ["postseason", "🏆 Postseason"]]
@@ -6371,19 +6365,24 @@ function AdminApp({ user, myRole }) {
 
         {tab === "matches" && (
           <>
-            {/* Day toggle */}
-            {days.length > 1 && (
-              <div style={{ display: "flex", gap: 4, marginBottom: 10, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
-                {days.map(day => (
-                  <button key={day} onClick={() => { setSelectedDay(day); setWeekFilter(null); }} style={{
-                    flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
-                    background: selectedDay === day ? C.amber : "transparent",
-                    color: selectedDay === day ? C.bg : C.muted,
-                    fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s",
-                  }}>{cap(day)}</button>
-                ))}
-              </div>
-            )}
+            {/* Day toggle + Season selector */}
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+              {allAdminSeasons.length > 1 && (
+                <SeasonSelector seasons={allAdminSeasons} selected={seasonData} onSelect={s => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} />
+              )}
+              {days.length > 1 && (
+                <div style={{ display: "flex", gap: 4, flex: 1, background: C.surface, borderRadius: 10, padding: 3, border: `1px solid ${C.border}` }}>
+                  {days.map(day => (
+                    <button key={day} onClick={() => { setSelectedDay(day); setWeekFilter(null); }} style={{
+                      flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
+                      background: selectedDay === day ? C.amber : "transparent",
+                      color: selectedDay === day ? C.bg : C.muted,
+                      fontFamily: F.m, fontSize: 11, fontWeight: 700, transition: "all 0.15s",
+                    }}>{cap(day)}</button>
+                  ))}
+                </div>
+              )}
+            </div>
             {/* Level pills */}
             <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
               {dayDivisions.map(d => {
