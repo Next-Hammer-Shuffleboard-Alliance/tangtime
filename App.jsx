@@ -1,4 +1,4 @@
-// App v30.6 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.7 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6345,18 +6345,8 @@ function AdminApp({ user, myRole }) {
         </div>
 
         {adminGroup === "season" && allAdminSeasons.length > 1 && (
-          <div style={{ display: "flex", gap: 5, marginBottom: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 2 }}>
-            {allAdminSeasons.map(s => {
-              const active = seasonId === s.id;
-              return (
-                <button key={s.id} onClick={() => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} style={{
-                  background: active ? C.amber : C.surface, color: active ? C.bg : C.muted,
-                  border: `1px solid ${active ? C.amber : C.border}`,
-                  borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-                  fontFamily: F.m, fontSize: 11, fontWeight: active ? 700 : 500, whiteSpace: "nowrap",
-                }}>{s.name}</button>
-              );
-            })}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+            <SeasonSelector seasons={allAdminSeasons} selected={seasonData} onSelect={s => { setSeasonId(s.id); setSeasonData(s); setDivisionId(null); setSelectedDay("monday"); }} />
           </div>
         )}
 
