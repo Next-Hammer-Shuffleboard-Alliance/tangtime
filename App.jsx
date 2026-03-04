@@ -1,4 +1,4 @@
-// App v30.8 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v30.9 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -3643,6 +3643,7 @@ async function reverseElo(winnerId, loserId, eloChange, divisionId) {
 function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
   const [winnerId, setWinnerId] = useState(match.winner_id || "");
   const [isOT, setIsOT] = useState(match.went_to_ot || false);
+  const [court, setCourt] = useState(match.court || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -3666,6 +3667,11 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
       const newLoserId = winnerId === match.team_a_id ? match.team_b_id : match.team_a_id;
 
       await rpc("admin_update_match_result", { match_id: match.id, new_winner_id: winnerId || null, is_ot: isOT });
+      // Update court if changed
+      const newCourt = court ? parseInt(court) : null;
+      if (newCourt !== (match.court || null)) {
+        await qAuth("matches", `id=eq.${match.id}`, "PATCH", { court: newCourt });
+      }
 
       // Update all-time records incrementally
       if (winnerId && (!oldWinnerId || oldWinnerId !== winnerId)) {
@@ -3739,11 +3745,25 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
           <button onClick={() => setIsOT(!isOT)} style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isOT ? C.amber : C.border}`, background: isOT ? C.amber : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {isOT && <span style={{ color: C.bg, fontSize: 12, fontWeight: 900 }}>✓</span>}
           </button>
           <span style={{ fontFamily: F.b, fontSize: 13, color: C.text }}>Went to overtime (1-1)</span>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: F.b, fontSize: 12, color: C.muted, marginBottom: 6 }}>Court</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {[1,2,3,4,5,6,7,8,9,10].map(c => (
+              <button key={c} onClick={() => setCourt(court === String(c) ? "" : String(c))} style={{
+                width: 36, height: 36, borderRadius: 8, border: `1px solid ${String(c) === String(court) ? C.amber : C.border}`,
+                background: String(c) === String(court) ? C.amberGlow : "transparent",
+                color: String(c) === String(court) ? C.amber : C.muted,
+                fontFamily: F.m, fontSize: 12, fontWeight: String(c) === String(court) ? 700 : 500,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{c}</button>
+            ))}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {match.winner_id && <button onClick={clearResult} disabled={saving} style={{ padding: "11px 14px", borderRadius: 10, border: `1px solid ${C.red}40`, background: `${C.red}12`, color: C.red, fontFamily: F.b, fontSize: 12, cursor: saving ? "wait" : "pointer" }}>Clear Result</button>}
