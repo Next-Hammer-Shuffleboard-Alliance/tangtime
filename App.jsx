@@ -1,4 +1,4 @@
-// App v31.9 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v32 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -250,8 +250,8 @@ function getSeasonProgress(season) {
 
 function getWeekNum(matchDate, seasonStart) {
   if (!matchDate || !seasonStart) return 1;
-  const d = new Date(matchDate + "T12:00:00");
-  const s = new Date(seasonStart + "T12:00:00");
+  const d = new Date(matchDate + "T12:00:00Z");
+  const s = new Date(seasonStart + "T12:00:00Z");
   return Math.min(Math.max(Math.floor((d - s) / (7 * 24 * 60 * 60 * 1000)) + 1, 1), 8);
 }
 
@@ -6149,7 +6149,7 @@ function AdminApp({ user, myRole }) {
     .filter(m => weekFilter ? m._week === weekFilter : true)
     .filter(m => {
       if (filter === "completed") return m.status === "completed";
-      if (filter === "pending") return m.status !== "completed" && (weekFilter || (m._week || 99) <= currentWeek);
+      if (filter === "pending") return m.status !== "completed" && (m._week || 99) <= currentWeek;
       return true;
     })
     .sort((a, b) => {
