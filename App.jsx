@@ -1,4 +1,4 @@
-// App v31.4 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31.6 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -5943,12 +5943,12 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
 function AdminApp({ user, myRole }) {
   const [adminGroup, setAdminGroup] = useState("manage"); // "season" | "manage"
   const [tab, setTab] = useState("requests");
-  const [divisionId, setDivisionId] = useState(null);
+  const [divisionId, setDivisionId] = useState(() => sessionStorage.getItem("admin_divId") || null);
   const [seasonId, setSeasonId] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
   const [allAdminSeasons, setAllAdminSeasons] = useState([]);
   const [divisions, setDivisions] = useState([]);
-  const [selectedDay, setSelectedDay] = useState("monday");
+  const [selectedDay, setSelectedDay] = useState(() => sessionStorage.getItem("admin_day") || "monday");
   const [weekFilter, setWeekFilter] = useState(null);
   const [matches, setMatches] = useState([]);
   const [captains, setCaptains] = useState([]);
@@ -5979,6 +5979,10 @@ function AdminApp({ user, myRole }) {
   const [seasonRegs, setSeasonRegs] = useState([]); // registrations for selected manage-season
   const [expandedRegDivs, setExpandedRegDivs] = useState({}); // divId -> bool for show all teams
   const [assigningFA, setAssigningFA] = useState(false);
+
+  // Persist admin selections across refresh
+  useEffect(() => { sessionStorage.setItem("admin_day", selectedDay); }, [selectedDay]);
+  useEffect(() => { if (divisionId) sessionStorage.setItem("admin_divId", divisionId); }, [divisionId]);
 
   // Auto-close registration when team spots fill
   useEffect(() => {
@@ -6042,9 +6046,11 @@ function AdminApp({ user, myRole }) {
       .sort((a, b) => (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9));
   }, [divisions, selectedDay]);
 
-  // Auto-select first division when day changes
+  // Auto-select first division when day changes (skip if saved divisionId is valid for this day)
   useEffect(() => {
-    if (dayDivisions.length) setDivisionId(dayDivisions[0].id);
+    if (!dayDivisions.length) return;
+    if (divisionId && dayDivisions.some(d => d.id === divisionId)) return;
+    setDivisionId(dayDivisions[0].id);
   }, [selectedDay, dayDivisions.length]);
 
   // Auto-select first day on load
@@ -6074,24 +6080,6 @@ function AdminApp({ user, myRole }) {
           setWeekFilter(nextWeek > 0 ? nextWeek : 1);
         }
         setLoadingMatches(false);
-        // Auto-backfill missing ELO for completed matches
-        const missing = withWeeks
-          .filter(m => m.status === "completed" && m.winner_id && !m.elo_change)
-          .sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
-        if (missing.length && divisionId) {
-          (async () => {
-            for (const m of missing) {
-              const loserId = m.winner_id === m.team_a_id ? m.team_b_id : m.team_a_id;
-              const delta = await calculateElo(m.winner_id, loserId, divisionId);
-              if (delta) await qAuth("matches", `id=eq.${m.id}`, "PATCH", { elo_change: delta });
-            }
-            // Reload matches to show updated ELO
-            qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,elo_change,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
-              .then(d2 => {
-                setMatches((d2 || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—", _week: getWeekNum(m.scheduled_date, seasonData?.start_date) })));
-              });
-          })();
-        }
       }).catch(e => { setError(e.message); setLoadingMatches(false); });
   }, [divisionId]);
 
