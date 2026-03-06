@@ -1,4 +1,4 @@
-// App v31.2 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31.4 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -3612,8 +3612,10 @@ async function calculateElo(winnerId, loserId, divisionId) {
       q("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}&select=elo_rating`),
       q("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}&select=elo_rating`),
     ]);
-    const wRating = wTs?.[0]?.elo_rating || 1500;
-    const lRating = lTs?.[0]?.elo_rating || 1500;
+    // Skip if either team doesn't have a team_seasons row
+    if (!wTs?.length || !lTs?.length) return 0;
+    const wRating = wTs[0].elo_rating || 1500;
+    const lRating = lTs[0].elo_rating || 1500;
     const expected = 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
     const delta = Math.round(ELO_K * (1 - expected));
     await Promise.all([
@@ -6072,6 +6074,24 @@ function AdminApp({ user, myRole }) {
           setWeekFilter(nextWeek > 0 ? nextWeek : 1);
         }
         setLoadingMatches(false);
+        // Auto-backfill missing ELO for completed matches
+        const missing = withWeeks
+          .filter(m => m.status === "completed" && m.winner_id && !m.elo_change)
+          .sort((a, b) => (a.scheduled_date || "").localeCompare(b.scheduled_date || ""));
+        if (missing.length && divisionId) {
+          (async () => {
+            for (const m of missing) {
+              const loserId = m.winner_id === m.team_a_id ? m.team_b_id : m.team_a_id;
+              const delta = await calculateElo(m.winner_id, loserId, divisionId);
+              if (delta) await qAuth("matches", `id=eq.${m.id}`, "PATCH", { elo_change: delta });
+            }
+            // Reload matches to show updated ELO
+            qAuth("matches", `division_id=eq.${divisionId}&order=scheduled_date,scheduled_time&limit=200&select=id,team_a_id,team_b_id,scheduled_date,scheduled_time,court,status,winner_id,went_to_ot,elo_change,team_a:teams!team_a_id(id,name),team_b:teams!team_b_id(id,name)`)
+              .then(d2 => {
+                setMatches((d2 || []).map(m => ({ ...m, team_a_name: m.team_a?.name || "—", team_b_name: m.team_b?.name || "—", _week: getWeekNum(m.scheduled_date, seasonData?.start_date) })));
+              });
+          })();
+        }
       }).catch(e => { setError(e.message); setLoadingMatches(false); });
   }, [divisionId]);
 
