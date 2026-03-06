@@ -1,4 +1,4 @@
-// App v31.7 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31.8 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -3659,17 +3659,6 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  // Helper: adjust a team's all_time_wins or all_time_losses by delta (+1 or -1)
-  const adjustRecord = async (teamId, field, delta) => {
-    if (!teamId) return;
-    try {
-      const t = await q("teams", `id=eq.${teamId}&select=id,all_time_wins,all_time_losses`);
-      if (!t?.length) return;
-      const cur = t[0][field] || 0;
-      await qAuth("teams", `id=eq.${teamId}`, "PATCH", { [field]: Math.max(0, cur + delta) });
-    } catch (e) { console.error("adjustRecord:", e); }
-  };
-
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -3685,17 +3674,7 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
         await qAuth("matches", `id=eq.${match.id}`, "PATCH", { court: newCourt });
       }
 
-      // Update all-time records incrementally
-      if (winnerId && (!oldWinnerId || oldWinnerId !== winnerId)) {
-        // Reverse old result if there was one
-        if (oldWinnerId) {
-          await adjustRecord(oldWinnerId, "all_time_wins", -1);
-          await adjustRecord(oldLoserId, "all_time_losses", -1);
-        }
-        // Apply new result
-        await adjustRecord(winnerId, "all_time_wins", 1);
-        await adjustRecord(newLoserId, "all_time_losses", 1);
-      }
+      // DB trigger on matches handles team_seasons + all-time record updates
 
       // ELO calculation
       if (winnerId && divisionId) {
@@ -3718,12 +3697,7 @@ function AdminEditModal({ match, onClose, onSave, seasonId, divisionId }) {
     setSaving(true);
     setError(null);
     try {
-      // Reverse all-time records
-      if (match.winner_id) {
-        const loserId = match.winner_id === match.team_a_id ? match.team_b_id : match.team_a_id;
-        await adjustRecord(match.winner_id, "all_time_wins", -1);
-        await adjustRecord(loserId, "all_time_losses", -1);
-      }
+      // DB trigger on matches handles record reversal
       // Reverse ELO before clearing
       if (match.winner_id && match.elo_change && divisionId) {
         const loserId = match.winner_id === match.team_a_id ? match.team_b_id : match.team_a_id;
