@@ -1,4 +1,4 @@
-// App v31.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31.6 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -3612,8 +3612,10 @@ async function calculateElo(winnerId, loserId, divisionId) {
       q("team_seasons", `team_id=eq.${winnerId}&division_id=eq.${divisionId}&select=elo_rating`),
       q("team_seasons", `team_id=eq.${loserId}&division_id=eq.${divisionId}&select=elo_rating`),
     ]);
-    const wRating = wTs?.[0]?.elo_rating || 1500;
-    const lRating = lTs?.[0]?.elo_rating || 1500;
+    // Skip if either team doesn't have a team_seasons row
+    if (!wTs?.length || !lTs?.length) return 0;
+    const wRating = wTs[0].elo_rating || 1500;
+    const lRating = lTs[0].elo_rating || 1500;
     const expected = 1 / (1 + Math.pow(10, (lRating - wRating) / 400));
     const delta = Math.round(ELO_K * (1 - expected));
     await Promise.all([
@@ -5941,12 +5943,12 @@ function AdminPostseasonTab({ seasonId, divisions, seasonData: activeSeason }) {
 function AdminApp({ user, myRole }) {
   const [adminGroup, setAdminGroup] = useState("manage"); // "season" | "manage"
   const [tab, setTab] = useState("requests");
-  const [divisionId, setDivisionId] = useState(null);
+  const [divisionId, setDivisionId] = useState(() => sessionStorage.getItem("admin_divId") || null);
   const [seasonId, setSeasonId] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
   const [allAdminSeasons, setAllAdminSeasons] = useState([]);
   const [divisions, setDivisions] = useState([]);
-  const [selectedDay, setSelectedDay] = useState("monday");
+  const [selectedDay, setSelectedDay] = useState(() => sessionStorage.getItem("admin_day") || "monday");
   const [weekFilter, setWeekFilter] = useState(null);
   const [matches, setMatches] = useState([]);
   const [captains, setCaptains] = useState([]);
@@ -5977,6 +5979,10 @@ function AdminApp({ user, myRole }) {
   const [seasonRegs, setSeasonRegs] = useState([]); // registrations for selected manage-season
   const [expandedRegDivs, setExpandedRegDivs] = useState({}); // divId -> bool for show all teams
   const [assigningFA, setAssigningFA] = useState(false);
+
+  // Persist admin selections across refresh
+  useEffect(() => { sessionStorage.setItem("admin_day", selectedDay); }, [selectedDay]);
+  useEffect(() => { if (divisionId) sessionStorage.setItem("admin_divId", divisionId); }, [divisionId]);
 
   // Auto-close registration when team spots fill
   useEffect(() => {
@@ -6040,9 +6046,11 @@ function AdminApp({ user, myRole }) {
       .sort((a, b) => (levelOrder[a.level] ?? 9) - (levelOrder[b.level] ?? 9));
   }, [divisions, selectedDay]);
 
-  // Auto-select first division when day changes
+  // Auto-select first division when day changes (skip if saved divisionId is valid for this day)
   useEffect(() => {
-    if (dayDivisions.length) setDivisionId(dayDivisions[0].id);
+    if (!dayDivisions.length) return;
+    if (divisionId && dayDivisions.some(d => d.id === divisionId)) return;
+    setDivisionId(dayDivisions[0].id);
   }, [selectedDay, dayDivisions.length]);
 
   // Auto-select first day on load
@@ -6155,7 +6163,11 @@ function AdminApp({ user, myRole }) {
 
   const visibleMatches = matches
     .filter(m => weekFilter ? m._week === weekFilter : true)
-    .filter(m => filter === "all" ? true : filter === "pending" ? m.status !== "completed" : m.status === "completed")
+    .filter(m => {
+      if (filter === "completed") return m.status === "completed";
+      if (filter === "pending") return m.status !== "completed" && (m._week || 99) <= currentWeek;
+      return true;
+    })
     .sort((a, b) => {
       // Completed: most recent first. Pending/All: soonest first.
       if (filter === "completed") return b.scheduled_date.localeCompare(a.scheduled_date) || (b.scheduled_time || "").localeCompare(a.scheduled_time || "");
