@@ -1,4 +1,4 @@
-// App v31.6 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v31.7 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -1216,10 +1216,10 @@ function HomePage({ seasons, activeSeason, divisions, goPage, champs, hasPlayoff
 
 // ─── STANDINGS ───
 function StandingsPage({ divisions, activeSeason, goPage }) {
-  const [divId, setDivId] = useState(null);
+  const [divId, setDivId] = useState(() => sessionStorage.getItem("main_divId") || null);
   const [standings, setStandings] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedDay, setSelectedDay] = useState("monday");
+  const [selectedDay, setSelectedDay] = useState(() => sessionStorage.getItem("main_day") || "monday");
 
   const days = useMemo(() => {
     const d = [...new Set((divisions || []).map(div => div.day_of_week))];
@@ -1230,15 +1230,20 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
     return (divisions || []).filter(d => d.day_of_week === selectedDay);
   }, [divisions, selectedDay]);
 
+  useEffect(() => { sessionStorage.setItem("main_day", selectedDay); }, [selectedDay]);
+  useEffect(() => { if (divId) sessionStorage.setItem("main_divId", divId); }, [divId]);
+
   useEffect(() => {
-    if (dayDivisions.length) setDivId(dayDivisions[0].id);
+    if (!dayDivisions.length) return;
+    if (divId && dayDivisions.some(d => d.id === divId)) return;
+    setDivId(dayDivisions[0].id);
   }, [selectedDay, dayDivisions.length]);
 
   useEffect(() => {
     if (divisions?.length) {
       const firstDay = divisions[0].day_of_week;
       if (!days.includes(selectedDay)) setSelectedDay(firstDay);
-      if (!divId) {
+      if (!divId || !divisions.some(d => d.id === divId)) {
         setSelectedDay(firstDay);
         setDivId(divisions[0].id);
       }
@@ -1449,10 +1454,10 @@ function StandingsPage({ divisions, activeSeason, goPage }) {
 
 // ─── MATCHES (renamed from Schedule) ───
 function MatchesPage({ divisions, activeSeason, goPage }) {
-  const [divId, setDivId] = useState(null);
+  const [divId, setDivId] = useState(() => sessionStorage.getItem("main_divId") || null);
   const [allMatches, setAllMatches] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedDay, setSelectedDay] = useState("monday");
+  const [selectedDay, setSelectedDay] = useState(() => sessionStorage.getItem("main_day") || "monday");
 
   const progress = getSeasonProgress(activeSeason);
 
@@ -1477,16 +1482,21 @@ function MatchesPage({ divisions, activeSeason, goPage }) {
     return (divisions || []).filter(d => d.day_of_week === selectedDay);
   }, [divisions, selectedDay]);
 
+  useEffect(() => { sessionStorage.setItem("main_day", selectedDay); }, [selectedDay]);
+  useEffect(() => { if (divId) sessionStorage.setItem("main_divId", divId); }, [divId]);
+
   // Auto-select first division when day changes
   useEffect(() => {
-    if (dayDivisions.length) setDivId(dayDivisions[0].id);
+    if (!dayDivisions.length) return;
+    if (divId && dayDivisions.some(d => d.id === divId)) return;
+    setDivId(dayDivisions[0].id);
   }, [selectedDay, dayDivisions.length]);
 
   useEffect(() => {
     if (divisions?.length) {
       const firstDay = divisions[0].day_of_week;
       if (!days.includes(selectedDay)) setSelectedDay(firstDay);
-      if (!divId) {
+      if (!divId || !divisions.some(d => d.id === divId)) {
         setSelectedDay(firstDay);
         setDivId(divisions[0].id);
       }
