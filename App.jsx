@@ -1,4 +1,4 @@
-// App v32 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
+// App v32.1 — Register: coming soon when no open divs. Teams: sort direction toggle, show more/all, titles filter, win% 24+ filter, rank numbers
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ─── Supabase ───
@@ -6149,7 +6149,7 @@ function AdminApp({ user, myRole }) {
     .filter(m => weekFilter ? m._week === weekFilter : true)
     .filter(m => {
       if (filter === "completed") return m.status === "completed";
-      if (filter === "pending") return m.status !== "completed" && (m._week || 99) <= currentWeek;
+      if (filter === "pending") return m.status !== "completed";
       return true;
     })
     .sort((a, b) => {
